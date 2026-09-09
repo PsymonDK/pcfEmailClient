@@ -1,0 +1,46 @@
+# Node / PCF
+node_modules/
+npm-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# PCF / MSBuild build output
+out/
+obj/
+bin/
+generated/
+*.pcfproj.user
+*.cdsproj.user
+
+# Power Platform solution build artifacts
+**/PkgAssets/
+*.zip
+!docs/**/*.zip
+
+# pac CLI local state
+.pac/
+
+# Env / secrets — never commit environment URLs with tokens, connection strings, or app registrations
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+secrets.json
+appsettings.Development.json
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json.example
+.idea/
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+
+# Test / coverage
+coverage/
+.nyc_output/

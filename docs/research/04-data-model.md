@@ -26,8 +26,8 @@ table carries genuine Exchange-grade correlation columns:
 | Column | Type | Notes |
 |---|---|---|
 | `conversationtrackingid` | Uniqueidentifier | Conversation Tracking Id. `IsValidForForm: False`, readable. **Measured 0% populated — do not use.** See [measured population](#measured-population-customer-service-demo-dk-2026-09-09). |
-| `conversationindex` | String (2048) | "Identifier for all the email responses for this conversation." This is the Exchange **ConversationIndex** — a binary-derived, hierarchical, append-on-reply structure. Gives true parent/child ordering, not just grouping. |
-| `baseconversationindexhash` | Integer | "Hash of base of conversation index." A cheap, indexable grouping key. |
+| `conversationindex` | String (2048) | "Identifier for all the email responses for this conversation." The Exchange **ConversationIndex** — hierarchical, append-on-reply. True parent/child ordering, not just grouping. **Hard read-only: `IsValidForCreate: false`, `IsValidForUpdate: false`.** Only server-side sync populates it. |
+| `baseconversationindexhash` | Integer | "Hash of base of conversation index." A cheap, indexable grouping key. **Writable on create *and* update** — so it is not a platform-guaranteed value; treat it as advisory, not as an integrity guarantee. |
 | `correlatedactivityid` | Lookup → `email` | Platform's own correlation result. |
 | `correlationmethod` | Picklist | "Shows how an email is correlated to an existing email… **For system use only.**" Read for diagnostics; do not write. |
 | `parentactivityid` | Lookup → `email` | "Select the activity that the email is associated with." |
@@ -74,6 +74,33 @@ This matters directly for R16: a draft reply must appear in the right thread, at
 Also worth noting: `messageid` is populated on **outgoing** rows here, not just received ones as the
 documentation states ("Used only for email that is received"). Don't rely on either reading — treat it
 as best-effort.
+
+### Writability of the correlation columns (metadata, 2026-09-09)
+
+Queried from `EntityDefinitions(LogicalName='email')/Attributes`. This settles what can and cannot be
+constructed in test data, and explains the drafts result above:
+
+| Column | Create | Update |
+|---|:--:|:--:|
+| `baseconversationindexhash` | ✅ | ✅ |
+| `conversationindex` | **❌** | **❌** |
+| `conversationtrackingid` | ✅ | ❌ |
+| `parentactivityid` | ✅ | ❌ |
+| `messageid` | ✅ | ✅ |
+| `trackingtoken` | ✅ | ✅ |
+| `description`, `subject` | ✅ | ✅ |
+
+**`conversationindex` cannot be written at all.** This has two consequences:
+
+1. It explains the 8/8 draft correlation — the hash is writable and gets inherited when the UI creates
+   a reply, but `conversationindex` is platform-only and is set solely by server-side sync.
+2. **API-created or seeded email can never carry it.** So ordering and nesting by `conversationindex`
+   is *only* testable against mail that has genuinely round-tripped through a synced mailbox. Grouping,
+   and the `createdon` ordering fallback, are testable with seeded data.
+
+Corollary worth carrying into implementation: because `baseconversationindexhash` is writable by any
+caller with write access, it is **advisory**. The client should degrade gracefully if two unrelated
+threads collide on a hash rather than assuming platform-guaranteed uniqueness.
 
 **Remaining gap:** `internetmessageheaders` is capped at **500 characters**. Real `References:` chains
 routinely exceed that, so full RFC-5322 reconstruction is not available. Do not design around it.

@@ -164,3 +164,19 @@ reconstruction. `messageid` is populated for **received** mail only.
   back as fact. Two of my own starting assumptions in this repo's research were already stale.
 - Cite sources for non-obvious platform claims, with links, the way the existing research files do.
 - Don't commit or push unless asked.
+
+## Seed data in the demo environment
+
+A seed Case exists for spike work: **`TEST - Email client threading seed (deep chain)`** — 12 emails
+across a 7-message thread, a 3-message thread, and 2 hash-less orphans. Created and removable via
+[`scripts/seed/`](scripts/seed/README.md) (`cleanup.mjs` is dry-run by default; pass `--confirm`).
+
+Two things to remember when using it:
+
+- **`conversationindex` is null on every seeded row** and always will be — the column is
+  `IsValidForCreate: false` / `IsValidForUpdate: false`. Seeded data validates grouping and the
+  `createdon` ordering fallback; it cannot validate `conversationindex` nesting.
+- **`baseconversationindexhash` is writable**, so it is advisory rather than platform-guaranteed.
+  Degrade gracefully if two unrelated threads collide on a hash.
+
+Clean the seed up when the spikes are done — this is a shared environment.

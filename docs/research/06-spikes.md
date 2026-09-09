@@ -27,7 +27,7 @@ recommendation in [`07-decision.md`](07-decision.md) is correspondingly a desk-r
 | P2 | System Administrator (or System Customizer + admin center access) on that environment | ❓ Not verified |
 | P3 | `pac` CLI installed and authenticated against it (`pac auth create`) | ✅ pac 2.11.2, profile `[3]` active |
 | P4 | Node.js LTS + npm | ✅ Node v24.13.0, npm 11.6.2 |
-| P5 | A Case with a **real, long email chain** created by server-side sync — required for S8; synthetic data will not exercise the correlation columns | ⚠️ **Partially met** — 48 emails present with correlation columns populated, but the deepest chain is only 5 messages. See [S8 result](#s8-result-partial--2026-09-09) |
+| P5 | A Case with a **real, long email chain** — required to close S8 | ⚠️ **Depth solved, fidelity not.** A 7-message seed chain now exists (see [follow-up](#s8-follow-up--seed-data-created-2026-09-09)), but seeded mail can never carry `conversationindex`. Closing the nesting half needs a genuine synced round-trip. |
 | P6 | An approved mailbox for the test user — required for S7 | ❓ Not verified |
 | P7 | For S3 only: **Power Apps code apps** feature enabled on the environment, plus ability to edit CSP `frame-ancestors` in the admin center | ❓ Not verified; S3 is deprioritised anyway |
 
@@ -145,15 +145,46 @@ of it:
 | 4 messages | 1 |
 | 5 messages | 1 |
 
-**Why this is only partial.** The dataset is shallow: 26 of 34 threads are single messages and the
-deepest chain is 5. That is enough to build and smoke-test the grouping logic, but it does **not**
-stress-test ordering, nesting, or the subject-normalisation fallback. It also contains no imported or
-Flow-created mail, which is the population most likely to lack the correlation columns entirely. **S8
-stays open** until run against a Case with a genuinely long chain, or against seeded data that includes
-manually created email.
+**Why this was only partial.** The dataset was shallow: 26 of 34 threads were single messages and the
+deepest chain was 5 — enough to smoke-test grouping, not enough to stress ordering, nesting, or the
+subject-normalisation fallback.
 
 Useful for other spikes: **12 rows have `attachmentcount` > 0**, so S6 has real attachments to read
 against, and **44 of 48 regard an incident**, confirming the Case-scoped query shape.
+
+#### S8 follow-up — seed data created, 2026-09-09
+
+To close the depth gap, a seed Case was created with a deliberately deep chain. Script, manifest and
+cleanup: [`scripts/seed/`](../../scripts/seed/README.md).
+
+Seed Case `TEST - Email client threading seed (deep chain)` — 12 emails: a **7-message** thread
+(hash `111000001`), a **3-message** thread (hash `111000002`), and **2 orphans with no hash** to force
+the subject-normalisation fallback. Bodies carry 6 levels of genuine Outlook `divRplyFwdMsg` nesting
+with **Danish** `Fra:/Sendt:/Til:/Emne:` header blocks, so S7's quote-splitting heuristic has
+localised test material. All addresses are RFC-2606 `.invalid` — nothing can be sent.
+
+Environment-wide after seeding: **60 emails → 38 threads**, with the distribution now
+`28 × 1, 5 × 2, 2 × 3, 1 × 4, 1 × 5, 1 × 7`.
+
+**What the seed confirmed:**
+- `baseconversationindexhash` **is writable and persists exactly as written** — grouping is now fully
+  testable, including two distinct threads on one Case.
+- `overriddencreatedon` **backdates correctly**: the platform moves the supplied value into `createdon`
+  and records the real insert time in `overriddencreatedon`. Chronology in the seed is realistic.
+- `statecode`/`statuscode` can be PATCHed to Sent (3) / Received (4) after create, so seeded mail is
+  not stuck as Draft.
+
+**What the seed cannot confirm, permanently.** Every seeded row has a **null `conversationindex`**,
+because that column is `IsValidForCreate: false` / `IsValidForUpdate: false` — see
+[writability](04-data-model.md#writability-of-the-correlation-columns-metadata-2026-09-09). No amount
+of seeding will change this.
+
+**S8 therefore splits:**
+
+| Half | Status |
+|---|---|
+| Grouping by `baseconversationindexhash`, plus `createdon` ordering fallback, plus subject-normalisation fallback | ✅ **Testable now** against the seed Case |
+| Ordering and parent/child **nesting** by `conversationindex` | ⚠️ **Still open** — requires mail that has round-tripped through a synced mailbox (a real send + external reply), which is S7 territory and needs an approved mailbox (P6) |
 
 ### S9 — Template and signature instantiation
 
@@ -183,5 +214,5 @@ finding and must be recorded, not discarded.)*
 | S5 | — | **Not run** — P1–P2 unverified | |
 | S6 | — | **Not run** — P1–P2 unverified | Gates the decision |
 | S7 | — | **Not run** — P6 unverified | Gates the decision |
-| S8 | 2026-09-09 | **Partial — strategy validated, 2 corrections** | Read-only. Grouping key 100% populated; `conversationtrackingid` 0% and demoted; draft ordering gap found. Stays open pending a deeper chain |
+| S8 | 2026-09-09 | **Partial — grouping half validated; nesting half permanently needs synced mail** | Read-only measurement, then seed data created. 3 corrections to `04`. See [result](#s8-result-partial--2026-09-09) and [follow-up](#s8-follow-up--seed-data-created-2026-09-09) |
 | S9 | — | **Not run** — P1–P2 unverified | |

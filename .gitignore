@@ -44,3 +44,6 @@ $RECYCLE.BIN/
 # Test / coverage
 coverage/
 .nyc_output/
+
+# local Dataverse token captured during spikes - never commit
+.tok

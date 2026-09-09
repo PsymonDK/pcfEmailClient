@@ -1,9 +1,11 @@
 # 06 — Spikes
 
-## Status: S8 partially run; the rest not started
+## Status: S1 deployed (observation outstanding); S8 partially run
 
-**Only S8 has been executed**, and only in its read-only form — `pac org fetch` aggregates, no writes
-to the environment. Result: [S8 (partial)](#s8-result-partial--2026-09-09).
+**S1** is built, deployed and wired into Copilot Service workspace, but its three on-screen
+measurements have not been read — no signed-in browser was drivable from this session. The control
+self-reports, so finishing it is a ~1 minute manual read: see [S1 result](#s1-result--2026-09-09-built-and-deployed-observation-outstanding).
+**S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
 
 The remaining spikes are **unblocked** as of 2026-09-09: `pac` CLI 2.11.2 is authenticated against
 **the demo environment** (`https://your-org.crm4.dynamics.com/`), with Node
@@ -52,6 +54,82 @@ single-column tab of the enhanced Case form in CSW.
 
 **Success signal.** Renders at full tab height; open two Cases, set some component state in the first,
 switch away and back — state restored, and the second Case never shows the first's state.
+
+#### S1 result — 2026-09-09: BUILT AND DEPLOYED, observation outstanding
+
+The control is written, built, deployed and wired to a Case form in CSW. **The three on-screen
+measurements have not been read yet**, because no signed-in browser was drivable from this session
+(the in-app browser has no Dataverse session, and no Claude browser extension is connected). The
+control was therefore built to be **self-reporting** — its diagnostics panel states each answer
+directly, so a human with the app open can read them off in about a minute. Steps below.
+
+**What is verified**
+
+| Check | Result |
+|---|---|
+| React virtual dataset PCF builds | ✅ `control-type="virtual"`, ESLint + tsc clean |
+| Bundle size | ✅ **39.2 KiB** — React and Fluent resolve to platform externals (`Reactv16`, `FluentUIReactv940`), so nothing is duplicated |
+| Managed solution builds and imports | ✅ `JHRBCaseEmailClientSpike` v1.0 |
+| Control registered | ✅ as **`jhrb_JHRB.CaseEmailClient`** — note the publisher prefix |
+| Form wiring | ✅ new tab `tab_emailclient`, subgrid on `Incident_Emails`, `customControl` bound by `uniqueid` for formFactor 0/1/2 |
+| Reachable in CSW | ✅ form registered as an app component and the app republished |
+| Threading logic against real data | ✅ see [S8 follow-up](#s8-follow-up--seed-data-created-2026-09-09) and below |
+| Quote splitting against real data | ✅ **48/48 correct** on pre-existing mail, 0 missed, 0 false positives |
+
+**What is NOT verified — the actual S1 questions**
+
+| Question | Status |
+|---|---|
+| RQ1 real estate: does the dataset PCF fill the tab? `allocatedHeight` expected `-1`; the panel prints the measured rendered box | ⬜ unread |
+| RQ5: does `setControlState` survive a CSW session switch? Panel shows **state RESTORED / NOT restored** and an init counter | ⬜ unread |
+| **The undocumented one:** does that state survive inside a **custom page**? | ⬜ unread — needs S2's custom page first |
+
+**Findings worth keeping even before observation**
+
+1. **The scaffold's default Fluent platform-library version is not deployable here.** `pac pcf init`
+   generated `<platform-library name="Fluent" version="9.68.0" />`; import failed with *"platform
+   library fluent_9_68_0 with version 9.68.0 is not supported by the platform."* **9.46.2** imports
+   cleanly. Pin Fluent to a version the target environment's platform actually supports, and treat
+   this as an environment-compatibility check in any future pipeline.
+2. **Custom controls are referenced in form XML with the publisher prefix** — `jhrb_JHRB.CaseEmailClient`,
+   not `JHRB.CaseEmailClient`. Referencing the manifest name fails with *"Custom control with name … not found."*
+3. **Form XML: a dataset PCF is bound in two places, not one.** A subgrid `<control>` (classid
+   `{E7A81278-8635-4D9E-8D4D-59480B391C5B}`) carries a `uniqueid`, and a separate
+   `<controlDescriptions><controlDescription forControl="{that uniqueid}">` holds the
+   `<customControl>` entries. `<row>` takes no `id` attribute — adding one fails schema validation.
+4. **`MscrmControls.RichTextEditor.RichTextEditorControl` exists as a platform control** and is
+   already used on the enhanced Case form for `description`. Relevant to R11: there may be a supported
+   in-platform rich-text editor to reuse rather than bundling TinyMCE. **Worth a dedicated spike**
+   before committing to a third-party editor — it would remove the biggest bundle-size risk in
+   [`03-candidates.md`](03-candidates.md).
+5. **Threading, run against real data:** the 48 pre-existing emails resolve to 34 threads grouped
+   **100% by hash** — no correlation or subject fallback needed. Real `conversationindex` values are
+   present with lengths 44 / 54 / 64, confirming the depth formula `(len - 44) / 10`.
+6. **A real ordering limitation surfaced.** `compareMessages` puts all rows *with* a
+   `conversationindex` before all rows without. For drafts that is correct — a draft belongs at the
+   bottom of its thread. But a **non-draft** row lacking `conversationindex` (manually created or
+   imported) that belongs chronologically mid-thread will be pushed to the end. Acceptable for the
+   spike, must be fixed for the real client.
+7. `-----Original Message-----` (Rule 3) matched **nothing** on real mail even where the ground-truth
+   probe found that marker, while the localised bold-`Fra:` header-block rule (Rule 4) caught all 10.
+   Rule 3's marker strings are too literal — loosen them.
+
+**To finish S1 (about a minute, needs the app open)**
+
+1. Open the seed Case in Copilot Service workspace:
+   `.../main.aspx?appid=165f4816-a8cc-f011-8544-6045bde0fa7e&pagetype=entityrecord&etn=incident&id=4f6aa008-48ac-f111-aaab-000d3ab16615`
+2. Switch the form to **"Case - Email Client Spike (S1)"** and open the **"Email (spike)"** tab.
+3. Read the diagnostics row: `allocatedHeight`, the measured rendered box, and the threads summary
+   (expect **12 messages → 3 threads**, one badged `subject` for the hash-less orphans).
+4. Type into **"Draft proxy"**. Open a second Case in another session, switch back.
+   - Badge still **state RESTORED** with your text intact → `setControlState` survives. RQ5 answered.
+   - Badge **state NOT restored** and init counter incremented → it does not, and the durable-draft
+     mitigation in [`07-decision.md`](07-decision.md) becomes mandatory rather than belt-and-braces.
+5. Expand a thread and a message to see quoted history collapse, with the matched rule named.
+
+**Reverting.** [`scripts/seed/revert-s1.mjs`](../../scripts/seed/revert-s1.mjs) (dry-run by default,
+`--confirm` to apply) unregisters the form from the CSW app, deletes the form, deletes the managed
+solution, and republishes the app. `cleanup.mjs` removes the seed Case separately.
 
 ### S2 — Placement matrix confirmation
 
@@ -207,7 +285,7 @@ finding and must be recorded, not discarded.)*
 
 | Spike | Date | Outcome | Notes |
 |---|---|---|---|
-| S1 | — | **Not run** — P1–P2 unverified (P3, P4 ✅) | Highest-value spike; run first |
+| S1 | 2026-09-09 | **Built & deployed; on-screen measurements unread** | Control live in CSW on a spike form. Fluent-version + publisher-prefix findings recorded. See [result](#s1-result--2026-09-09-built-and-deployed-observation-outstanding) |
 | S2 | — | **Not run** — P1–P2 unverified | |
 | S3 | — | **Not run** — P7 unverified; also deprioritised | |
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |

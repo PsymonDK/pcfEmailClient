@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="JHRB" constructor="CaseEmailClient" version="0.0.1"
+           display-name-key="Case Email Client (S1 spike)"
+           description-key="Spike control for the Case-scoped email client research. Measures full-tab real estate and setControlState survival across CSW session switches."
+           control-type="virtual">
+    <!-- Dataverse-only. Declaring no external service keeps the component non-premium. -->
+    <external-service-usage enabled="false">
+    </external-service-usage>
+
+    <!-- Bind to a subgrid of Email records regarding the Case. Dataset controls get the
+         100%-of-available-space growth behaviour, which is what a mail client needs. -->
+    <data-set name="emails" display-name-key="Emails">
+    </data-set>
+
+    <resources>
+      <code path="index.ts" order="1"/>
+      <css path="css/CaseEmailClient.css" order="1" />
+      <platform-library name="React" version="16.14.0" />
+      <platform-library name="Fluent" version="9.46.2" />
+    </resources>
+
+    <feature-usage>
+      <uses-feature name="WebAPI" required="true" />
+      <uses-feature name="Utility" required="true" />
+    </feature-usage>
+  </control>
+</manifest>

@@ -25,7 +25,7 @@ table carries genuine Exchange-grade correlation columns:
 
 | Column | Type | Notes |
 |---|---|---|
-| `conversationtrackingid` | Uniqueidentifier | Conversation Tracking Id. `IsValidForForm: False`, readable. |
+| `conversationtrackingid` | Uniqueidentifier | Conversation Tracking Id. `IsValidForForm: False`, readable. **Measured 0% populated — do not use.** See [measured population](#measured-population-customer-service-demo-dk-2026-09-09). |
 | `conversationindex` | String (2048) | "Identifier for all the email responses for this conversation." This is the Exchange **ConversationIndex** — a binary-derived, hierarchical, append-on-reply structure. Gives true parent/child ordering, not just grouping. |
 | `baseconversationindexhash` | Integer | "Hash of base of conversation index." A cheap, indexable grouping key. |
 | `correlatedactivityid` | Lookup → `email` | Platform's own correlation result. |
@@ -37,23 +37,46 @@ table carries genuine Exchange-grade correlation columns:
 
 **Recommended threading strategy**, in precedence order:
 
-1. `baseconversationindexhash` as the primary grouping key — cheap, indexable, stable across a chain.
-2. `conversationindex` for **ordering and parent/child nesting** inside a group.
+1. `baseconversationindexhash` as the primary grouping key — cheap, indexable, stable across a chain,
+   and **measured at 100% population**.
+2. `conversationindex` for **ordering and parent/child nesting** inside a group. Falls back to
+   `createdon` for drafts, which never have it (see below).
 3. `correlatedactivityid` / `parentactivityid` to stitch records the above misses.
 4. Normalised-subject fallback (strip `RE:`/`FW:`/localised variants) for records with none of the above
    — typically manually created or imported email.
 
+`conversationtrackingid` was originally listed first here. **Measurement demoted it** — it is entirely
+unpopulated in the target environment.
+
 Scope every query by `regardingobjectid eq <caseId>`; `_regardingobjecttypecode` guards against
 same-GUID collisions across tables.
 
-**Known gaps to verify in spike S8:**
-- `internetmessageheaders` is capped at **500 characters**. Real `References:` chains routinely exceed
-  that, so full RFC-5322 reconstruction is not available. Do not design around it.
-- `messageid` is only populated for **received** mail, so outbound-only chains rely on
-  `conversationindex`.
-- Population of these columns depends on **server-side synchronisation** having created the records.
-  Manually created email, imported history and mail created by Power Automate may have none of them —
-  which is precisely why fallback 4 exists and why S8 must run against real Case data.
+### Measured population (the demo environment, 2026-09-09)
+
+Read-only `pac org fetch` aggregates over all 48 `email` rows in the target environment. This is
+**partial S8 evidence** — see [`06-spikes.md`](06-spikes.md#s8-result-partial--2026-09-09) for the caveat about
+dataset depth.
+
+| Column | Populated | Rate |
+|---|---:|---|
+| `baseconversationindexhash` | 48 / 48 | **100%** |
+| `conversationindex` | 40 / 48 | 83% |
+| `messageid` | 40 / 48 | 83% |
+| `trackingtoken` | 12 / 48 | 25% |
+| `conversationtrackingid` | **0 / 48** | **0%** |
+
+**The 17% gap in `conversationindex` is exactly the drafts.** All 8 rows with a null
+`conversationindex` are `statuscode` = 1 (Draft), and zero drafts have one — a clean 8/8 correlation.
+Drafts *do* carry `baseconversationindexhash`, so they group into the right thread but cannot be
+ordered by conversation index. **Order by `conversationindex` where present, `createdon` otherwise.**
+This matters directly for R16: a draft reply must appear in the right thread, at the end.
+
+Also worth noting: `messageid` is populated on **outgoing** rows here, not just received ones as the
+documentation states ("Used only for email that is received"). Don't rely on either reading — treat it
+as best-effort.
+
+**Remaining gap:** `internetmessageheaders` is capped at **500 characters**. Real `References:` chains
+routinely exceed that, so full RFC-5322 reconstruction is not available. Do not design around it.
 
 ## Reading requirements
 

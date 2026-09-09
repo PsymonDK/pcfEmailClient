@@ -1,14 +1,15 @@
 # 06 — Spikes
 
-## Status: NOT RUN — but no longer blocked
+## Status: S8 partially run; the rest not started
 
-**No spike in this file has been executed.** They are, however, **largely unblocked** as of 2026-09-09:
-`pac` CLI 2.11.2 is installed and authenticated against **the demo environment**
-(`https://your-org.crm4.dynamics.com/`), with Node v24.13.0 and npm 11.6.2 present.
+**Only S8 has been executed**, and only in its read-only form — `pac org fetch` aggregates, no writes
+to the environment. Result: [S8 (partial)](#s8-result-partial--2026-09-09).
 
-What remains unverified is whether that environment has the **Copilot Service Workspace app** installed,
-whether the account holds **System Administrator**, and the data/mailbox prerequisites for S6–S8. See
-the prerequisite table below.
+The remaining spikes are **unblocked** as of 2026-09-09: `pac` CLI 2.11.2 is authenticated against
+**the demo environment** (`https://your-org.crm4.dynamics.com/`), with Node
+v24.13.0 and npm 11.6.2 present, and the requester has confirmed this is the right environment with
+CSW installed. What remains unverified is whether the account holds **System Administrator**, and the
+approved-mailbox prerequisite for S7.
 
 Note that this is a **shared demo environment** — see the environment guardrails in
 [`CLAUDE.md`](../../CLAUDE.md) before running anything that writes, sends email, or changes
@@ -22,11 +23,11 @@ recommendation in [`07-decision.md`](07-decision.md) is correspondingly a desk-r
 
 | # | Prerequisite | Confirmed? |
 |---|---|---|
-| P1 | Dataverse environment with **Dynamics 365 Customer Service** and the **Copilot Service Workspace** app | ⚠️ Environment "the demo environment" is authenticated and named for CS; **CSW app presence not yet verified** |
+| P1 | Dataverse environment with **Dynamics 365 Customer Service** and the **Copilot Service Workspace** app | ✅ **Confirmed by the requester**, 2026-09-09 — the demo environment is the right environment and CSW is present |
 | P2 | System Administrator (or System Customizer + admin center access) on that environment | ❓ Not verified |
 | P3 | `pac` CLI installed and authenticated against it (`pac auth create`) | ✅ pac 2.11.2, profile `[3]` active |
 | P4 | Node.js LTS + npm | ✅ Node v24.13.0, npm 11.6.2 |
-| P5 | A Case with a **real, long email chain** created by server-side sync — required for S8; synthetic data will not exercise the correlation columns | ❓ Not verified — a demo environment may have no server-side-synced mail at all, which would itself be a finding for S8 |
+| P5 | A Case with a **real, long email chain** created by server-side sync — required for S8; synthetic data will not exercise the correlation columns | ⚠️ **Partially met** — 48 emails present with correlation columns populated, but the deepest chain is only 5 messages. See [S8 result](#s8-result-partial--2026-09-09) |
 | P6 | An approved mailbox for the test user — required for S7 | ❓ Not verified |
 | P7 | For S3 only: **Power Apps code apps** feature enabled on the environment, plus ability to edit CSP `frame-ancestors` in the admin center | ❓ Not verified; S3 is deprioritised anyway |
 
@@ -116,6 +117,44 @@ are actually **populated** — they depend on server-side sync having created th
 created, imported or Flow-created email may have none of them. Record the measured fallback rate; it
 determines how much effort the subject-normalisation fallback deserves.
 
+#### S8 result (partial) — 2026-09-09
+
+Run read-only against **the demo environment** with `pac org fetch` aggregates. No writes.
+
+**Population**, over all 48 `email` rows: `baseconversationindexhash` **100%** (48/48),
+`conversationindex` 83% (40/48), `messageid` 83%, `trackingtoken` 25%,
+`conversationtrackingid` **0%**. Full table and interpretation in
+[`04-data-model.md`](04-data-model.md#measured-population-customer-service-demo-dk-2026-09-09).
+
+**Verdict on the strategy: it holds.** Grouping by `baseconversationindexhash` works on 100% of rows,
+so the layered fallback is a safety net rather than a load-bearing component. Two corrections came out
+of it:
+
+1. `conversationtrackingid` is **entirely unpopulated** and was demoted from first place in the
+   precedence list.
+2. The `conversationindex` gap is **precisely the drafts** — 8/8 of the null rows are `statuscode` = 1,
+   and no draft has one. Drafts still group correctly via the hash but must be **ordered by `createdon`**.
+
+**Thread shape in this environment** — 48 emails resolve to 34 threads:
+
+| Thread size | Count |
+|---:|---:|
+| 1 message | 26 |
+| 2 messages | 5 |
+| 3 messages | 1 |
+| 4 messages | 1 |
+| 5 messages | 1 |
+
+**Why this is only partial.** The dataset is shallow: 26 of 34 threads are single messages and the
+deepest chain is 5. That is enough to build and smoke-test the grouping logic, but it does **not**
+stress-test ordering, nesting, or the subject-normalisation fallback. It also contains no imported or
+Flow-created mail, which is the population most likely to lack the correlation columns entirely. **S8
+stays open** until run against a Case with a genuinely long chain, or against seeded data that includes
+manually created email.
+
+Useful for other spikes: **12 rows have `attachmentcount` > 0**, so S6 has real attachments to read
+against, and **44 of 48 regard an incident**, confirming the Case-scoped query shape.
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.
@@ -144,5 +183,5 @@ finding and must be recorded, not discarded.)*
 | S5 | — | **Not run** — P1–P2 unverified | |
 | S6 | — | **Not run** — P1–P2 unverified | Gates the decision |
 | S7 | — | **Not run** — P6 unverified | Gates the decision |
-| S8 | — | **Not run** — P5 unverified | |
+| S8 | 2026-09-09 | **Partial — strategy validated, 2 corrections** | Read-only. Grouping key 100% populated; `conversationtrackingid` 0% and demoted; draft ordering gap found. Stays open pending a deeper chain |
 | S9 | — | **Not run** — P1–P2 unverified | |

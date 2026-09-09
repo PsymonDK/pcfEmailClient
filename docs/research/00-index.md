@@ -73,7 +73,7 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | Answered (desk) | [04](04-data-model.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | Answered | [04](04-data-model.md) |
 | RQ9 | Templates & signatures instantiation from code | Answered | [04](04-data-model.md) |
-| RQ10 | Threading fidelity available in Dataverse | Answered — **better than assumed** | [04](04-data-model.md) |
+| RQ10 | Threading fidelity available in Dataverse | Answered — **better than assumed**, and now **measured** (S8 partial) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ11 | Copilot "draft with AI" parity | Answered | [03](03-candidates.md) |
 | RQ12 | ALM / solution-awareness | Answered | [03](03-candidates.md) |
 | RQ13 | Licensing per host | Answered | [03](03-candidates.md) |
@@ -82,8 +82,11 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 
 ## Status of this pass
 
-Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **not started** — no Dataverse
-environment has been confirmed for this workspace. Every spike in [`06-spikes.md`](06-spikes.md) is
-therefore recorded as not run, with the specific claim it would confirm. The recommendation in
-[`07-decision.md`](07-decision.md) is a **desk-research recommendation** and is explicitly gated on
-spikes S1, S6 and S7.
+Phase 1 (desk research) is **complete**. Phase 2 (spikes) has **started**: the target environment is
+confirmed (the demo environment, with CSW present) and **S8 has run in read-only form**, validating
+the threading strategy and correcting two claims in [`04-data-model.md`](04-data-model.md). Every other
+spike is recorded as not run, with the specific claim it would confirm.
+
+The recommendation in [`07-decision.md`](07-decision.md) remains a **desk-research recommendation**,
+still gated on **S1, S6 and S7** — S1 in particular, because it holds the one genuinely undocumented
+question (whether `setControlState` survives teardown inside a custom page).

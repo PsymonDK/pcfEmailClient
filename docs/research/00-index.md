@@ -15,8 +15,8 @@ Candidates under evaluation:
 | **C** | Generative page |
 | **D** | Power Apps code app, surfaced via iframe web resource / external website |
 | **E** | Classic HTML + JS web resource |
-| **A+B** | *Hybrid:* one React PCF, placed directly on the Case form tab **and** hosted inside a custom page for the session tab |
-| **A+A** | *Possible simplification (S11, untested):* one React PCF on **two form placements** — the Case form tab, and a dedicated form opened as a session tab via an `Entity record` app tab template with a `formId`. No custom page. |
+| **A+B** | *Hybrid:* one React PCF, placed directly on the Case form tab **and** hosted inside a custom page for the session tab. **Runner-up** — works (S2), but carries a layer we no longer need |
+| **A+A** | ✅ **CHOSEN (S11, measured).** One React PCF on **two form placements** — the Case form tab, and a dedicated form opened as a session tab via an `Entity record` app tab template with a `formId`. No custom page. |
 
 ## Frozen requirements
 
@@ -42,10 +42,14 @@ rejected three more on a MUST-requirement failure:
    candidate with a state-preservation contract for exactly this destroy/reload cycle — and S1 has now
    verified it live** on the Case form tab placement (`state RESTORED`, `init #2`, no cross-session
    bleed). Note the teardown only fires between *concurrent record sessions*, not on every switch.
-3. **The A+B hybrid resolves the two-placement requirement with one codebase.** Code components in
-   custom pages are GA, so the same React PCF serves the Case form tab natively and the CSW session
-   tab through a thin custom page wrapper. **Both placements are now spike-validated** (S1, S2), and
-   the hybrid scores 81/84.
+3. **One PCF serves both placements, with no second hosting technology.** The Case form tab takes the
+   PCF natively; the CSW session tab is **a dedicated Case form opened by an `Entity record` app tab
+   template** with a `formId`. **Both placements are spike-validated** (S1, S11) — and because both are
+   form tabs, the component has one sizing strategy, one context path and one state mechanism.
+   The custom-page hybrid (A+B, re-scored 81 → 77/84) also works (S2) but is now the runner-up: S11 showed its
+   canvas layer, its manual per-environment app-designer registration and its `appelement` cleanup
+   tangle were all avoidable. The third route, a `Control` tab template hosting the PCF directly, is
+   **eliminated on function** — it renders the control but cannot pass it the Case id.
 
 See [`07-decision.md`](07-decision.md) for the recommendation and its reversal conditions.
 
@@ -69,10 +73,10 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ | Question | Status | Where |
 |---|---|---|---|
 | RQ1 | Can a PCF occupy a full Case form tab with mail-client real estate? Which flavour? | **Answered (measured)** — yes, but height must be claimed, not inherited | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
-| RQ2 | Which app tab template type hosts each candidate? Can a session template auto-open it with Case id? | **Answered (measured)** — `Custom` page type works; `caseId` needs an explicit input property | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
+| RQ2 | Which app tab template type hosts each candidate? Can a session template auto-open it with Case id? | **Answered (measured)** — **`Entity record` + `formId` is the answer**: Case id arrives via `contextInfo`, no property binding needed. `Custom`/custom page also works but needs a `caseId` property; `Control` renders but **cannot receive the Case id at all** | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ3 | Can a generative page be reached from the Case form at all? | Answered — **no, for our placements** | [02](02-hosting-and-placement.md) |
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
-| RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
+| RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured on both chosen placements)** — the discriminator. `setControlState` restored the draft after a real two-session teardown on the Case form tab (S1) and on the session tab (S11) | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ6 | Rich-text compose and quoted-history handling per host | **Answered (measured)** — reading split verified 10/10 on delivered HTML and on a real Outlook reply; **S10** settled that the platform RTE is not reusable, so compose needs a bundled editor | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | **Answered (measured)** — inline capped at 5 MB, chunked uncapped (40 MB OK) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | **Answered (measured, real send)** — `Pending Send` ≠ `Sent`, and an unapproved sender fails **silently**, so pre-flight is mandatory | [04](04-data-model.md), [06](06-spikes.md) |
@@ -86,7 +90,7 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 
 ## Status of this pass
 
-Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
+Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **complete**:
 
 - **S1 PASSED** live on 2026-09-10. `setControlState` survives a genuine two-Case-session
   destroy/reload with no cross-session bleed — the single assumption the recommendation rested on. It
@@ -110,16 +114,28 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
   formula** on real platform data — the one thing seeded mail could never provide. R12 was also
   verified against the **delivered** `.msg` (10/10) and against a real Outlook-generated reply.
 
-The recommendation in [`07-decision.md`](07-decision.md) is now **measured on both target placements**
-— form tab (S1) and custom page (S2) — so the hosting decision is settled, and **S6** (attachments)
-and **S7** (real send) have settled the functional gates too. **No gate remains open.** S8 is closed. The research pass has answered every RQ it set out to answer;
-what remains is implementation planning. The **platform rich-text editor** question has since been
-answered (**S10: no** — it cannot be reused from a PCF, so R11 needs a bundled editor). **R18 has since been answered** and it inverted the requirement: the platform gives **no** failure
-signal for an unapproved sender (200 OK, then stranded at `Pending Send` with no error anywhere), so
-the client must **pre-flight** approval state rather than react to failure. Two follow-ups remain:
+- **S10 answered — NEGATIVE.** The platform rich-text editor mounts inside a PCF via undocumented
+  `factory` APIs but never initialises into a usable editor, so **R11 needs a bundled editor**, and
+  React 16.14 forces the framework-agnostic core of one rather than its React bindings.
+- **R18 answered — and it inverted the requirement.** The platform gives **no** failure signal for an
+  unapproved sender: 200 OK, then stranded at `Pending Send` with no error recorded anywhere. The
+  client must **pre-flight** approval state rather than react to failure.
+- **S11 PASSED, 2026-09-10 — and it simplified the architecture.** The custom page *was* an unnecessary
+  layer. An `Entity record` app tab template with a `formId` opens the same Case on a dedicated form
+  hosting the PCF: CSW shows the same record twice in one session without complaint, the Case id
+  arrives via `contextInfo`, and `setControlState` survives a real two-session teardown. The `Control`
+  route was tested alongside it and **eliminated on function** — it renders the PCF but cannot be
+  handed the Case id by slug, by JSON `data`, or by a literal value through `navigateTo`. This retired
+  the custom page, its 8-hour canvas timeout and cookie requirements, the **manual per-environment
+  app-designer registration** S2 had surfaced as a Medium-high risk, and the `appelement` cleanup
+  tangle.
 
-- **S11 — potentially architecture-simplifying, and worth doing before any build.** The custom page may
-  be an unnecessary layer: an `Entity record` app tab template accepts a `formId`, so the session tab
-  could be a dedicated Case form hosting the PCF. Raised by the requester 2026-09-10; untested.
-- A **bundle-size benchmark** for the chosen editor, which did not complete here. Non-gating. S2 also surfaced a deployment cost: wiring
-a custom page into the managed CSW app needs the app designer, per environment.
+**Phase 2 is complete and the environment has been returned to its pre-spike state** (verified: 48
+emails, no spike form, control, solution, tab templates or canvas pages remaining). The recommendation
+in [`07-decision.md`](07-decision.md) is **measured on both target placements** — form tab (S1) and
+session tab (S11) — with **S6** (attachments) and **S7** (real send, receipt confirmed) settling the
+functional gates and **S8** closed on real conversation data. **No gate remains open.** Every RQ is
+answered; what remains is implementation planning.
+
+One non-gating measurement was not completed: a **bundle-size benchmark** for the chosen editor core
+(`@tiptap/core` rather than `@tiptap/react`, which cannot install against React 16).

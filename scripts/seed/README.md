@@ -2,7 +2,7 @@
 
 > **Status: nothing is deployed.** All spike artefacts and seed data were removed on 2026-09-10 and the
 > removal verified (org email count back to its pre-spike 48). These scripts recreate everything if the
-> spikes need re-running. Both cleanup scripts are dry-run unless you pass `--confirm`.
+> spikes need re-running. Every cleanup script here is dry-run unless you pass `--confirm`.
 
 Creates a Case with a deliberately deep email chain so spikes **S1** (render), **S7** (quoted history)
 and **S8** (threading) have realistic data. The target environment's own email is too shallow — 26 of
@@ -68,3 +68,13 @@ Cases lying around.
 needs three of them: `RemoveAppComponents`, then deleting the `appelement` rows that link page → app
 (component type 10088), then a republish — only then will the `canvasapp` delete. The custom control
 can only go after the page. Chain: **app → appelement → page → control**.
+
+**`revert-s11.mjs`** unwinds the S11 artefacts instead (7 steps, dry-run by default): the two
+application tab templates, then the S11 form (unregister → republish → delete), then the unmanaged
+solution container and the custom control, then a final republish. Two things it encodes:
+
+- **Delete the template, not its parameters.** Parameters cascade with the template — and the platform
+  creates parameter rows of its own on these templates, so filtering them by a `jhrb_s11` uniquename
+  prefix over-deletes the platform's rows. That happened once during setup.
+- There is **no custom page in the S11 chain**, which is the whole point of S11: the `appelement`
+  tangle above simply does not arise.

@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 + R18 answered. **S11 open — may simplify the architecture.**
+## Status: S1, S2, S6, S7, S11 PASSED; S8 CLOSED; S10 + R18 answered. **S11 simplified the architecture — the custom page is out.**
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -36,11 +36,15 @@ synchronous guard nor an async failure signal, so R18 can only be met by **pre-f
 approval state before offering Send**. See
 [R18 result](#r18-result--2026-09-10-there-is-no-failure-signal-at-all-pre-flight-is-mandatory).
 
-**S11 is open, and it matters.** The custom page may be an **unnecessary layer**: an `Entity record`
-app tab template accepts a `formId`, so a session tab could open the same Case on a dedicated form
-hosting the PCF — the S1 placement reused, with no canvas host and no manual app registration. Raised
-by the requester on 2026-09-10; **not yet tested** (browser extension disconnected). See
-[S11](#s11--can-an-entity-record-tab-host-the-pcf-making-the-custom-page-unnecessary-added-2026-09-10).
+**S11 PASSED, 2026-09-10 — and it removed a layer from the architecture.** The custom page *was* an
+unnecessary layer. An `Entity record` app tab template accepts a `formId`, so a session tab opens the
+same Case on a dedicated form hosting the PCF — the S1 placement reused, with no canvas host and no
+manual app registration. Measured: CSW shows the same record twice in one session happily, the Case id
+arrives via `contextInfo` (the `caseId` property is not needed on this route), and `setControlState`
+survives a real two-session teardown. The `Control` route was tested at the same time and is
+**eliminated on function** — it renders the PCF but cannot be handed the Case id at all, by slug, by
+JSON `data`, or by a literal value through `navigateTo`. Raised by the requester on 2026-09-10. See
+[S11 result](#s11-result--2026-09-10-passed-route-c-works-the-custom-page-is-unnecessary).
 
 **S8 is CLOSED.** The S7 send plus the requester's reply produced a genuine two-message conversation
 (`conversationindex` 44 → 54 chars, same hash), so grouping, **cIdx ordering** and the depth formula are
@@ -903,6 +907,99 @@ a fallback rather than a plan because it is unsupported.
 `ComponentFramework` runtime inside a web resource iframe, and web-resource tabs lose state on CSW tab
 switch, which is the exact defect that eliminated candidates D and E.
 
+#### S11 result — 2026-09-10: **PASSED. Route C works; the custom page is unnecessary.**
+
+Run in the live app, on Case `40a5d940-0ef6-f011-8406-000d3ab7be36` (5 emails, 1 thread), against
+control v0.0.8 in an **unmanaged** solution (`<Managed>0</Managed>` verified before import).
+
+**Setup built and measured**
+
+| Artefact | Value |
+|---|---|
+| Form | `3c4b2679-12ad-f111-aaab-002248a422bc` — *Case - Email Client (S11 tab form)*, one tab hosting the PCF, registered with the CSW app and published |
+| Route C template | `jhrb_s11_entityrecord_emailform` — page type **Entity record** (509180001), title `Email`, params `entityName={anchor.entityName}`, `entityId={anchor.incidentid}`, `formId=3c4b2679-…` |
+| Route B template | `jhrb_s11_control_pcfdirect` — page type **Control** (509180003), title `Email (direct)`, params `controlName=jhrb_JHRB.CaseEmailClient`, `data={anchor.incidentid}` |
+
+Tabs were opened with `Microsoft.Apm.createTab({ templateName })` and focused with
+`Microsoft.Apm.focusTab(...)`.
+
+**Route C — every question in the definition answered yes**
+
+1. **CSW will show the same record twice in one session.** The session carried its anchor tab
+   (*FG-2026-0022 · Metalservice Fyn ApS*) **and** a second app tab titled *Email*, the second one
+   showing the same Case on the S11 form. No warning, no tab collapse, no navigation fight.
+2. **The Case id arrives via `contextInfo`.** Diagnostics reported
+   `case 40a5d940-0ef6-f011-8406-000d3ab7be36 · via contextInfo` and `5 messages → 1 threads` — so on
+   this route the `caseId` **input property is not needed at all**. It survives in the manifest only
+   for the custom-page and side-pane hosts, which now have no role.
+3. **`setControlState` survives a two-session teardown in this host.** Sequence: typed the probe
+   `S11-ROUTE-C-PROBE-99` into the draft field (state saved `12:32:08Z`) → focused a different Case
+   session (`Xrm.Navigation.openForm` on Case `290bf70d-…`, giving `session-id-3`, at which point
+   `cecRoots` was **0** — the control was genuinely torn down, not merely hidden) → focused back and
+   re-selected the *Email* tab. The panel then read:
+
+   ```
+   state RESTORED · init #2 · init at 2026-09-10T12:34:05.157Z
+   state saved at 2026-09-10T12:32:08.202Z
+   ```
+
+   with the input still holding `S11-ROUTE-C-PROBE-99`. Confirmed rather than assumed, as the
+   definition required.
+4. **Sizing behaves exactly as on the Case form tab** — `allocatedHeight -1`, `allocatedWidth 1627`,
+   `rendered box: 536px high x 1627px wide (claimed 536px from viewport 1072px, top 512px)`. The
+   host-aware height logic needs no new branch for this route.
+
+**Route B — renders, but cannot be told which Case. Dead as a fallback.**
+
+The `Control` tab template worked as a *host*: the tab opened, the PCF mounted, and it got **more**
+real estate than route C (`884px high x 1676px wide`, `top 164px` — no form header or process bar
+above it). But:
+
+```
+case (unresolved) · via unresolved
+Error: Could not resolve the Case id.
+```
+
+`contextInfo` is empty — as expected, there is no record context — and the `data` parameter did **not**
+reach the control's `caseId` property. Tested three ways, deliberately:
+
+- `data = {anchor.incidentid}` (bare slug) → unresolved.
+- `data = {"caseId":"{anchor.incidentid}"}` (JSON object, the shape the side-pane API documents) →
+  unresolved.
+- Belt and braces: a direct
+  `Xrm.Navigation.navigateTo({ pageType:'control', controlName, data:{ caseId:'40a5d940-…' } })` with a
+  **literal** GUID, no slug involved → still `via unresolved`.
+
+So this is not a slug-substitution bug. The `Control` host does not bind input properties on this
+route, which matches S2's finding that the side pane renders the control but hands it no record
+context. **A host that cannot receive the Case id cannot host a Case-scoped client.** Route B is
+eliminated on function, before its "internal use only" support status even matters — which is a firmer
+reason than the one previously recorded.
+
+**Consequence: the architecture simplifies from A+B to A+A.** One React PCF, two *form* placements: a
+tab on the Case form, and a dedicated form opened as a session tab by an `Entity record` app tab
+template. What that retires:
+
+- the custom page and everything canvas-shaped behind it (8-hour session timeout, third-party-cookie
+  requirement, app-wide connector consent dialogs);
+- the **non-automatable per-environment app-designer registration** (S2's Medium-high risk) — a form is
+  an ordinary solution component that ships dev → test → prod like any other;
+- the `appelement` (component type 10088) cleanup tangle that cost a debugging session on 2026-09-10;
+- one whole hosting technology from the maintenance surface.
+
+What it does *not* retire: the app tab template and session template still have to exist in each
+environment — but those are ordinary solution-aware Dataverse rows, not app-designer clicks.
+
+**Artefacts removed.** [`scripts/seed/revert-s11.mjs`](../../scripts/seed/revert-s11.mjs) (dry-run by
+default) deletes the two tab templates — parameters cascade with them — then unregisters, republishes
+and deletes the form, then the unmanaged solution container and the custom control, then republishes.
+Verified afterwards: 0 rows for each of the tab templates, the form, the control, the solution and any
+spike canvas page; org email count back to its baseline **48**.
+
+One trap worth keeping: **do not filter template parameter rows by a `jhrb_s11` uniquename prefix in
+order to clean them up.** The platform creates its own parameter rows on these templates, and that
+filter over-deleted them during setup. Deleting the template cascades correctly; do that instead.
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.
@@ -934,3 +1031,4 @@ finding and must be recorded, not discarded.)*
 | S8 | 2026-09-09 | **Partial — grouping half validated; nesting half permanently needs synced mail** | Read-only measurement, then seed data created. 3 corrections to `04`. See [result](#s8-result-partial--2026-09-09) and [follow-up](#s8-follow-up--seed-data-created-2026-09-09) |
 | S9 | — | **Not run** | |
 | S10 | 2026-09-10 | **Answered — NEGATIVE.** Platform RTE not reusable from a PCF | `factory.createComponent`/`bindDOMComponent` exist at runtime (untyped) and mount the control, but it stays inert — 0 `contenteditable`. R11 needs a bundled editor. See [result](#s10-result--2026-09-10-no--do-not-depend-on-it-mechanism-works-editor-does-not) |
+| S11 | 2026-09-10 | **PASSED — architecture simplified.** An `Entity record` tab hosts the PCF; the custom page is unnecessary | Route C: same record twice in one session OK, Case id via `contextInfo`, `setControlState` survives teardown. Route B (`Control`) renders but **cannot receive the Case id** — eliminated on function. See [result](#s11-result--2026-09-10-passed-route-c-works-the-custom-page-is-unnecessary) |

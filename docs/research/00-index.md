@@ -43,7 +43,8 @@ rejected three more on a MUST-requirement failure:
    bleed). Note the teardown only fires between *concurrent record sessions*, not on every switch.
 3. **The A+B hybrid resolves the two-placement requirement with one codebase.** Code components in
    custom pages are GA, so the same React PCF serves the Case form tab natively and the CSW session
-   tab through a thin custom page wrapper.
+   tab through a thin custom page wrapper. **Both placements are now spike-validated** (S1, S2), and
+   the hybrid scores 81/84.
 
 See [`07-decision.md`](07-decision.md) for the recommendation and its reversal conditions.
 
@@ -67,7 +68,7 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ | Question | Status | Where |
 |---|---|---|---|
 | RQ1 | Can a PCF occupy a full Case form tab with mail-client real estate? Which flavour? | **Answered (measured)** — yes, but height must be claimed, not inherited | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
-| RQ2 | Which app tab template type hosts each candidate? Can a session template auto-open it with Case id? | Answered | [02](02-hosting-and-placement.md) |
+| RQ2 | Which app tab template type hosts each candidate? Can a session template auto-open it with Case id? | **Answered (measured)** — `Custom` page type works; `caseId` needs an explicit input property | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ3 | Can a generative page be reached from the Case form at all? | Answered — **no, for our placements** | [02](02-hosting-and-placement.md) |
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
 | RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
@@ -90,14 +91,14 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
   destroy/reload with no cross-session bleed — the single assumption the recommendation rested on. It
   also **corrected** two claims: a subgrid cell on a form tab is content-sized (`height: 100%` yields
   nothing), and `regardingobjecttypecode` is not a queryable OData property.
-- **S2 half done.** The side-pane route works (correcting a treat-as-unsupported note) but gives the
-  control **no record context**. The custom page authors and renders, and the new `caseId` property
-  binds to `Param("recordId")` — but the page **cannot be registered in the managed CSW app through
-  any API**, so the core question is still open.
+- **S2 PASSED** live on 2026-09-10. `setControlState` **also survives teardown inside a custom page**
+  (`state RESTORED`, `init #2`), the `caseId = Param("recordId")` binding delivers the Case id, and
+  `context.webAPI` works at runtime there. The side-pane route renders too — correcting a
+  treat-as-unsupported note — but gets **no record context**.
 - **S8 partially run** (read-only), validating the threading strategy and correcting three claims.
 
-The recommendation in [`07-decision.md`](07-decision.md) is now **measured for the Case form tab
-placement**. The session-tab half remains unproven: the remaining gate is still whether
-`setControlState` survives inside a custom page, and S2 also surfaced a **deployment cost** — wiring a
-custom page into the managed CSW app is manual, per environment. S6 and S7 still gate full-client
-feasibility.
+The recommendation in [`07-decision.md`](07-decision.md) is now **measured on both target placements**
+— form tab (S1) and custom page (S2) — so the hosting decision is settled. **S6** (attachment ceiling)
+and **S7** (send round-trip, which also closes S8's `conversationindex` half) are the remaining gates,
+and they test *functional* feasibility rather than hosting. S2 also surfaced a deployment cost: wiring
+a custom page into the managed CSW app needs the app designer, per environment.

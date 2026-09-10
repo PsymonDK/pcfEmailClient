@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| **Status** | **Proposed** — desk research complete, awaiting spike confirmation and stakeholder sign-off |
+| **Status** | **Proposed** — hosting validated by spike (S1 + S2 passed); awaiting S6/S7 on functional feasibility, and stakeholder sign-off |
 | **Date** | 2026-09-09 |
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
 | **Eliminated** | Generative page (platform facts); custom page alone, code app via iframe, HTML web resource (MUST-requirement failure) |
-| **Confidence** | **High for the Case form tab placement** — S1 passed live on 2026-09-10, confirming the load-bearing claim. Medium for the CSW session-tab half, which still rests on documentation until S2 runs. |
+| **Confidence** | **High for both placements.** S1 (form tab) and S2 (custom page) both passed live on 2026-09-10, each confirming the load-bearing claim by measurement. What remains open is full-client *functional* feasibility — S6 (attachments) and S7 (send + quoted history). |
 
 ## Context
 
@@ -39,7 +39,8 @@ Three findings drove this, in order of weight.
 S1 confirmed live on 2026-09-10: switching between two concurrent Case sessions really does destroy and
 re-initialise the control (`init #2`), and `setControlState` really does restore the in-progress draft
 (`state RESTORED`), with no cross-session bleed. That was the single assumption the whole
-recommendation rested on, and it holds.
+recommendation rested on, and it holds. **S2 then confirmed the same inside the custom page** (the
+session-tab placement), so the claim is measured on both target placements rather than one.
 
 Every candidate can be made to look like a mail client. Only one survives CSW's tab lifecycle. Microsoft documents state loss on
 session/tab switch for custom pages ("state is also not persisted when switching between multi-session
@@ -62,7 +63,7 @@ current ones.
 The hybrid then falls out naturally: PCF is mandatory for placement 1 and code components in custom
 pages are GA, so placement 2 costs a wrapper rather than a second codebase.
 
-Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 77/84; next viable 71).
+Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/84; next viable 71).
 
 ## Consequences
 
@@ -79,7 +80,8 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 77/
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| **`setControlState` behaviour inside a custom page is undocumented.** If it does not survive custom-page teardown, the session-tab placement loses draft state | **High** | **Still open — now owned by S2.** S1 proved it works on the *form tab*; the custom-page host is untested. Mitigation regardless: write drafts as real Dataverse rows (`statecode` 0 / `statuscode` 1 Draft) on blur and on an interval, so recovery never depends on in-memory state. Do this from day one. |
+| ~~`setControlState` inside a custom page is undocumented~~ | **RESOLVED** | **S2, 2026-09-10: it survives.** Measured `state RESTORED` / `init #2` after a two-session teardown inside the custom page. Durable drafts in Dataverse (`statecode` 0 / `statuscode` 1) are still recommended as defence in depth, but are no longer load-bearing. |
+| **A PCF update may not reach hosting custom pages automatically** (S2 observation) | Medium | The page rendered an older control bundle while the environment had a newer version registered. Probable cause is version pinning at page publish time. **Confirm this**, and if true, add "republish hosting pages" to the release checklist. |
 | **Layout is the component's job, and differs per host** (S1 + S2) | Medium | On a form tab `allocatedHeight` is -1 and the host is content-sized, so height must be claimed from the viewport. In a custom page `allocatedHeight` is a real number and claiming over-claims. The control is now host-aware; keep that. |
 | **The Case id arrives differently per host** (S2) | Medium | `contextInfo` is form-only — empty in a side pane, and a custom page passes `recordId` as a *page* input the component cannot read. The component needs an explicit `caseId` input property that the custom page binds to `Param("recordId")`. Implemented. |
 | **Wiring the custom page into CSW is manual, per environment** (S2) | Medium-high | CSW is a managed Microsoft app; adding a page to it is not automatable via `AddAppComponents` or `appmodulecomponent`, and CSW is absent from the maker apps list. Budget app-designer work per environment, and re-check the `Control` app tab template reversal condition below — it would remove this cost entirely. |
@@ -110,13 +112,14 @@ Named up front so the decision is falsifiable:
 
 ## Next steps
 
-1. **Verify the remaining environment prerequisites.** `pac` is already authenticated against
-   *the demo environment*; what's left is confirming the CSW app is installed, that we hold
-   System Administrator, and the mail/mailbox prerequisites for S6–S8 (P1, P2, P5, P6 in
-   [`06-spikes.md`](06-spikes.md)).
-2. **Run S1**, and specifically test `setControlState` survival inside a custom page — the one
-   undocumented question that the scorecard had to discount for.
-3. **Run S6 and S7.** Both gate this decision; S7 also sizes the quoted-history risk.
+1. **Run S6 and S7** — the two remaining gates, both on *functional* feasibility rather than hosting:
+   the attachment ceiling and the send round-trip (which also closes S8's `conversationindex` nesting
+   half). S7 needs an approved mailbox (P6, unverified).
+2. **Spike the platform rich-text editor.** `MscrmControls.RichTextEditor.RichTextEditorControl` exists
+   and is already used on the enhanced Case form. If it is reusable from a PCF, R11 needs no bundled
+   third-party editor — removing the largest remaining risk against this architecture.
+3. **Confirm whether a PCF update reaches hosting custom pages** without republishing them (S2
+   observation), and add it to the release checklist if not.
 4. **Confirm weights** in [`05-capability-matrix.md`](05-capability-matrix.md) with the stakeholder, and
    re-check items 3 and 5 above against current documentation before build starts.
 5. On green, move to an implementation plan. Nothing from S1–S9 is expected to survive into it — they

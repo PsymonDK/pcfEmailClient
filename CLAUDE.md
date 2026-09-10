@@ -9,9 +9,12 @@ Workspace (CSW)** app. It gives agents a native mail experience (threading, in-p
 attachments, templates, signatures, drafts) scoped to a single Case — where the OOB Timeline is an
 activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
-**Current state: research only. No implementation code exists yet.** The architecture decision is
-recorded but not yet spike-validated. See [`docs/research/00-index.md`](docs/research/00-index.md) and
-the ADR at [`docs/research/07-decision.md`](docs/research/07-decision.md).
+**Current state: research plus a spike control.** The architecture decision is **spike-validated for
+hosting on both target placements** — S1 (Case form tab) and S2 (custom page) both confirmed live that
+`setControlState` survives a CSW two-session teardown. What is still open is *functional* feasibility:
+S6 (attachment ceiling) and S7 (send round-trip). The spike control in `pcf/` is throwaway
+diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
+at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 
 ## The architecture decision — read this before proposing anything
 
@@ -235,3 +238,24 @@ Two things to remember when using it:
   Degrade gracefully if two unrelated threads collide on a hash.
 
 Clean the seed up when the spikes are done — this is a shared environment.
+
+## Custom page (session-tab placement)
+
+`Case Email Client Page (S2 spike)` / `jhrb_caseemailclientpages2spike_314da` hosts the PCF for the
+session-tab placement. Things learned the hard way (S2, 2026-09-10):
+
+- **A custom page must be registered in the app, and that is NOT automatable.** `AddAppComponents`
+  rejects `canvasapp`; `appmodulecomponent` cannot be created via the API. Use the app designer:
+  **+ Add page → Custom page →** pick the existing page **→ Add → Save → Publish**. CSW is absent from
+  the maker Apps list, so reach its designer directly:
+  `https://make.powerapps.com/e/{envId}/s/00000001-0000-0000-0001-00000000009b/app/edit/{appModuleId}`
+- Registered pages do **not** appear as `appmodulecomponent` rows (they live in the sitemap). Use
+  `appmodule.modifiedon` / `publishedon` to confirm a change landed.
+- After publishing, **reload with `&flags=DisableWebResourceCache%3Dtrue`** or the client keeps saying
+  *"Page does not exist in this app."*
+- Bind the control's `caseId` property to `Param("recordId")` **as a formula in the formula bar**, not
+  as a literal in the properties pane.
+- A dataset property triggers a data-source prompt on insert. Ours is unused (we query via `webAPI`)
+  and the page works with it left unbound.
+- **Probable, unconfirmed:** a page pins the code-component version from its last publish, so a PCF
+  update may not reach it until the page is republished. Verify before relying on it.

@@ -1,16 +1,16 @@
 # 06 — Spikes
 
-## Status: S1 PASSED; S2 half done; S8 partially run
+## Status: S1 PASSED; S2 PASSED; S8 partially run
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
 quoted-history logic render correctly on the seed Case. It forced three corrections, including one to
 `04`/`CLAUDE.md` and one to `02`. See [S1 result](#s1-result--2026-09-10-passed-observed-in-the-live-app).
-**S2 is half done.** The side-pane route (`pageType: "control"`) **works** — correcting a
-treat-as-unsupported note — but the control gets **no record context** there. The custom page authors
-and renders fine and the new `caseId` property binds to `Param("recordId")`, but the page **cannot be
-registered in the managed CSW app through any API**, so the core question (does `setControlState`
-survive inside a custom page?) is still open. See [S2 result](#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
+**S2 has passed.** `setControlState` **also survives teardown inside a custom page** (`state
+RESTORED`, `init #2`), the `caseId = Param("recordId")` binding delivers the Case id, and
+`context.webAPI` works at runtime there. The side-pane route also renders — correcting a
+treat-as-unsupported note — though it gets no record context. See
+[S2 result](#s2-result--2026-09-10-passed-both-halves).
 
 **S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
 
@@ -26,9 +26,10 @@ System Settings.
 
 [`03`](03-candidates.md) remains desk research from Microsoft documentation and community prior art.
 [`02`](02-hosting-and-placement.md) and [`04`](04-data-model.md) have both now been **corrected by
-measurement** (RQ1 real estate, and the `regardingobjecttypecode` / threading findings). The
-recommendation in [`07-decision.md`](07-decision.md) has its load-bearing claim confirmed for the
-Case form tab placement, but the custom-page half is still unverified.
+measurement** (RQ1 real estate, side-pane support, and the `regardingobjecttypecode` / threading
+findings). The recommendation in [`07-decision.md`](07-decision.md) now has its load-bearing claim
+**confirmed for BOTH placements** — form tab (S1) and custom page (S2). S6 and S7 remain the open
+gates on full-client feasibility.
 
 ### Prerequisites before any spike can run
 
@@ -242,7 +243,48 @@ Place the S1 component (a) inside a custom page opened as a `Custom` CSW applica
 PCF-in-side-pane route works at all — currently recorded in [`02`](02-hosting-and-placement.md) as
 community-documented only, treat-as-unsupported.
 
-#### S2 result — 2026-09-10: side-pane half **PASSED**; custom-page half **BLOCKED**
+#### S2 result — 2026-09-10: **PASSED** (both halves)
+
+**The last open architectural question is answered: `setControlState` DOES survive teardown inside a
+custom page.**
+
+Measured in Copilot Service workspace after the page was added to the app (see *Registration* below):
+
+| Question | Answer |
+|---|---|
+| **Does `setControlState` survive a session teardown inside a custom page?** | **YES.** After switching to a second concurrent Case session and back, the control re-initialised (`init #2`) and reported **`state RESTORED`** with the probe text `S2-CUSTOMPAGE-PROBE-77` intact. `state saved at 10:18:58.605Z` → `init at 10:19:31.081Z`. |
+| Does the Case id reach the component? | **YES, `via caseId property`.** The page's `caseId = Param("recordId")` binding delivered the Case GUID end to end. This is exactly why the property was added. |
+| Does `context.webAPI` work at runtime in a custom page? | **YES** — `12 messages → 3 threads`, with the same hash/hash/subject badges as the form-tab placement. Studio's *"retrieveMultipleRecords: Method not implemented"* is an **author-time-only** limitation, as the docs imply. |
+| `allocatedHeight` / `allocatedWidth` in a custom page | Real numbers (**700 / 1180**), matching the control's configured Size — not -1 as on a form. |
+
+**Registration was the blocker, and it needs the app designer.** `navigateTo({pageType:'custom'})`
+resolves but the app reports *"Page does not exist in this app"* until the page is added to the app.
+None of these worked:
+
+| Attempt | Result |
+|---|---|
+| `AddAppComponents` with `Microsoft.Dynamics.CRM.canvasapp` | `0x80050112` — *"An app can't reference the component type 'canvasapp'."* |
+| `POST /appmodulecomponents` (componenttype 300 / 10333 / 80) | *"The 'Create' method does not support entities of type 'appmodulecomponent'."* |
+
+The working route is the **model-driven app designer** → **+ Add page** → **Custom page** → select the
+existing page → **Add**, then **Save** and **Publish**. Two things make this awkward:
+
+- **Copilot Service workspace is not listed in the maker portal Apps list** (that list showed only the
+  6 user-owned apps, while the API reports 17). The designer is still reachable directly at
+  `https://make.powerapps.com/e/{envId}/s/00000001-0000-0000-0001-00000000009b/app/edit/{appModuleId}`
+  — a pattern derived by opening a listable app's designer and substituting the CSW app id.
+- After publishing, the page is **not** recorded as an `appmodulecomponent` (0 rows) — pages live in
+  the app's sitemap. `appmodule.modifiedon` / `publishedon` is the reliable signal that the change
+  landed. A **cache-busting reload** (`&flags=DisableWebResourceCache%3Dtrue`) was needed before the
+  client stopped saying "Page does not exist in this app".
+
+**One unresolved observation.** The page rendered the **pre-v0.0.4** height logic (it printed
+"claimed … from viewport" even though `allocatedHeight` was 700, where v0.0.4 prints "honouring host
+allocatedHeight"), while the environment had **v0.0.4** registered. The likely explanation is that a
+custom page **pins the code-component version from when the page was last published**, so a PCF update
+does not flow into hosting pages until they are republished. I could not cleanly separate that from
+client-side bundle caching, so treat it as **probable, not proven** — but verify it before relying on
+"deploy the PCF and every host picks it up".
 
 ##### (b) PCF in an app side pane — WORKS, but with no record context
 
@@ -259,9 +301,12 @@ some out-of-band route (a global set by form script, or reading the focused sess
 side pane the weakest of the three placements for a Case-scoped client** — worth knowing, though side
 pane was only ever a bonus placement, not a requirement.
 
-##### (a) PCF inside a custom page — authoring works, runtime BLOCKED
+##### (a) PCF inside a custom page — authoring detail
 
-What worked:
+Kept for the mechanics. The runtime result is in the table at the top of this section; registration was
+the only blocker and is covered under *Registration* above.
+
+What worked at author time:
 
 - The page was created (Studio → New → App → **Page**) and saved into the spike solution as
   `jhrb_caseemailclientpages2spike_314da`, listed with Type **Page**.
@@ -271,7 +316,7 @@ What worked:
   dropdown, and `Param("recordId")` binds cleanly as a formula (evaluating to *Blank* at author time,
   data type text). This property was **added because of S2** — see the finding below.
 
-What blocked it:
+What blocked it until the page was registered:
 
 **A custom page must be registered in the model-driven app, and there is no API route to do it.**
 `Xrm.Navigation.navigateTo({pageType:'custom', name:'…'})` resolves but the app shows
@@ -468,7 +513,7 @@ finding and must be recorded, not discarded.)*
 | Spike | Date | Outcome | Notes |
 |---|---|---|---|
 | S1 | 2026-09-10 | **PASSED** — `setControlState` survives a real two-session teardown; no bleed | RQ1 corrected: a subgrid cell is content-sized, height must be claimed. `regardingobjecttypecode` is not queryable in OData. See [result](#s1-result--2026-09-10-passed-observed-in-the-live-app) |
-| S2 | 2026-09-10 | **Side-pane half PASSED; custom-page half BLOCKED** | Side pane renders but has no record context. Custom page authors fine, but cannot be registered in the managed CSW app via any API. See [result](#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked) |
+| S2 | 2026-09-10 | **PASSED** — `setControlState` survives inside a custom page too; `caseId` param binding works | Registration needs the app designer (not automatable). Side pane renders but has no record context. See [result](#s2-result--2026-09-10-passed-both-halves) |
 | S3 | — | **Not run** — P7 unverified; also deprioritised | |
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |
 | S5 | — | **Not run** — P1–P2 unverified | |

@@ -27,14 +27,14 @@ known friction · **3** does it well.
 |---|---:|---:|---:|---:|---:|---:|
 | C1 Both placements (×5) | **3** | 1 | 1 | **0** | 2 | 2 |
 | C2 Functional ceiling (×5) | **3** | 3 | 1 | **0** | 2 | 2 |
-| C3 Multi-session (×4) | 2 | **3** | **0** | — | **0** | **0** |
+| C3 Multi-session (×4) | **3** | **3** | **0** | — | **0** | **0** |
 | C4 ALM (×4) | **3** | **3** | **3** | — | 1 | **3** |
 | C5 Support posture (×3) | **3** | **3** | 2 | — | 2 | 1 |
 | C6 Dev velocity (×3) | 2 | 2 | 2 | — | **3** | 1 |
 | C7 Licensing (×2) | **3** | **3** | **3** | — | 1 | **3** |
 | C8 UI freedom (×2) | **3** | **3** | 2 | — | **3** | 2 |
-| **Weighted total** | **77** | 71 | 44 | *eliminated* | 47 | 48 |
-| *out of 84* | **92%** | 85% | 52% | — | 56% | 57% |
+| **Weighted total** | **81** | 71 | 44 | *eliminated* | 47 | 48 |
+| *out of 84* | **96%** | 85% | 52% | — | 56% | 57% |
 
 ## Score justifications
 
@@ -56,13 +56,13 @@ that does — which is precisely the hybrid, scored separately.
 **C2 — D = 2, not 3.** The SPA itself has no functional ceiling, but the frame has no `Xrm`, so R19
 (Copilot draft), notifications and navigation all require `postMessage` plumbing you own and maintain.
 
-**C3 — A+B = 2, not 3.** Honest discount, and the discount is now **half retired**. S1 confirmed live
-(2026-09-10) that `setControlState` genuinely survives a two-session destroy/reload on the **form tab**
-placement, with no cross-session bleed — so candidate **A alone scores a measured 3**. The hybrid stays
-at 2 only because the **custom page wrapper** half is still unverified: it carries the documented
-"state is not persisted when switching between multi-session tabs" behaviour, and whether
-`setControlState` survives a custom-page teardown remains undocumented. **S2 now owns that question.**
-Draft durability must be solved in the component regardless.
+**C3 — A+B = 3, re-scored up from 2 on 2026-09-10.** This was originally discounted because whether
+`setControlState` survives a custom-page teardown was undocumented. **It is now measured on both
+placements:** S1 on the form tab and S2 inside the custom page, each showing `state RESTORED` /
+`init #2` after a genuine two-Case-session destroy/reload, with no cross-session bleed. The custom
+page's documented "state is not persisted when switching between multi-session tabs" behaviour applies
+to the *page's own* canvas state — a code component hosted in it still gets its `setControlState` back.
+Draft durability in Dataverse remains recommended as defence in depth, not as a required workaround.
 
 **C3 — B/D/E = 0.** Documented state loss on tab switch. See
 [`02`](02-hosting-and-placement.md#rq5--csw-multi-session-behaviour-the-discriminator).
@@ -77,7 +77,7 @@ it, and it proved **not automatable** — `AddAppComponents` refuses `canvasapp`
 cannot be created directly, and CSW is not listed in the maker portal apps list. On the evidence this
 is closer to a **2**: per-environment manual app-designer work, not solution-driven. Not re-scored
 pending confirmation of a supported route, but flagged as a real deployment cost.
-See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
+See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-passed-both-halves).
 
 **C5 — E = 1.** No `context` API; reaching `Xrm` through `parent`/`window.top` is undocumented coupling
 of the kind that breaks on platform updates.
@@ -97,16 +97,16 @@ session switch does not meet the requirement set — regardless of its weighted 
 ranks them at 44–48; the requirement catalogue rejects them outright. Do not read their mid-range
 scores as "viable but weaker".
 
-That leaves **A+B (77)** and **A alone (71)** as the only candidates meeting the MUST set, and A alone
+That leaves **A+B (81)** and **A alone (71)** as the only candidates meeting the MUST set, and A alone
 fails N2 (both placements).
 
 ## Sensitivity — does the answer survive reweighting?
 
 Yes. The outcome is not weight-sensitive:
 
-- **A+B beats A alone on C1 and loses nothing except the C3 discount.** Any weighting in which "both
-  placements" matters at all favours the hybrid; if placement genuinely did not matter, N2 would not be
-  a MUST and the requirement would have been different.
+- **A+B now beats A alone on C1 and matches it everywhere else that matters**, the former C3 discount
+  having been retired by measurement. Any weighting in which "both placements" matters at all favours
+  the hybrid; if placement genuinely did not matter, N2 would not be a MUST.
 - **B, D and E are excluded by a MUST failure, not by weighted score**, so no reweighting rescues them.
   Only relaxing R16/N1 — accepting that agents lose in-progress drafts on session switch — would put
   them back in contention.

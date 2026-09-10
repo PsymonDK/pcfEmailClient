@@ -153,7 +153,7 @@ The real limitation is different and worse: **`context.mode.contextInfo` is empt
 `Xrm.Utility.getPageContext()` yields nothing usable. `pageType: "control"` has no documented parameter
 mechanism, so a Case-scoped component would need its record id delivered out of band. That makes the
 side pane the weakest of the three placements for this project, despite rendering correctly.
-See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
+See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-passed-both-halves).
 
 ## Summary matrix
 

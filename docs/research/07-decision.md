@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Proposed** — **all spikes passed** (S1, S2, S6, S7; S8 closed). Awaiting stakeholder sign-off. |
+| **Status** | **Proposed, with one open simplification.** All spikes passed (S1, S2, S6, S7; S8 closed). **S11 may remove the custom page entirely** — see Reversal conditions. Awaiting sign-off. |
 | **Date** | 2026-09-09 |
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
@@ -89,7 +89,7 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/
 | **A PCF update may not reach hosting custom pages automatically** (S2 observation) | Medium | The page rendered an older control bundle while the environment had a newer version registered. Probable cause is version pinning at page publish time. **Confirm this**, and if true, add "republish hosting pages" to the release checklist. |
 | **Layout is the component's job, and differs per host** (S1 + S2) | Medium | On a form tab `allocatedHeight` is -1 and the host is content-sized, so height must be claimed from the viewport. In a custom page `allocatedHeight` is a real number and claiming over-claims. The control is now host-aware; keep that. |
 | **The Case id arrives differently per host** (S2) | Medium | `contextInfo` is form-only — empty in a side pane, and a custom page passes `recordId` as a *page* input the component cannot read. The component needs an explicit `caseId` input property that the custom page binds to `Param("recordId")`. Implemented. |
-| **Wiring the custom page into CSW is manual, per environment** (S2) | Medium-high | CSW is a managed Microsoft app; adding a page to it is not automatable via `AddAppComponents` or `appmodulecomponent`, and CSW is absent from the maker apps list. Budget app-designer work per environment, and re-check the `Control` app tab template reversal condition below — it would remove this cost entirely. |
+| **Wiring the custom page into CSW is manual, per environment** (S2) — *possibly avoidable, see S11* | Medium-high | CSW is a managed Microsoft app; adding a page to it is not automatable via `AddAppComponents` or `appmodulecomponent`, and CSW is absent from the maker apps list. Budget app-designer work per environment, and re-check the `Control` app tab template reversal condition below — it would remove this cost entirely. |
 | ~~Quoted-history splitting (R4/R12) has no API~~ | **Largely RESOLVED** | **S7:** the heuristic scored **10/10 against the delivered `.msg`** and correctly split a real Outlook-generated reply (depth 3), handling **English and Danish** header blocks. Risk downgraded from High. Residual: signature blocks and transport-injected banners land in the new-text region — tracked as **R21**. |
 | **No per-agent read state on `email`** (R6) — `lastopenedtime`/`opencount` are recipient-side tracking | Medium | Custom column or a small join table keyed by email + user. Decide in implementation planning. |
 | **Send failures are SILENT for an unapproved sender** (R18, measured 2026-09-10) | **High** | `SendEmail` returns **HTTP 200**, the email parks at `Pending Send` **indefinitely**, and **no error is recorded** on the email or the mailbox (`outgoingemailstatus` = Not Run, `lastsyncerror` null). The client **must pre-flight**: org `requireapprovalfor*email`, sender `emailrouteraccessapproval` = 1, mailbox `outgoingemailstatus` = Success. Non-negotiable — without it agents will believe mail was sent that never leaves. |
@@ -107,9 +107,18 @@ Named up front so the decision is falsifiable:
 2. **R16/N1 are relaxed** — the business accepts that agents lose in-progress drafts on session switch.
    That single change readmits candidates D and E and, given code apps' far better dev loop and higher
    UI ceiling, D becomes genuinely competitive (subject to the Power Apps Premium licensing question).
-3. **Microsoft ships supported PCF hosting in CSW application tabs** (the `Control` page type stops
-   being "for internal use only"). Then the custom page wrapper is unnecessary and the architecture
-   simplifies to PCF alone — a strict improvement, so this is worth re-checking before build starts.
+3. **The custom page turns out to be unnecessary (S11, raised 2026-09-10 — TEST THIS FIRST).** An
+   `Entity record` app tab template accepts a **`formId`**, so a session tab can open the same Case on
+   a *dedicated form* hosting the PCF — the S1 placement reused, with no canvas layer. If that works,
+   the architecture becomes **one PCF in two form placements**, and it retires the manual
+   per-environment app-designer registration, the `appelement` cleanup tangle, and the canvas host's
+   8-hour timeout / third-party-cookie / connector-consent baggage. A strict improvement over the
+   hybrid. The related `Control` page type (direct PCF hosting, `controlName` + `data`) also works —
+   7 of 13 OOB templates use it — but stays a fallback because it is documented "for internal use
+   only". A **web resource** hosting the PCF is *not* an option: no `ComponentFramework` runtime in a
+   web resource iframe, and such tabs lose state on switch, which is the defect that decided the
+   architecture. Detail in
+   [`02-hosting-and-placement.md`](02-hosting-and-placement.md#reopened-2026-09-10--the-custom-page-may-be-an-unnecessary-layer).
 4. **Microsoft ships form-tab embedding for generative pages** *and* lifts the data-type ceiling. Both
    would be needed; the placement fix alone is not sufficient.
 5. **The Power Apps licensing position changes** such that code components in an MDA require licensing

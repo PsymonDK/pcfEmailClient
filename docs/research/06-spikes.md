@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 + R18 answered. No open gates.
+## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 + R18 answered. **S11 open — may simplify the architecture.**
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -35,6 +35,12 @@ anywhere** (mailbox `outgoingemailstatus` = Not Run, `lastsyncerror` null). Ther
 synchronous guard nor an async failure signal, so R18 can only be met by **pre-flighting the sender's
 approval state before offering Send**. See
 [R18 result](#r18-result--2026-09-10-there-is-no-failure-signal-at-all-pre-flight-is-mandatory).
+
+**S11 is open, and it matters.** The custom page may be an **unnecessary layer**: an `Entity record`
+app tab template accepts a `formId`, so a session tab could open the same Case on a dedicated form
+hosting the PCF — the S1 placement reused, with no canvas host and no manual app registration. Raised
+by the requester on 2026-09-10; **not yet tested** (browser extension disconnected). See
+[S11](#s11--can-an-entity-record-tab-host-the-pcf-making-the-custom-page-unnecessary-added-2026-09-10).
 
 **S8 is CLOSED.** The S7 send plus the requester's reply produced a genuine two-message conversation
 (`conversationindex` 44 → 54 chars, same hash), so grouping, **cIdx ordering** and the depth formula are
@@ -860,6 +866,42 @@ Two consolations:
   "never re-serialise an inherited quote" rule. TinyMCE gives better paste-from-Word cleanup out of the
   box but emits looser HTML and carries a commercial licensing question. That trade-off — clean output
   vs. clean paste — should drive the pick, not bundle size alone.
+
+### S11 — Can an `Entity record` tab host the PCF, making the custom page unnecessary? *(added 2026-09-10)*
+
+**Why.** The A+B hybrid assumed a custom page was the only supported route to a session tab, because
+`Control` is documented "for internal use only". That skipped the **`Entity record`** page type, which
+takes `entityName`, `entityId` **and `formId`** — so a session tab can open the same Case on a
+*dedicated form* whose tab hosts the PCF. That is the S1 placement reused, with no canvas layer.
+
+**Build.** Recreate the spike form (or a form containing only the email-client tab), then an app tab
+template of type **Entity record** with `entityName={anchor.entityName}`,
+`entityId={anchor.incidentid}`, `formId=<that form>`. Attach it to a Case session template, or open it
+with the CSW tab API, and read the control's diagnostics panel.
+
+**Confirms / breaks:**
+- Whether CSW will show **the same record twice in one session** (anchor tab on the default form, a
+  second tab on the email form). Precedent exists — the OOB *Customer Summary* tab does something
+  similar.
+- Whether `setControlState` survives a two-session teardown in that host. Expected yes, since it is the
+  same form host S1 measured, but it should be confirmed rather than assumed.
+- Whether the Case id arrives via `contextInfo` (as on a form) rather than needing the `caseId`
+  property — which would make the property optional for this route.
+
+**If it passes**, the architecture drops the custom page entirely: one PCF, two form placements. That
+also retires the manual per-environment app-designer registration and the `appelement` cleanup tangle,
+and removes the canvas host's 8-hour timeout, third-party-cookie requirement and app-wide connector
+consent dialogs. Route comparison in
+[`02-hosting-and-placement.md`](02-hosting-and-placement.md#reopened-2026-09-10--the-custom-page-may-be-an-unnecessary-layer).
+
+**Secondary, cheap:** the same run can test route **B** — an app tab template of type `Control` with
+`controlName = jhrb_JHRB.CaseEmailClient`. Shape confirmed from the OOB `msdyn_omnichannel_pbi`
+template (`controlName` + `data`), and 7 of 13 OOB templates use `Control`, so it functions. It stays
+a fallback rather than a plan because it is unsupported.
+
+**Not worth testing: a web resource hosting the PCF.** Ruled out on reasoning — there is no
+`ComponentFramework` runtime inside a web resource iframe, and web-resource tabs lose state on CSW tab
+switch, which is the exact defect that eliminated candidates D and E.
 
 ### S9 — Template and signature instantiation
 

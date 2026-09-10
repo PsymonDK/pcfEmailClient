@@ -166,8 +166,73 @@ See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-passed-both-halves).
 | Case id passed in | ✅ | ✅ | ✅ (but placement fails) | ⚠️ query-string plumbing | ⚠️ `data` param |
 | Multi-session state | ✅ documented contract | ❌ | n/a | ❌ | ❌ |
 
-**The only way to satisfy both placements with one codebase and keep multi-session state is the
-A+B hybrid: a React PCF on the Case form tab, and the same PCF hosted inside a thin custom page for
-the session tab.** Code components in custom pages are GA. Note that the wrapper inherits the custom
-page's state-loss behaviour, so draft durability must be solved inside the component regardless — see
-[`07-decision.md`](07-decision.md).
+## REOPENED 2026-09-10 — the custom page may be an unnecessary layer
+
+The A+B hybrid was chosen because `Control` is documented "for internal use only", so a custom page
+looked like the only route to a session tab. **That reasoning skipped an option.** There are four ways
+to get a PCF into a CSW session tab, not two:
+
+| # | Route | Supported? | Extra layer? | Status |
+|---|---|---|---|---|
+| **C** | **`Entity record`** tab template → the same Case on a **dedicated form** whose tab hosts the PCF | ✅ **fully supported page type** | **None** — it is the S1 placement, reused | **Untested. Probably the right answer.** |
+| A | `Custom` tab template → custom page → PCF | ✅ GA | Custom page | **Tested, works** (S2) |
+| B | `Control` tab template → the PCF directly | ⚠️ *"for internal use only"* | None | Untested; shape known |
+| D | `Web resource` tab template → HTML hosting the PCF | ❌ **not possible** | — | Ruled out by reasoning, below |
+
+### C — an `Entity record` tab pointing at a dedicated form
+
+The `Entity record` page type accepts **`entityName`, `entityId` and `formId`**, all slug-capable. So a
+session tab can open the *same Case* on a *different form* — one whose single tab hosts the email
+client PCF:
+
+```
+entityName = {anchor.entityName}      -> incident
+entityId   = {anchor.incidentid}      -> the Case
+formId     = <the email-client form>
+```
+
+Why this is attractive:
+
+- **No new hosting technology.** It is exactly the Case-form-tab placement S1 already proved, opened in
+  a second session tab. It therefore inherits S1's measured `setControlState` survival for free.
+- **A fully supported page type**, unlike `Control`.
+- **It retires the ALM cost** flagged against the hybrid. A form is an ordinary solution component that
+  ships dev → test → prod normally. There is no custom page to register in the managed CSW app, so the
+  non-automatable app-designer step — and the `appelement` cleanup tangle found later — both disappear.
+- It also removes the custom page's own baggage: the 8-hour canvas session timeout, the third-party
+  cookie requirement, and app-wide connector consent dialogs.
+
+The obvious question to test is whether CSW is happy showing **the same record twice in one session**
+(anchor tab on the default form, second tab on the email form). CSW already does something similar with
+its OOB *Customer Summary* tab, so there is precedent.
+
+### B — `Control`, the direct route
+
+Confirmed shape, read from the OOB `msdyn_omnichannel_pbi` template:
+
+```
+controlName = MscrmControls.OCPowerBiControl.OCPowerBiControl
+data        = <optional payload>
+```
+
+So ours would be `controlName = jhrb_JHRB.CaseEmailClient`, with `data` carrying the Case id via
+`{anchor.incidentid}`. **Seven of the 13 OOB app tab templates in this environment are `Control` type**
+— Microsoft leans on it heavily — so it plainly functions. It is simply not supported for customers,
+which is the same upgrade risk C5 penalises other candidates for. Keep it as a fallback, not a plan.
+
+### D — a web resource cannot host a PCF
+
+Two independent reasons:
+
+1. **No runtime.** A web resource is an iframe containing your own HTML. PCF controls are instantiated
+   by the platform's control framework from form/page metadata; there is no `ComponentFramework` host
+   inside an arbitrary web resource iframe and no supported API to bootstrap one. You would be writing
+   your own PCF host — far more work than the layer it avoids.
+2. **It reintroduces the defect that decided the architecture.** Web-resource tabs are documented to
+   lose state on CSW tab switch — *"the page is refreshed to the initial state"* — which is the exact
+   R16/N1 failure that eliminated candidates D and E. Even if the hosting worked, wrapping the PCF in a
+   web resource would throw away the property it was chosen for.
+
+**Recommendation:** test route **C** before building. If it works, the architecture simplifies from
+"PCF + custom page" to **"one PCF, two form placements"** — one codebase, one artefact type, no canvas
+layer, and no manual per-environment app wiring.

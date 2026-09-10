@@ -16,6 +16,7 @@ Candidates under evaluation:
 | **D** | Power Apps code app, surfaced via iframe web resource / external website |
 | **E** | Classic HTML + JS web resource |
 | **A+B** | *Hybrid:* one React PCF, placed directly on the Case form tab **and** hosted inside a custom page for the session tab |
+| **A+A** | *Possible simplification (S11, untested):* one React PCF on **two form placements** — the Case form tab, and a dedicated form opened as a session tab via an `Entity record` app tab template with a `formId`. No custom page. |
 
 ## Frozen requirements
 
@@ -115,6 +116,10 @@ and **S7** (real send) have settled the functional gates too. **No gate remains 
 what remains is implementation planning. The **platform rich-text editor** question has since been
 answered (**S10: no** — it cannot be reused from a PCF, so R11 needs a bundled editor). **R18 has since been answered** and it inverted the requirement: the platform gives **no** failure
 signal for an unapproved sender (200 OK, then stranded at `Pending Send` with no error anywhere), so
-the client must **pre-flight** approval state rather than react to failure. One follow-up remains,
-non-gating: a **bundle-size benchmark** for the chosen editor, which did not complete here. S2 also surfaced a deployment cost: wiring
+the client must **pre-flight** approval state rather than react to failure. Two follow-ups remain:
+
+- **S11 — potentially architecture-simplifying, and worth doing before any build.** The custom page may
+  be an unnecessary layer: an `Entity record` app tab template accepts a `formId`, so the session tab
+  could be a dedicated Case form hosting the PCF. Raised by the requester 2026-09-10; untested.
+- A **bundle-size benchmark** for the chosen editor, which did not complete here. Non-gating. S2 also surfaced a deployment cost: wiring
 a custom page into the managed CSW app needs the app designer, per environment.

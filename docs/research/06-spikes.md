@@ -1,11 +1,17 @@
 # 06 — Spikes
 
-## Status: S1 PASSED (observed live); S8 partially run
+## Status: S1 PASSED; S2 half done; S8 partially run
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
 quoted-history logic render correctly on the seed Case. It forced three corrections, including one to
 `04`/`CLAUDE.md` and one to `02`. See [S1 result](#s1-result--2026-09-10-passed-observed-in-the-live-app).
+**S2 is half done.** The side-pane route (`pageType: "control"`) **works** — correcting a
+treat-as-unsupported note — but the control gets **no record context** there. The custom page authors
+and renders fine and the new `caseId` property binds to `Param("recordId")`, but the page **cannot be
+registered in the managed CSW app through any API**, so the core question (does `setControlState`
+survive inside a custom page?) is still open. See [S2 result](#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
+
 **S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
 
 The remaining spikes are **unblocked** as of 2026-09-09: `pac` CLI 2.11.2 is authenticated against
@@ -236,6 +242,86 @@ Place the S1 component (a) inside a custom page opened as a `Custom` CSW applica
 PCF-in-side-pane route works at all — currently recorded in [`02`](02-hosting-and-placement.md) as
 community-documented only, treat-as-unsupported.
 
+#### S2 result — 2026-09-10: side-pane half **PASSED**; custom-page half **BLOCKED**
+
+##### (b) PCF in an app side pane — WORKS, but with no record context
+
+`Xrm.App.sidePanes.createPane(...)` then `pane.navigate({pageType:'control', controlName:'jhrb_JHRB.CaseEmailClient'})`
+**renders the control**. This **contradicts** the treat-as-unsupported note previously in
+[`02`](02-hosting-and-placement.md) — the community-documented route is real, at least in this version.
+`allocatedWidth` came through as the pane width I requested (520), `allocatedHeight` as -1.
+
+**But the control cannot tell which record it is on.** The panel reported
+`case (unresolved) · via unresolved`: `context.mode.contextInfo` is **empty** in a side pane, and
+`Xrm.Utility.getPageContext()` returns an internal object with `_pageId: "0"` and no usable record.
+`pageType: "control"` has no documented parameter mechanism, so the Case id would have to arrive by
+some out-of-band route (a global set by form script, or reading the focused session). **That makes the
+side pane the weakest of the three placements for a Case-scoped client** — worth knowing, though side
+pane was only ever a bonus placement, not a requirement.
+
+##### (a) PCF inside a custom page — authoring works, runtime BLOCKED
+
+What worked:
+
+- The page was created (Studio → New → App → **Page**) and saved into the spike solution as
+  `jhrb_caseemailclientpages2spike_314da`, listed with Type **Page**.
+- The control imports via **Insert → Get more components → Code**, where it appeared as
+  *Case Email Client (S1 spike)*, and then **renders on the page in Studio**.
+- **The new `caseId` input property works.** It appears in the Properties pane and in the property
+  dropdown, and `Param("recordId")` binds cleanly as a formula (evaluating to *Blank* at author time,
+  data type text). This property was **added because of S2** — see the finding below.
+
+What blocked it:
+
+**A custom page must be registered in the model-driven app, and there is no API route to do it.**
+`Xrm.Navigation.navigateTo({pageType:'custom', name:'…'})` resolves but the app shows
+**"Page not found — Page does not exist in this app."** Attempts to register it:
+
+| Attempt | Result |
+|---|---|
+| `AddAppComponents` with `Microsoft.Dynamics.CRM.canvasapp` | `0x80050112` — *"An app can't reference the component type 'canvasapp'."* |
+| `POST /appmodulecomponents` (componenttype 300 / 10333 / 80) | *"The 'Create' method does not support entities of type 'appmodulecomponent'."* |
+| Model-driven app designer | **Copilot Service workspace is not listed in the maker portal apps list** — it is a Microsoft-managed app |
+
+So the remaining route is the app designer reached from somewhere other than the apps list, or the
+Copilot Service admin center. **The core S2 question — does `setControlState` survive teardown inside
+a custom page — is therefore still unanswered.**
+
+##### Findings that stand regardless
+
+1. **`allocatedHeight` semantics differ per host, and this broke the S1 height fix.** On a form tab it
+   is **-1** (host is content-sized; the component must claim height from the viewport). In a custom
+   page it is a **real number** — the control's configured Size (200 by default, then 700 after I
+   resized it). The S1 viewport-claiming logic therefore **over-claimed**: it computed 994px inside a
+   200px control box. The control is now **host-aware** (v0.0.4): honour `allocatedHeight` when it is
+   positive, claim from the viewport only when it is -1. Any real implementation needs this.
+2. **`context.mode.contextInfo` is a form-only mechanism.** Empty in a side pane; a custom page gets
+   the record as a *page* input the component cannot read. Hence the explicit `caseId` property. **This
+   is a genuine design consequence for the recommended hybrid**: the same component must accept its
+   Case id two different ways depending on placement.
+3. **The Studio authoring environment is not a faithful runtime.** `retrieveMultipleRecords: Method
+   not implemented` appears in Studio — matching the documented note that custom page authoring lacks
+   Web API support while the published app has it. Also, author-time `contextInfo` returns a **dummy
+   Case id** (`4ff37a24-3cf6-e711-8105-000d3aa167ac`), so the control reported `via contextInfo` in
+   Studio even though no real record was in play. **Do not trust anything measured in Studio.**
+4. **A dataset property forces a data-source binding prompt** in a custom page. Ours is unused (the
+   component queries via `webAPI`), and the page works with the dataset left unbound — but it is
+   friction, and an argument for dropping the dataset property if the form-tab placement is ever
+   dropped.
+
+##### What this means for the architecture — a cost the scorecard missed
+
+The session-tab placement requires **adding a custom page to the Copilot Service workspace app**, which
+is a Microsoft **managed** app. That is an unmanaged customisation layer over a managed app, repeated in
+every environment, and it is **not automatable through the documented APIs** — it needs the app
+designer. [`05`](05-capability-matrix.md) scored the A+B hybrid's ALM at 3 on the assumption that both
+placements ship in one solution. The PCF does; **wiring the page into CSW does not**. That is a real
+deployment cost for the hybrid that was not previously accounted for.
+
+This does not overturn the decision — every candidate that occupies a CSW session tab needs app-level
+wiring of some kind — but it should be weighed before build, and it strengthens the case for checking
+the reversal condition in [`07`](07-decision.md) about the `Control` app tab template type.
+
 ### S3 — Code app behind an iframe web resource
 
 Deploy a minimal code app, surface it via an iframe HTML web resource on the Case form, pass the Case
@@ -382,7 +468,7 @@ finding and must be recorded, not discarded.)*
 | Spike | Date | Outcome | Notes |
 |---|---|---|---|
 | S1 | 2026-09-10 | **PASSED** — `setControlState` survives a real two-session teardown; no bleed | RQ1 corrected: a subgrid cell is content-sized, height must be claimed. `regardingobjecttypecode` is not queryable in OData. See [result](#s1-result--2026-09-10-passed-observed-in-the-live-app) |
-| S2 | — | **Not run** — P1–P2 unverified | |
+| S2 | 2026-09-10 | **Side-pane half PASSED; custom-page half BLOCKED** | Side pane renders but has no record context. Custom page authors fine, but cannot be registered in the managed CSW app via any API. See [result](#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked) |
 | S3 | — | **Not run** — P7 unverified; also deprioritised | |
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |
 | S5 | — | **Not run** — P1–P2 unverified | |

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="JHRB" constructor="CaseEmailClient" version="0.0.2"
+  <control namespace="JHRB" constructor="CaseEmailClient" version="0.0.4"
            display-name-key="Case Email Client (S1 spike)"
            description-key="Spike control for the Case-scoped email client research. Measures full-tab real estate and setControlState survival across CSW session switches."
            control-type="virtual">
@@ -8,8 +8,16 @@
     <external-service-usage enabled="false">
     </external-service-usage>
 
-    <!-- Bind to a subgrid of Email records regarding the Case. Dataset controls get the
-         100%-of-available-space growth behaviour, which is what a mail client needs. -->
+    <!-- Explicit Case id input.
+         Required because `context.mode.contextInfo` only carries the record on a FORM host.
+         Measured 2026-09-10 (S2): in an app side pane it is empty, and a custom page receives
+         the Case as a PAGE input (`recordId`) that a code component cannot read directly. So
+         the host has to hand it in. On a form tab this stays empty and contextInfo is used. -->
+    <property name="caseId" display-name-key="Case id"
+              description-key="Case (incident) GUID. Leave unset on a form; bind Param(&quot;recordId&quot;) on a custom page."
+              of-type="SingleLine.Text" usage="input" required="false" />
+
+    <!-- Bind to a subgrid of Email records regarding the Case. -->
     <data-set name="emails" display-name-key="Emails">
     </data-set>
 

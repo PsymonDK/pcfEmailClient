@@ -70,6 +70,15 @@ Draft durability must be solved in the component regardless.
 **C4 — D = 1.** Code apps "don't support Power Platform Git integration", and the code app and the web
 resource hosting it travel between environments by different mechanisms.
 
+**C4 — A+B: the 3 is now optimistic (S2, 2026-09-10).** The score assumed both placements ship in one
+solution. The PCF and the custom page do; **wiring the page into Copilot Service workspace does not.**
+CSW is a Microsoft *managed* app, adding a custom page to it is an unmanaged customisation layer over
+it, and it proved **not automatable** — `AddAppComponents` refuses `canvasapp`, `appmodulecomponent`
+cannot be created directly, and CSW is not listed in the maker portal apps list. On the evidence this
+is closer to a **2**: per-environment manual app-designer work, not solution-driven. Not re-scored
+pending confirmation of a supported route, but flagged as a real deployment cost.
+See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
+
 **C5 — E = 1.** No `context` API; reaching `Xrm` through `parent`/`window.top` is undocumented coupling
 of the kind that breaks on platform updates.
 

@@ -90,9 +90,14 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
   destroy/reload with no cross-session bleed — the single assumption the recommendation rested on. It
   also **corrected** two claims: a subgrid cell on a form tab is content-sized (`height: 100%` yields
   nothing), and `regardingobjecttypecode` is not a queryable OData property.
+- **S2 half done.** The side-pane route works (correcting a treat-as-unsupported note) but gives the
+  control **no record context**. The custom page authors and renders, and the new `caseId` property
+  binds to `Param("recordId")` — but the page **cannot be registered in the managed CSW app through
+  any API**, so the core question is still open.
 - **S8 partially run** (read-only), validating the threading strategy and correcting three claims.
 
 The recommendation in [`07-decision.md`](07-decision.md) is now **measured for the Case form tab
-placement**. The remaining gate is **S2** — whether `setControlState` also survives teardown *inside a
-custom page*, which is the session-tab half of the architecture. S6 and S7 still gate the full-client
+placement**. The session-tab half remains unproven: the remaining gate is still whether
+`setControlState` survives inside a custom page, and S2 also surfaced a **deployment cost** — wiring a
+custom page into the managed CSW app is manual, per environment. S6 and S7 still gate full-client
 feasibility.

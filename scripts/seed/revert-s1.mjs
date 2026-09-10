@@ -27,6 +27,8 @@ const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service
 const SPIKE_FORM_ID = '4fe309a1-dbac-f111-aaab-000d3ab16615'; // Case - Email Client Spike (S1)
 const SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
 const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
+// S2 custom page: "Case Email Client Page (S2 spike)" / jhrb_caseemailclientpages2spike_314da
+const SPIKE_PAGE_ID = 'e7cb7b97-9dde-4f6a-8356-94bc9e1344d0';
 
 const call = async (path, method, body) => {
   const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
@@ -62,6 +64,10 @@ const steps = [
   {
     what: `delete systemform ${SPIKE_FORM_ID} ("Case - Email Client Spike (S1)")`,
     run: () => call(`systemforms(${SPIKE_FORM_ID})`, 'DELETE'),
+  },
+  {
+    what: `delete custom page ${SPIKE_PAGE_ID} ("Case Email Client Page (S2 spike)")`,
+    run: () => call(`canvasapps(${SPIKE_PAGE_ID})`, 'DELETE'),
   },
   {
     what: `delete solution ${SOLUTION_UNIQUE_NAME} (unmanaged: container only)`,

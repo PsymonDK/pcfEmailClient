@@ -142,8 +142,18 @@ documented for `entitylist`, `entityrecord`, `webresource` and custom pages, wit
 keep pane content across tab switches, a 300px minimum width, and browser-only support (no native
 players). PCF in a side pane via `pageType: "control"` plus `controlName` is **community-documented
 only** ([Aric Levin](https://www.ariclevin.com/powerapps/post/pcf-control-in-side-pane/)) and does not
-appear in the official article — treat as unsupported unless a spike proves otherwise. Generative
-pages are explicitly excluded.
+appear in the official article. Generative pages are explicitly excluded.
+
+**CORRECTED by S2, 2026-09-10 — the side-pane route works, but has no record context.**
+`createPane` + `pane.navigate({pageType:'control', controlName:'jhrb_JHRB.CaseEmailClient'})` **rendered
+the control**, with `allocatedWidth` equal to the requested pane width. So "treat as unsupported" was
+too pessimistic — it functions, it is just undocumented.
+
+The real limitation is different and worse: **`context.mode.contextInfo` is empty in a side pane**, and
+`Xrm.Utility.getPageContext()` yields nothing usable. `pageType: "control"` has no documented parameter
+mechanism, so a Case-scoped component would need its record id delivered out of band. That makes the
+side pane the weakest of the three placements for this project, despite rendering correctly.
+See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-side-pane-half-passed-custom-page-half-blocked).
 
 ## Summary matrix
 

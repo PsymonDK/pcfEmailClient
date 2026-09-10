@@ -44,11 +44,26 @@ function toRow(raw: ComponentFramework.WebApi.Entity): EmailRow {
 interface ContextInfoLike { entityId?: string; entityTypeName?: string }
 interface ModeLike { contextInfo?: ContextInfoLike }
 
-/** Resolve the Case id from the page/form context the host supplies. */
-function resolveCaseId(context: ComponentFramework.Context<IInputs>): string | null {
+export type CaseIdSource = 'caseId property' | 'contextInfo' | 'unresolved';
+
+/**
+ * Resolve the Case id, and report WHICH host mechanism supplied it.
+ *
+ * Measured 2026-09-10 (S2): `contextInfo` is only populated on a FORM host. In an app side
+ * pane it is empty, and a custom page gets the record as a page input the component cannot
+ * read. So the explicit `caseId` property wins when the host binds it.
+ */
+function resolveCaseId(
+  context: ComponentFramework.Context<IInputs>,
+): { id: string | null; source: CaseIdSource } {
+  const raw = context.parameters.caseId?.raw;
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    return { id: raw.trim().replace(/[{}]/g, ''), source: 'caseId property' };
+  }
   const mode = context.mode as unknown as ModeLike;
   const id = mode.contextInfo?.entityId;
-  return id ? id.replace(/[{}]/g, '') : null;
+  if (id) return { id: id.replace(/[{}]/g, ''), source: 'contextInfo' };
+  return { id: null, source: 'unresolved' };
 }
 
 // context.webAPI rejects with a plain object, not an Error, so `err.message` alone
@@ -77,7 +92,7 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
   const ctxRef = React.useRef(context);
   ctxRef.current = context;
 
-  const caseId = resolveCaseId(context);
+  const { id: caseId, source: caseIdSource } = resolveCaseId(context);
   const [scratch, setScratch] = React.useState<string>(asStr(restoredState?.scratch) ?? '');
   const [data, setData] = React.useState<{ rows: EmailRow[]; loading: boolean; error: string | null }>({
     rows: [], loading: true, error: null,
@@ -88,7 +103,13 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
   React.useEffect(() => {
     let cancelled = false;
     if (!caseId) {
-      setData({ rows: [], loading: false, error: 'Could not resolve the Case id from context.' });
+      setData({
+        rows: [],
+        loading: false,
+        error:
+          'Could not resolve the Case id. On a form it comes from contextInfo; in a side pane or ' +
+          'custom page the host must bind the caseId property.',
+      });
       return;
     }
     const run = async (): Promise<void> => {
@@ -137,32 +158,41 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
   const alloc = context.mode.allocatedHeight;
   const allocW = context.mode.allocatedWidth;
 
-  // RQ1, measured 2026-09-10: a subgrid cell on a form tab is CONTENT-sized, not
-  // viewport-sized. `allocatedHeight` is -1 and every ancestor sized itself to this
-  // component's own min-height, so `height: 100%` resolves to nothing. The docs'
-  // "grow to use 100% of the space" applies to a main/related grid page, not a subgrid
-  // cell on a form. A mail client therefore has to CLAIM its height from the viewport.
+  // Height must be HOST-AWARE. Two hosts, two behaviours, both measured:
+  //
+  //  - Form tab (S1, 2026-09-10): `allocatedHeight` is -1 and every ancestor sizes itself
+  //    to this component's own min-height, so `height: 100%` resolves to nothing. The
+  //    component must CLAIM height from the viewport.
+  //  - Custom page (S2, 2026-09-10): `allocatedHeight` is a REAL number - the control's
+  //    configured Size in the page. Claiming from the viewport over-claims and overflows
+  //    (observed: 994px claimed inside a 200px control box). Respect the host instead.
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const [measured, setMeasured] = React.useState('measuring…');
+  const hostAllocatedHeight = context.mode.allocatedHeight;
   React.useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
     const BOTTOM_GUTTER = 24;
     const MIN = 320;
-    const claim = (): void => {
-      const top = el.getBoundingClientRect().top;
-      const available = Math.max(MIN, Math.round(window.innerHeight - top - BOTTOM_GUTTER));
-      el.style.height = `${available}px`;
+    const apply = (): void => {
+      let note: string;
+      if (hostAllocatedHeight > 0) {
+        // Host gave us a real box (custom page, side pane). Fill it, don't fight it.
+        el.style.height = '100%';
+        note = `honouring host allocatedHeight ${hostAllocatedHeight}px`;
+      } else {
+        const top = el.getBoundingClientRect().top;
+        const available = Math.max(MIN, Math.round(window.innerHeight - top - BOTTOM_GUTTER));
+        el.style.height = `${available}px`;
+        note = `claimed ${available}px from viewport ${window.innerHeight}px, top ${Math.round(top)}px`;
+      }
       const r = el.getBoundingClientRect();
-      setMeasured(
-        `${Math.round(r.height)}px high x ${Math.round(r.width)}px wide ` +
-          `(claimed ${available}px from viewport ${window.innerHeight}px, top ${Math.round(top)}px)`,
-      );
+      setMeasured(`${Math.round(r.height)}px high x ${Math.round(r.width)}px wide (${note})`);
     };
-    claim();
-    window.addEventListener('resize', claim);
-    return () => { window.removeEventListener('resize', claim); };
-  }, []);
+    apply();
+    window.addEventListener('resize', apply);
+    return () => { window.removeEventListener('resize', apply); };
+  }, [hostAllocatedHeight]);
 
   const savedAt = asStr(restoredState?.savedAt);
 
@@ -190,7 +220,7 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
           <span>rendered box: <b>{measured}</b></span>
           <span>init at {initAt}</span>
           {savedAt && <span>state saved at {savedAt}</span>}
-          <span>case {caseId ?? '(unresolved)'}</span>
+          <span>case {caseId ?? '(unresolved)'} · via <b>{caseIdSource}</b></span>
         </div>
         <div className="cec-diag-row">
           <Text size={200}>Draft proxy — type, switch Case session, come back:</Text>

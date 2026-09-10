@@ -177,12 +177,22 @@ reconstruction. `messageid` is populated for **received** mail only.
 
 - **Virtual (React) dataset component.** Virtual so it shares the host's React and Fluent instance
   instead of bundling its own.
-- `allocatedHeight` is **-1** on dataset components — confirmed live. But **`height: 100%` gets you
-  nothing on a form tab**: a subgrid cell is *content*-sized, and every ancestor sizes itself to the
-  component's own `min-height`. The docs' "grow to use 100% of the space" applies to a main/related
-  grid page, not a subgrid cell on a form. **Claim height from the viewport instead** —
-  `window.innerHeight - rootTop - gutter`, recomputed on resize (measured 552–658px depending on
-  window size). Verified 2026-09-10.
+- **Height must be host-aware.** Measured 2026-09-10:
+  - **Form tab:** `allocatedHeight` is **-1** and the host is *content*-sized — every ancestor sizes
+    itself to the component's own `min-height`, so `height: 100%` yields nothing. The docs' "grow to
+    use 100% of the space" applies to a main/related grid page, not a subgrid cell on a form.
+    **Claim height from the viewport**: `window.innerHeight - rootTop - gutter`, recomputed on resize
+    (measured 552–658px).
+  - **Custom page / side pane:** `allocatedHeight` is a **real number** (the control's configured
+    Size). Claiming from the viewport over-claims and overflows. **Honour the host.**
+  - Rule: `allocatedHeight > 0` → `height: 100%`; `=== -1` → claim from viewport.
+- **The Case id arrives differently per host.** `context.mode.contextInfo` is **form-only** — it is
+  empty in a side pane, and a custom page receives the record as a *page* input (`recordId`) that a
+  code component cannot read. The manifest therefore has an explicit **`caseId`** input property; a
+  custom page binds it to `Param("recordId")`. Prefer the property, fall back to `contextInfo`.
+- **Never trust anything measured in Power Apps Studio.** `context.webAPI.retrieveMultipleRecords`
+  reports *"Method not implemented"* at author time (the documented custom-page authoring gap), and
+  author-time `contextInfo` returns a **dummy Case id**. Only the published app tells the truth.
 - Call `context.mode.trackContainerResize(true)` and handle `"layout"` in `context.updatedProperties`
   for width changes.
 - **`context.webAPI` rejects with a plain object, not an `Error`.** `err instanceof Error ? … : …`

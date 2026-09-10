@@ -27,7 +27,7 @@ table carries genuine Exchange-grade correlation columns:
 |---|---|---|
 | `conversationtrackingid` | Uniqueidentifier | Conversation Tracking Id. `IsValidForForm: False`, readable. **Measured 0% populated — do not use.** See [measured population](#measured-population-customer-service-demo-dk-2026-09-09). |
 | `conversationindex` | String (2048) | "Identifier for all the email responses for this conversation." The Exchange **ConversationIndex** — hierarchical, append-on-reply. True parent/child ordering, not just grouping. **Hard read-only: `IsValidForCreate: false`, `IsValidForUpdate: false`.** Only server-side sync populates it. |
-| `baseconversationindexhash` | Integer | "Hash of base of conversation index." A cheap, indexable grouping key. **Writable on create *and* update** — so it is not a platform-guaranteed value; treat it as advisory, not as an integrity guarantee. |
+| `baseconversationindexhash` | Integer | "Hash of base of conversation index." A cheap, indexable grouping key. **Writable on create and update, but the platform OVERWRITES it on send** — measured in S7: a value of `111000001` became `100487241`, recomputed from the `conversationindex` the platform assigns. So it is advisory only, and **you cannot force outbound threading by writing it**. |
 | `correlatedactivityid` | Lookup → `email` | Platform's own correlation result. |
 | `correlationmethod` | Picklist | "Shows how an email is correlated to an existing email… **For system use only.**" Read for diagnostics; do not write. |
 | `parentactivityid` | Lookup → `email` | "Select the activity that the email is associated with." |
@@ -162,6 +162,36 @@ affect architecture selection, but it should be prototyped early (spike S7).
 | R18 errors | Guarded by `Organization.RequireApprovalForUserEmail` / `RequireApprovalForQueueEmail`; when set, mail is sent only if the user's or queue's address is approved (`SystemUser.EmailRouterAccessApproval` = 1) | **Pre-flight this** and warn the agent up front rather than failing at send |
 | R20 regarding | Set `regardingobjectid` to the Case on create | Trivial; also what scopes it back into our own view |
 | R19 Copilot | `context.Copilot` in PCF / `Xrm.Copilot` in MDA script | See [`03-candidates.md`](03-candidates.md) |
+
+### What the platform does to an email ON SEND (measured, S7, 2026-09-10)
+
+A real send from an approved queue changes the row in ways the client must expect. Confirmed by
+sending and receiving one:
+
+| Column | Before send | After send |
+|---|---|---|
+| `statecode` / `statuscode` | Open / **Draft** | Completed / **Pending Send** → Completed / **Sent** |
+| `messageid` | null | assigned (`<…@CAREDEMO…>`) — so it is **not** "received mail only" as the docs say |
+| `conversationindex` | null | **assigned** — 44 chars, a base/depth-0 index |
+| `baseconversationindexhash` | `111000001` (mine) | **`100487241`** — recomputed by the platform |
+| `trackingtoken` | null | `CRM:0100009` |
+| `subject` | `RE: …Jensen VVS` | `RE: …Jensen VVS **CRM:0100009**` — the token is **appended to the subject** |
+
+**Three consequences for the client:**
+
+1. **Don't try to force threading by writing `baseconversationindexhash`** — it is overwritten. Let
+   the platform assign conversation identity and read it back.
+2. **Normalise tracking tokens out of subjects.** The appended `CRM:nnnnnnn` breaks subject-fallback
+   matching. `threading.ts` now strips a generic `\b[A-Za-z]{2,8}:\d{4,12}\b` (generic because the
+   prefix is configurable, and this environment's data also contains `MON:026300261` from a third
+   party). Watch the 4-digit minimum — it stops clock times like `10:30` being eaten.
+3. **`Pending Send` is not `Sent`.** `SendEmail` returns success once the platform accepts the message;
+   server-side sync transmits it afterwards. A client that reports "sent" on the HTTP 200 is lying
+   slightly — poll `statuscode`, or present it as queued.
+
+**Still untested:** the approval guard itself (R18). The S7 probe used a queue with *no* address, which
+fails with a different (though equally clean) error. A queue that has an address but is unapproved is
+needed to exercise `SystemUser.EmailRouterAccessApproval` / `Queue.EmailRouterAccessApproval` properly.
 
 ### RQ7 — attachment size ceilings — MEASURED, and not what the docs imply (S6, 2026-09-10)
 

@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6 PASSED; S8 partially run
+## Status: S1, S2, S6, S7 PASSED; S8 nesting half now closable
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -17,13 +17,20 @@ attachment path (6 MB fails with a clean HTTP 400), while the **chunked path ign
 40 MB uploaded against a 5 MB cap. Large attachments therefore need the chunked API, not an admin
 raising a setting. See [S6 result](#s6-result--2026-09-10-passed-and-it-corrects-the-data-model-doc).
 
-**S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
+**S7 has passed** — a real email was sent from the approved Care queue and **confirmed received**,
+with a chunk-uploaded 1 MB attachment. It broke two of my own assumptions: the platform **overwrites
+`baseconversationindexhash` on send**, and it **appends the tracking token to the subject** (which my
+`normaliseSubject` failed to strip — now fixed). See
+[S7 result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions).
 
-The remaining spikes are **unblocked** as of 2026-09-09: `pac` CLI 2.11.2 is authenticated against
-**the demo environment** (`https://your-org.crm4.dynamics.com/`), with Node
-v24.13.0 and npm 11.6.2 present, and the requester has confirmed this is the right environment with
-CSW installed. What remains unverified is whether the account holds **System Administrator**, and the
-approved-mailbox prerequisite for S7.
+**S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
+Its `conversationindex` nesting half is now **closable**: the sent mail carries a real 44-char index,
+and a reply from the recipient would arrive via server-side sync with a deeper one.
+
+Environment: `pac` CLI 2.11.2 authenticated against **the demo environment**
+(`https://your-org.crm4.dynamics.com/`), Node v24.13.0, npm 11.6.2. The requester
+confirmed CSW is installed, and the **Care queue** provides the approved, server-side-synced mailbox
+used for S7. Only S3/S4 prerequisites remain unverified, and both are deprioritised.
 
 Note that this is a **shared demo environment** — see the environment guardrails in
 [`CLAUDE.md`](../../CLAUDE.md) before running anything that writes, sends email, or changes
@@ -33,8 +40,8 @@ System Settings.
 [`02`](02-hosting-and-placement.md) and [`04`](04-data-model.md) have both now been **corrected by
 measurement** (RQ1 real estate, side-pane support, and the `regardingobjecttypecode` / threading
 findings). The recommendation in [`07-decision.md`](07-decision.md) now has its load-bearing claim
-**confirmed for BOTH placements** — form tab (S1) and custom page (S2). S6 has since passed and
-corrected `04`. **S7 is the last open gate** on full-client feasibility.
+**confirmed for BOTH placements** — form tab (S1) and custom page (S2). S6 and S7 have since passed,
+each correcting `04`. No gate remains open on the hosting decision.
 
 ### Prerequisites before any spike can run
 
@@ -45,7 +52,7 @@ corrected `04`. **S7 is the last open gate** on full-client feasibility.
 | P3 | `pac` CLI installed and authenticated against it (`pac auth create`) | ✅ pac 2.11.2, profile `[3]` active |
 | P4 | Node.js LTS + npm | ✅ Node v24.13.0, npm 11.6.2 |
 | P5 | A Case with a **real, long email chain** — required to close S8 | ⚠️ **Depth solved, fidelity not.** A 7-message seed chain now exists (see [follow-up](#s8-follow-up--seed-data-created-2026-09-09)), but seeded mail can never carry `conversationindex`. Closing the nesting half needs a genuine synced round-trip. |
-| P6 | An approved mailbox for the test user — required for S7 | ❓ Not verified |
+| P6 | An approved mailbox — required for S7 | ✅ **Met via the Care queue** (`caredemo@…`, approval 1, outgoing *Success*, server-side sync). The *user* mailbox is approved too but unsynced; sending from the queue is the correct pattern from a Case anyway. |
 | P7 | For S3 only: **Power Apps code apps** feature enabled on the environment, plus ability to edit CSP `frame-ancestors` in the admin center | ❓ Not verified; S3 is deprioritised anyway |
 
 ## Spike definitions
@@ -474,6 +481,61 @@ received message in Outlook.
   architecture choice, but a failure here changes the effort estimate substantially.
 - R18 — the error surfaced when sending from an unapproved mailbox.
 
+#### S7 result — 2026-09-10: **SENT SUCCESSFULLY**, and it broke two of my own assumptions
+
+A real email was sent, with the requester's explicit authorisation, from the **approved Care queue**
+(`care@example.invalid`, outgoing status *Success*, server-side sync both ways) to
+the requester's own address. **They confirmed receipt.**
+
+| Check | Result |
+|---|---|
+| `SendEmail` with `IssueSend: true` | ✅ HTTP 200 in 4010 ms |
+| Status transition | `Open`/`Draft` → `Completed`/**Pending Send**, then `Completed`/**Sent** |
+| Delivery | ✅ **Confirmed received by the recipient** |
+| Attachment | ✅ 1 MB uploaded via the **chunked** API on a draft, then sent — so chunk-uploaded attachments are deliverable, closing S6's open question at this size |
+| `messageid` | Assigned on send: `<880ACBC28F0D454F93A14C10C458409A1DD4110A4DE0@CAREDEMO…>` |
+| `conversationindex` | **Assigned by the platform on send** — 44 chars (`01E1ECB8719970468FB42521B09111CCB3DD4110A4DE`), i.e. a base/depth-0 index |
+| `trackingtoken` | `CRM:0100009` |
+
+Sending from the **Care queue** rather than the user is the correct pattern — the requester pointed out
+that the standard email form does exactly this from a Case, and the environment's pre-existing outbound
+mail all originates from that same queue address.
+
+##### Two assumptions broken
+
+**1. The platform OVERWRITES `baseconversationindexhash` on send.** I set `111000001` to make the reply
+join the 7-message seed thread. After sending, the row carried **`100487241`** — recomputed by the
+platform from the `conversationindex` it assigned. Consequence: the sent mail formed **its own
+one-message thread** instead of joining the chain (verified by re-running the threading logic: the Case
+went from 3 threads to 5).
+
+So `baseconversationindexhash` is writable but **not durable for outbound mail** —
+[`04-data-model.md`](04-data-model.md) already flagged it as advisory; this is the concrete mechanism.
+**You cannot force outbound threading by writing the hash.** For real mail this is the *right*
+behaviour (the platform knows the true conversation); it only bit here because the seed hashes are
+synthetic. But it does expose a genuine precedence gap: **hash grouping wins over subject**, so two
+groups with different hashes never merge even when their normalised subjects match. Worth considering
+an optional post-pass that merges hash-groups sharing a normalised subject.
+
+**2. The tracking token is appended to the outgoing SUBJECT, and my `normaliseSubject` didn't strip
+it.** The sent subject became `RE: Reklamation: … - Jensen VVS CRM:0100009`, which normalised to
+`… jensen vvs crm:0100009` — **not** matching `… jensen vvs`. Subject-fallback threading would
+therefore fragment on any tracked reply. **Fixed** in `threading.ts` with a generic
+`\b[A-Za-z]{2,8}:\d{4,12}\b` strip — generic because the prefix is configurable and the seed data also
+contains third-party tokens of the same shape (`MON:026300261`). 8/8 unit cases pass, including
+`Meeting at 10:30 tomorrow` staying intact (the 4-digit minimum avoids matching clock times).
+
+Neither of these was findable without a real send. They are exactly what S7 was for.
+
+##### R18 — not properly tested
+
+The probe sent from `<Care Agents>` (approval = 0) failed with a clean HTTP 400 —
+*"Could not find email address for recipient of type 'Queue' with ID …"* — but that is a **missing
+address** error, not the approval guard, because that queue has no email address at all. The
+*property* R18 needs (a fast, specific, catchable failure rather than a silent one) held. **The
+approval-guard path itself remains untested**; it needs a queue that has an address but is unapproved.
+The probe draft was deleted, having never sent.
+
 ### S8 — Threading fidelity against real data
 
 Run the [`04`](04-data-model.md) threading strategy against a real Case with a long chain. Score how
@@ -580,6 +642,6 @@ finding and must be recorded, not discarded.)*
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |
 | S5 | — | **Not run** — P1–P2 unverified | |
 | S6 | 2026-09-10 | **PASSED** — inline capped at 5 MB (clean 400); chunked ignores the cap (40 MB OK) | Corrects `04`. Also: `context.webAPI` has no `execute`, so chunked upload needs `Xrm.WebApi.online.execute`. 90 MB of test data cleaned up. See [result](#s6-result--2026-09-10-passed-and-it-corrects-the-data-model-doc) |
-| S7 | — | **Not run** — P6 unverified | Gates the decision |
+| S7 | 2026-09-10 | **PASSED** — real send from the Care queue, receipt confirmed | Broke 2 assumptions: platform overwrites the conversation hash on send, and appends the tracking token to the subject (`normaliseSubject` fixed). R18 approval guard still untested. See [result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions) |
 | S8 | 2026-09-09 | **Partial — grouping half validated; nesting half permanently needs synced mail** | Read-only measurement, then seed data created. 3 corrections to `04`. See [result](#s8-result-partial--2026-09-09) and [follow-up](#s8-follow-up--seed-data-created-2026-09-09) |
 | S9 | — | **Not run** — P1–P2 unverified | |

@@ -25,3 +25,20 @@ ignores the cap and succeeded at 40 MB. Full write-up in
 
 **It leaves data behind.** Ids are written to `s6-created.json`; delete the attachments and the draft
 email when done (the 2026-09-10 run created 90 MB and cleaned it up afterwards).
+
+## `s7-send.mjs`
+
+**SENDS REAL EMAIL** (`IssueSend: true`). Only run it with explicit authorisation, and set `DV_TO` to
+an address you are allowed to mail.
+
+Creates a reply on `DV_CASE` from the approved **Care** queue, with rich text, two levels of Outlook
+`divRplyFwdMsg` quoted history using Danish headers, and a 1 MB attachment uploaded via the chunked
+API. Then sends it and reports the resulting `statuscode`, `messageid`, `conversationindex`,
+`baseconversationindexhash` and `trackingtoken`.
+
+Result (2026-09-10): sent and received. Two findings — the platform **overwrites**
+`baseconversationindexhash` on send, and **appends the tracking token to the subject**. Details in
+[`../../docs/research/06-spikes.md`](../../docs/research/06-spikes.md).
+
+Its second probe (send from an unapproved queue) did **not** test the approval guard, because the queue
+it used has no email address at all. That path is still untested.

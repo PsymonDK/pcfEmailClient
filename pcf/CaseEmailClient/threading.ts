@@ -39,7 +39,16 @@ export interface Thread {
 const RE_PREFIX =
   /^\s*(?:(?:re|fw|fwd|sv|vs|aw|antw|rif|ang|vb|vl)\s*(?:\[\d+\])?\s*:\s*)+/i;
 
-/** Strips any stack of localised reply/forward prefixes and collapses whitespace. */
+/**
+ * Tracking tokens the platform APPENDS to an outgoing subject, e.g. "… CRM:0100009".
+ * Found by S7 (2026-09-10): sending stamps the token into the subject, so without
+ * stripping it the subject fallback treats a tracked reply as a different thread.
+ * Kept generic because the prefix is configurable and the seed data also contains
+ * third-party tokens of the same shape (e.g. "MON:026300261").
+ */
+const RE_TRACKING_TOKEN = /\s*\b[A-Za-z]{2,8}:\d{4,12}\b\s*/g;
+
+/** Strips localised reply/forward prefixes and tracking tokens, and collapses whitespace. */
 export function normaliseSubject(subject: string | null | undefined): string {
   if (!subject) return '(no subject)';
   let s = subject;
@@ -49,6 +58,7 @@ export function normaliseSubject(subject: string | null | undefined): string {
     if (next === s) break;
     s = next;
   }
+  s = s.replace(RE_TRACKING_TOKEN, ' ');
   const cleaned = s.replace(/\s+/g, ' ').trim().toLowerCase();
   return cleaned.length > 0 ? cleaned : '(no subject)';
 }

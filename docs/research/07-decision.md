@@ -7,7 +7,7 @@
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
 | **Eliminated** | Generative page (platform facts); custom page alone, code app via iframe, HTML web resource (MUST-requirement failure) |
-| **Confidence** | **High for both placements.** S1 (form tab) and S2 (custom page) both passed live on 2026-09-10, each confirming the load-bearing claim by measurement. S6 (attachments) has since passed. **S7 (send + quoted history) is the last open gate.** |
+| **Confidence** | **High for both placements.** S1 (form tab) and S2 (custom page) both passed live on 2026-09-10, each confirming the load-bearing claim by measurement. S6 (attachments) and S7 (real send, receipt confirmed) have since passed. **No gate remains open on the hosting decision.** |
 
 ## Context
 
@@ -112,9 +112,11 @@ Named up front so the decision is falsifiable:
 
 ## Next steps
 
-1. **Run S7** — the last gate: the send round-trip, which also sizes the quoted-history risk and closes
-   S8's `conversationindex` nesting half. Needs an approved mailbox (P6, unverified). Note S6 showed a
-   40 MB attachment *stores* fine; whether it *sends* is exactly what S7 must find out.
+1. **Close S8's nesting half.** The S7 send produced a real 44-char `conversationindex`; a reply from
+   the recipient arrives via server-side sync with a deeper one, which is the data needed to verify
+   ordering and parent/child nesting. Also still open: the **R18 approval guard** (needs a queue with an
+   address but unapproved), and whether a **large** attachment sends (S6 proved 40 MB *stores*; S7 sent
+   1 MB).
 2. **Spike the platform rich-text editor.** `MscrmControls.RichTextEditor.RichTextEditorControl` exists
    and is already used on the enhanced Case form. If it is reusable from a PCF, R11 needs no bundled
    third-party editor — removing the largest remaining risk against this architecture.

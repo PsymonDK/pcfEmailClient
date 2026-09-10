@@ -11,8 +11,8 @@ activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
 **Current state: research plus a spike control.** The architecture decision is **spike-validated for
 hosting on both target placements** — S1 (Case form tab) and S2 (custom page) both confirmed live that
-`setControlState` survives a CSW two-session teardown. S6 (attachments) has also passed. **S7 (send round-trip) is
-the last open gate.** The spike control in `pcf/` is throwaway
+`setControlState` survives a CSW two-session teardown. S6 (attachments) and S7 (real send, receipt
+confirmed) have also passed. **No gate remains open on the hosting decision.** The spike control in `pcf/` is throwaway
 diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
 at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 
@@ -168,6 +168,13 @@ bite if forgotten:
 - Do **not** write `email.templateid` — documented "For internal use only". Use `InstantiateTemplate`
   to resolve template content without sending, and `SendEmailFromTemplate` to send.
 - Sending: `POST /api/data/v9.2/emails(<id>)/Microsoft.Dynamics.CRM.SendEmail` with `{"IssueSend": true}`.
+  **Send from the Case's queue, not the user** — that is what the standard email form does. Here that is
+  the **Care** queue (`care@example.invalid`, approved, server-side synced).
+  **On send the platform rewrites the row:** it assigns `messageid`, `conversationindex` and
+  `trackingtoken`, **overwrites `baseconversationindexhash`** (so you cannot force threading by
+  writing it), and **appends the tracking token to the subject** (`… CRM:0100009`) — which is why
+  `normaliseSubject` must strip `[A-Za-z]{2,8}:d{4,12}` tokens. `SendEmail` returning 200 means
+  **Pending Send**, not Sent; poll `statuscode` before claiming delivery. Verified 2026-09-10.
 - Attachments: `activitymimeattachment` with `objectid` = the email and `objecttypecode` = `email`.
   **`Organization.MaxUploadFileSize` (5 MB here) caps only the INLINE base64 path** — 6 MB inline fails
   with HTTP 400 *"Attachment file size is too big."* The **chunked** path is not capped by it at all

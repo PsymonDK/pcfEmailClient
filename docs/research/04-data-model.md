@@ -48,8 +48,10 @@ table carries genuine Exchange-grade correlation columns:
 `conversationtrackingid` was originally listed first here. **Measurement demoted it** — it is entirely
 unpopulated in the target environment.
 
-Scope every query by `regardingobjectid eq <caseId>`; `_regardingobjecttypecode` guards against
-same-GUID collisions across tables.
+Scope **and** type-guard every query with the typed navigation property:
+`$filter=regardingobjectid_incident/incidentid eq <caseId>`. Do **not** filter on
+`regardingobjecttypecode` — it is a FetchXML attribute only and fails over the Web API with HTTP 400
+(measured in S1; see [`06-spikes.md`](06-spikes.md#s1-result--2026-09-10-passed-observed-in-the-live-app)).
 
 ### Measured population (the demo environment, 2026-09-09)
 
@@ -102,8 +104,9 @@ Corollary worth carrying into implementation: because `baseconversationindexhash
 caller with write access, it is **advisory**. The client should degrade gracefully if two unrelated
 threads collide on a hash rather than assuming platform-guaranteed uniqueness.
 
-**Remaining gap:** `internetmessageheaders` is capped at **500 characters**. Real `References:` chains
-routinely exceed that, so full RFC-5322 reconstruction is not available. Do not design around it.
+**Remaining gap:** `internetmessageheaders` is capped at **500 characters** — and, measured on a real
+server-side-synced inbound reply (S7), it is **null anyway**. The cap is moot: the column is simply not
+populated here, so it is unusable for threading regardless of size. Do not design around it.
 
 ## Reading requirements
 
@@ -192,6 +195,21 @@ sending and receiving one:
 **Still untested:** the approval guard itself (R18). The S7 probe used a queue with *no* address, which
 fails with a different (though equally clean) error. A queue that has an address but is unapproved is
 needed to exercise `SystemUser.EmailRouterAccessApproval` / `Queue.EmailRouterAccessApproval` properly.
+
+### Bodies contain content no sender wrote (S7, 2026-09-10)
+
+A single real round-trip through the tenant's mail hygiene injected **four** things into the body, all
+of which land in the "new text" region and would otherwise render on every message:
+
+| Injected | Source | Strippable? |
+|---|---|---|
+| Microsoft Defender external-sender banner (bilingual) | Recipient-side transport | Yes — stable `ZjQcmQRYFpfptBannerStart` / `…BannerEnd` markers |
+| "You don't often get email from …" first-contact tip | Outlook | Yes — recognisable wrapper |
+| `Classification: Public` | Tenant policy, prepended outbound | Yes — line pattern |
+| Sender signature block | The sender | Harder — heuristic detection |
+
+Tracked as **R21** in [`01-requirements.md`](01-requirements.md). This is the difference between
+"renders the HTML" and "feels like a mail client".
 
 ### RQ7 — attachment size ceilings — MEASURED, and not what the docs imply (S6, 2026-09-10)
 

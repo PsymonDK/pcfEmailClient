@@ -12,7 +12,8 @@ activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 **Current state: research plus a spike control.** The architecture decision is **spike-validated for
 hosting on both target placements** — S1 (Case form tab) and S2 (custom page) both confirmed live that
 `setControlState` survives a CSW two-session teardown. S6 (attachments) and S7 (real send, receipt
-confirmed) have also passed. **No gate remains open on the hosting decision.** The spike control in `pcf/` is throwaway
+confirmed) have also passed, and **S8 is closed** — grouping, `conversationindex` ordering and the
+depth formula are all verified on a real conversation. **No research gate remains open.** The spike control in `pcf/` is throwaway
 diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
 at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 
@@ -185,10 +186,19 @@ bite if forgotten:
 - Pre-flight mailbox approval (`SystemUser.EmailRouterAccessApproval`) and warn the agent up front
   rather than failing at send (R18).
 
-**Threading** — use `baseconversationindexhash` to group, `conversationindex` to order and nest, then
-`correlatedactivityid` / `parentactivityid` to stitch gaps, with normalised-subject matching as the last
-fallback. `internetmessageheaders` is capped at 500 chars — do not design around full RFC-5322
-reconstruction. `messageid` is populated for **received** mail only.
+**Threading** — group by `baseconversationindexhash` (100% populated), order/nest by
+`conversationindex`, then `correlatedactivityid` / `parentactivityid`, with normalised-subject as the
+last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 → 1, i.e.
+`(len - 44) / 10`. Notes:
+- `conversationtrackingid` is **0% populated** — don't use it.
+- `internetmessageheaders` is **null** even on real synced inbound mail — unusable.
+- `messageid` **is** assigned on send, contrary to the docs' "received only".
+- `normaliseSubject` must strip appended tracking tokens (`CRM:0100009`, `MON:026300261`).
+- Hash grouping takes precedence over subject, so groups with differing hashes never merge — a real
+  risk for manually created mail. Consider an optional merge pass.
+- **Bodies contain content no sender wrote**: Defender external-sender banners
+  (`ZjQcmQRYFpfptBanner…`), Outlook first-contact tips, `Classification: Public` lines, and signature
+  blocks. Strip or collapse them (R21) or every message renders cluttered.
 
 ## PCF conventions (once code exists)
 

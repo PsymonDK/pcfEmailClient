@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7 PASSED; S8 nesting half now closable
+## Status: S1, S2, S6, S7 PASSED; S8 CLOSED. No open gates.
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -23,9 +23,10 @@ with a chunk-uploaded 1 MB attachment. It broke two of my own assumptions: the p
 `normaliseSubject` failed to strip — now fixed). See
 [S7 result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions).
 
-**S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
-Its `conversationindex` nesting half is now **closable**: the sent mail carries a real 44-char index,
-and a reply from the recipient would arrive via server-side sync with a deeper one.
+**S8 is CLOSED.** The S7 send plus the requester's reply produced a genuine two-message conversation
+(`conversationindex` 44 → 54 chars, same hash), so grouping, **cIdx ordering** and the depth formula are
+all verified on real platform data. See [S8 (partial)](#s8-result-partial--2026-09-09) for the
+population survey and [S8 CLOSED](#s8-closed--2026-09-10-via-the-s7-round-trip) for the closure.
 
 Environment: `pac` CLI 2.11.2 authenticated against **the demo environment**
 (`https://your-org.crm4.dynamics.com/`), Node v24.13.0, npm 11.6.2. The requester
@@ -51,7 +52,7 @@ each correcting `04`. No gate remains open on the hosting decision.
 | P2 | System Administrator (or System Customizer + admin center access) on that environment | ❓ Not verified |
 | P3 | `pac` CLI installed and authenticated against it (`pac auth create`) | ✅ pac 2.11.2, profile `[3]` active |
 | P4 | Node.js LTS + npm | ✅ Node v24.13.0, npm 11.6.2 |
-| P5 | A Case with a **real, long email chain** — required to close S8 | ⚠️ **Depth solved, fidelity not.** A 7-message seed chain now exists (see [follow-up](#s8-follow-up--seed-data-created-2026-09-09)), but seeded mail can never carry `conversationindex`. Closing the nesting half needs a genuine synced round-trip. |
+| P5 | A Case with a **real, long email chain** — required to close S8 | ✅ **Met.** A 7-message seed chain covers depth, and the S7 round-trip supplied genuine `conversationindex` data (44 → 54 chars) that seeded mail can never carry. |
 | P6 | An approved mailbox — required for S7 | ✅ **Met via the Care queue** (`caredemo@…`, approval 1, outgoing *Success*, server-side sync). The *user* mailbox is approved too but unsynced; sending from the queue is the correct pattern from a Case anyway. |
 | P7 | For S3 only: **Power Apps code apps** feature enabled on the environment, plus ability to edit CSP `frame-ancestors` in the admin center | ❓ Not verified; S3 is deprioritised anyway |
 
@@ -527,6 +528,59 @@ contains third-party tokens of the same shape (`MON:026300261`). 8/8 unit cases 
 
 Neither of these was findable without a real send. They are exactly what S7 was for.
 
+##### R12 verified against what transport actually delivered — 10/10
+
+The requester supplied the received `.msg`. Parsed it and ran `quoting.ts` against the **delivered**
+HTML (21734 chars — Exchange inflated my ~3 KB body with styles), which is a much better test than the
+copy Dataverse stored:
+
+| Check | Result |
+|---|---|
+| Split rule matched | `divRplyFwdMsg`, `quoteDepth` 2 |
+| New text isolated (greeting + table) | ✅ |
+| New text free of quoted content | ✅ |
+| Quoted level 1 ("Teknikeren har vaeret forbi…") | ✅ |
+| Quoted level 2 ("Tusind tak…") | ✅ |
+| Danish `Fra:` / `Sendt:` headers retained | ✅ |
+| Bold / link / table survived transport | ✅ |
+
+**10/10.** And the attachment arrived as `s7-1MB-chunked.bin` at **exactly 1048576 bytes** — so a
+chunk-uploaded attachment is delivered intact, which closes S6's remaining question at that size.
+
+##### The inbound reply — a real Outlook-generated quote structure
+
+The requester replied; server-side sync brought it in within minutes. This is the strongest test yet,
+because *their* Outlook built the quote structure, not me:
+
+- Split matched `divRplyFwdMsg`, depth 3. **New text correctly isolated to 185 chars** — their actual
+  reply ("Her er mit svar.") plus signature — with 1521 chars of quoted chain separated out.
+- **The header block was in English** (`From:` / `Sent:` / `To:` / `Subject:`) where the seed data used
+  Danish. Both handled by the same rule, which is exactly why it was built localisation-aware.
+- **Auto-association worked (R20):** the reply arrived already `regarding` the Case, matched by the
+  `CRM:0100009` tracking token. No manual linking.
+
+##### NEW FINDING: transport and tenant policy inject content into the body
+
+Three things appeared in the body that **no sender wrote**, all of which land in the new-text region:
+
+1. Outlook's first-contact tip — *"You don't often get email from … Learn why this is important"*.
+2. A **Microsoft Defender external-sender banner**, bilingual EN/FR, wrapped in
+   `ZjQcmQRYFpfptBannerStart` / `…BannerEnd` markers.
+3. the tenant's **`Classification: Public`** line, prepended to outbound mail by tenant policy.
+
+Plus the sender's **signature block** (name, title, phone, links), which is legitimately part of the
+new text at the MIME level but which a mail client normally collapses.
+
+A client that renders the body verbatim will show all of this on **every message**, which is precisely
+the kind of clutter that makes the OOB Timeline feel unlike a mail client. Stripping the banners is
+tractable — the Defender wrapper has stable markers. Signature detection is the harder half. Recorded
+as a new requirement (**R21** in [`01-requirements.md`](01-requirements.md)).
+
+##### `internetmessageheaders` is not populated at all
+
+Null on the real synced inbound reply. The 500-character cap noted earlier is therefore moot — the
+column is simply empty here, so it is unusable for threading regardless of its size.
+
 ##### R18 — not properly tested
 
 The probe sent from `<Care Agents>` (approval = 0) failed with a clean HTTP 400 —
@@ -545,6 +599,32 @@ correctly it groups and orders.
 are actually **populated** — they depend on server-side sync having created the records, and manually
 created, imported or Flow-created email may have none of them. Record the measured fallback rate; it
 determines how much effort the subject-normalisation fallback deserves.
+
+#### S8 CLOSED — 2026-09-10, via the S7 round-trip
+
+The nesting half was open because seeded mail can never carry a `conversationindex`. The S7 send plus
+the requester's reply produced a **genuine two-message conversation**, which settles it:
+
+| Message | `conversationindex` | Depth | `baseconversationindexhash` |
+|---|---|---|---|
+| Outbound (S7 send) | 44 chars | 0 | `100487241` |
+| Inbound (their reply) | **54 chars** | **1** | `100487241` — *same* |
+
+- **Grouping:** both share the hash, so they group into one thread. Confirmed by re-running
+  `buildThreads`.
+- **Ordering:** the thread is badged **`(cIdx)`**, not `createdon` — the first time real conversation
+  index ordering has been exercised, and it ordered parent-before-child correctly.
+- **`conversationDepth` formula confirmed on real data:** `(len - 44) / 10` gives 0 and 1 for 44 and 54
+  chars, matching the 22-byte header + 5-byte-per-reply structure assumed in `threading.ts`.
+
+**RQ10 is now fully answered.** Grouping, ordering and depth all verified on genuine platform-generated
+conversation data, and the fallbacks verified separately on seeded and pre-existing mail.
+
+One structural note carried forward: the real thread (hash `100487241`) stays separate from the seed
+thread (`111000001`) even though the subjects match, because **hash grouping takes precedence over
+subject**. That is correct behaviour here — the seed hashes are synthetic — but it is the precedence gap
+described in the [S7 result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions),
+and a real environment could hit it with manually created mail.
 
 #### S8 result (partial) — 2026-09-09
 

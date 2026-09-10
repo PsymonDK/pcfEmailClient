@@ -72,11 +72,11 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ3 | Can a generative page be reached from the Case form at all? | Answered — **no, for our placements** | [02](02-hosting-and-placement.md) |
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
 | RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
-| RQ6 | Rich-text compose and quoted-history handling per host | Provisional | [03](03-candidates.md), [04](04-data-model.md) |
+| RQ6 | Rich-text compose and quoted-history handling per host | **Answered for reading (measured)** — split verified 10/10 on delivered HTML and on a real Outlook reply. Compose editor choice still open (see the rich-text spike) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | **Answered (measured)** — inline capped at 5 MB, chunked uncapped (40 MB OK) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | **Answered (measured, real send)** — note `Pending Send` ≠ `Sent`; R18 approval guard still untested | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ9 | Templates & signatures instantiation from code | Answered | [04](04-data-model.md) |
-| RQ10 | Threading fidelity available in Dataverse | Answered — **better than assumed**, and now **measured** (S8 partial) | [04](04-data-model.md), [06](06-spikes.md) |
+| RQ10 | Threading fidelity available in Dataverse | **Answered (fully measured)** — grouping, cIdx ordering and depth verified on a real conversation | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ11 | Copilot "draft with AI" parity | Answered | [03](03-candidates.md) |
 | RQ12 | ALM / solution-awareness | Answered | [03](03-candidates.md) |
 | RQ13 | Licensing per host | Answered | [03](03-candidates.md) |
@@ -104,11 +104,15 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
   chunk-uploaded attachment, **receipt confirmed by the recipient**. It broke two of my own
   assumptions: the platform **overwrites `baseconversationindexhash` on send**, and **appends the
   tracking token to the subject**, which my `normaliseSubject` failed to strip (now fixed).
-- **S8 partially run** (read-only), validating the threading strategy and correcting three claims.
+- **S8 CLOSED.** The S7 round-trip produced a genuine two-message conversation
+  (`conversationindex` 44 → 54 chars, same hash), verifying **grouping, cIdx ordering and the depth
+  formula** on real platform data — the one thing seeded mail could never provide. R12 was also
+  verified against the **delivered** `.msg` (10/10) and against a real Outlook-generated reply.
 
 The recommendation in [`07-decision.md`](07-decision.md) is now **measured on both target placements**
 — form tab (S1) and custom page (S2) — so the hosting decision is settled, and **S6** (attachments)
-and **S7** (real send) have settled the functional gates too. **No gate remains open on the
-architecture.** What is left is S8's `conversationindex` nesting half, now closable because the sent
-mail carries a real index and an inbound reply would arrive with a deeper one. S2 also surfaced a deployment cost: wiring
+and **S7** (real send) have settled the functional gates too. **No gate remains open.** S8 is closed. The research pass has answered every RQ it set out to answer;
+what remains is implementation planning, plus two optional follow-ups: the **R18 approval guard** (needs
+a queue that has an address but is unapproved) and the **platform rich-text editor** spike, which could
+remove the bundled-editor risk entirely. S2 also surfaced a deployment cost: wiring
 a custom page into the managed CSW app needs the app designer, per environment.

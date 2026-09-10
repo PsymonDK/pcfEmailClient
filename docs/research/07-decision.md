@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Proposed** — hosting validated by spike (S1 + S2 passed); awaiting S6/S7 on functional feasibility, and stakeholder sign-off |
+| **Status** | **Proposed** — **all spikes passed** (S1, S2, S6, S7; S8 closed). Awaiting stakeholder sign-off. |
 | **Date** | 2026-09-09 |
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
@@ -85,9 +85,9 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/
 | **Layout is the component's job, and differs per host** (S1 + S2) | Medium | On a form tab `allocatedHeight` is -1 and the host is content-sized, so height must be claimed from the viewport. In a custom page `allocatedHeight` is a real number and claiming over-claims. The control is now host-aware; keep that. |
 | **The Case id arrives differently per host** (S2) | Medium | `contextInfo` is form-only — empty in a side pane, and a custom page passes `recordId` as a *page* input the component cannot read. The component needs an explicit `caseId` input property that the custom page binds to `Param("recordId")`. Implemented. |
 | **Wiring the custom page into CSW is manual, per environment** (S2) | Medium-high | CSW is a managed Microsoft app; adding a page to it is not automatable via `AddAppComponents` or `appmodulecomponent`, and CSW is absent from the maker apps list. Budget app-designer work per environment, and re-check the `Control` app tab template reversal condition below — it would remove this cost entirely. |
-| **Quoted-history splitting (R4/R12) has no API** — one HTML blob, no quote marker | **High** | Client-side heuristic over `blockquote`, `divRplyFwdMsg`, `gmail_quote`, `-----Original Message-----`; localisation-aware. Control our own emitted structure on compose; never re-serialise an inherited quote. Prototype in S7 before committing estimates. |
+| ~~Quoted-history splitting (R4/R12) has no API~~ | **Largely RESOLVED** | **S7:** the heuristic scored **10/10 against the delivered `.msg`** and correctly split a real Outlook-generated reply (depth 3), handling **English and Danish** header blocks. Risk downgraded from High. Residual: signature blocks and transport-injected banners land in the new-text region — tracked as **R21**. |
 | **No per-agent read state on `email`** (R6) — `lastopenedtime`/`opencount` are recipient-side tracking | Medium | Custom column or a small join table keyed by email + user. Decide in implementation planning. |
-| **Threading columns may be sparsely populated** on manually created, imported or Flow-created email | Medium | S8 measures the real fallback rate against production-like data; subject-normalisation fallback sized to that number. |
+| ~~Threading columns may be sparsely populated~~ | **RESOLVED** | **S8:** `baseconversationindexhash` 100% populated across 48 real rows; grouping, cIdx ordering and the depth formula all verified on a genuine conversation. Fallbacks verified separately. Residual: hash grouping takes precedence over subject, so groups with differing hashes never merge. |
 | ~~Attachment ceiling defaults to 5 MB~~ | **RESOLVED** | **S6, 2026-09-10:** `MaxUploadFileSize` caps only the *inline* path (6 MB → clean HTTP 400); the **chunked path ignores it** (40 MB OK). Use chunked upload; no admin change needed. Requires `Xrm.WebApi.online.execute` — `context.webAPI` has no `execute`. Reuse `attachmentid` on forward. Open question: whether large attachments *send* (S7). |
 | **Full-tab real estate on the enhanced Case form is unverified** | Low | S1. Dataset components get 100%-of-space growth with `allocatedHeight` = -1 and CSS filling; the unknown is surrounding form chrome, not the PCF. |
 
@@ -112,11 +112,9 @@ Named up front so the decision is falsifiable:
 
 ## Next steps
 
-1. **Close S8's nesting half.** The S7 send produced a real 44-char `conversationindex`; a reply from
-   the recipient arrives via server-side sync with a deeper one, which is the data needed to verify
-   ordering and parent/child nesting. Also still open: the **R18 approval guard** (needs a queue with an
-   address but unapproved), and whether a **large** attachment sends (S6 proved 40 MB *stores*; S7 sent
-   1 MB).
+1. **Two optional follow-ups, neither gating.** The **R18 approval guard** is still untested (needs a
+   queue that has an address but is unapproved), and whether a **large** attachment *sends* is unproven
+   (S6 showed 40 MB stores; S7 sent 1 MB successfully).
 2. **Spike the platform rich-text editor.** `MscrmControls.RichTextEditor.RichTextEditorControl` exists
    and is already used on the enhanced Case form. If it is reusable from a PCF, R11 needs no bundled
    third-party editor — removing the largest remaining risk against this architecture.

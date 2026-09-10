@@ -18,6 +18,7 @@ Priority: **M** = MUST (in scope, blocking) · **S** = SHOULD (in scope, non-blo
 | R6 | M | Unread / read state is visible and actionable | An unopened incoming email is visually distinct; opening it marks it read | Timeline has no first-class read state |
 | R7 | S | Filter and search within the Case's mail (by participant, date, has-attachment) | Filter to "has attachment"; only matching threads remain | Timeline filtering is coarse and not mail-shaped |
 | R8 | S | Emails on **parent/ancestor Cases** can optionally be included | Toggle "include parent case"; the parent's chain appears, marked as such | Not available |
+| **R21** | **S** | **Strip or collapse content injected by transport and tenant policy** — Defender external-sender banners (`ZjQcmQRYFpfptBanner…` markers), Outlook's "You don't often get email from…" tip, classification lines (`Classification: Public`), and trailing signature blocks | Open a message that carries a Defender banner; the banner is hidden or collapsed and the sender's actual text is what the agent reads | Timeline renders all of it verbatim on every message. **Added after S7** — all four were observed in a single real round-trip; see [`06-spikes.md`](06-spikes.md#new-finding-transport-and-tenant-policy-inject-content-into-the-body) |
 | R8b | W | Cross-Case inbox, queue triage, mail rules | — | Out of scope: that is the OOB Inbox's job |
 
 ## Compose

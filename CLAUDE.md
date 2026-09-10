@@ -94,6 +94,38 @@ pac auth list
   `pac solution delete`, `pac org delete`, `pac admin reset`, `pac data delete`, or anything that
   removes or overwrites solution components in a shared environment.
 - Prefer `pac pcf push` into an **unmanaged dev solution**; never push straight at anything managed.
+
+### Managed vs unmanaged — non-negotiable
+
+**Dev is unmanaged. Managed is only for downstream environments and final delivery.** Managed
+components cannot be customised in the environment they are installed into, which fights every
+iteration loop this project needs.
+
+`solution/solution.cdsproj` therefore sets `<SolutionPackageType>Unmanaged</SolutionPackageType>`.
+Two traps to know about:
+
+- **Leaving that property out silently defaults to Managed.** It ships commented out in the
+  `pac solution init` template, which is exactly how a managed solution first got installed into the
+  dev environment here.
+- **A `Condition="'$(SolutionPackageType)' == ''"` guard on it never fires** — the PowerApps `.props`
+  import assigns `Managed` before the project's own `PropertyGroup` is evaluated. Set it
+  unconditionally.
+
+Release build, only when shipping downstream:
+
+```bash
+dotnet build -c Release -p:SolutionPackageType=Managed
+```
+
+Verify what you actually built before importing anything:
+
+```bash
+unzip -p solution/bin/Release/solution.zip solution.xml | grep -o '<Managed>[01]</Managed>'
+```
+
+`<Managed>0</Managed>` = unmanaged. Deleting an **unmanaged** solution removes only the container —
+its components stay in the environment and must be deleted explicitly (see
+[`scripts/seed/revert-s1.mjs`](scripts/seed/revert-s1.mjs)).
 - This is a shared demo environment. Assume other people's work is in it. Do not publish
   customisations app-wide, do not change System Settings (including
   `Organization.MaxUploadFileSize`) without asking, and do not send test email to real addresses.

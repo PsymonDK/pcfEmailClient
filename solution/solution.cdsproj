@@ -16,16 +16,24 @@
     <SolutionRootPath>src</SolutionRootPath>
   </PropertyGroup>
 
-  <!-- 
-    Solution Packager overrides, un-comment to use: SolutionPackagerType (Managed, Unmanaged, Both)
-    Solution Localization Control, if you want to enabled localization of your solution, un-comment SolutionPackageEnableLocalization and set the value to true. - Requires use of -loc flag on Solution Clone or Sync
-  -->
   <!--
+    Development builds produce an UNMANAGED solution, because managed components cannot be
+    customised in the environment they are installed into and that fights local iteration.
+    Managed is for downstream environments and final delivery only:
+
+      dotnet build -c Release -p:SolutionPackageType=Managed
+
+    (SolutionPackageType accepts Managed, Unmanaged or Both. Leaving this property commented
+    out silently defaults to Managed - which is how a managed solution first landed in the dev
+    environment by mistake.)
+  -->
   <PropertyGroup>
-    <SolutionPackageType>Managed</SolutionPackageType>
+    <!-- Set unconditionally: the PowerApps .props import above already assigns Managed, so a
+         Condition="'$(SolutionPackageType)' == ''" guard here never fires. Override on the
+         command line with -p:SolutionPackageType=Managed for a release build. -->
+    <SolutionPackageType>Unmanaged</SolutionPackageType>
     <SolutionPackageEnableLocalization>false</SolutionPackageEnableLocalization>
   </PropertyGroup>
-  -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.PowerApps.MSBuild.Solution" Version="1.*" />

@@ -69,7 +69,7 @@ directly, so a human with the app open can read them off in about a minute. Step
 |---|---|
 | React virtual dataset PCF builds | ✅ `control-type="virtual"`, ESLint + tsc clean |
 | Bundle size | ✅ **39.2 KiB** — React and Fluent resolve to platform externals (`Reactv16`, `FluentUIReactv940`), so nothing is duplicated |
-| Managed solution builds and imports | ✅ `JHRBCaseEmailClientSpike` v1.0 |
+| Solution builds and imports | ✅ `JHRBCaseEmailClientSpike` v1.0, **unmanaged** (dev) |
 | Control registered | ✅ as **`jhrb_JHRB.CaseEmailClient`** — note the publisher prefix |
 | Form wiring | ✅ new tab `tab_emailclient`, subgrid on `Incident_Emails`, `customControl` bound by `uniqueid` for formFactor 0/1/2 |
 | Reachable in CSW | ✅ form registered as an app component and the app republished |
@@ -128,8 +128,33 @@ directly, so a human with the app open can read them off in about a minute. Step
 5. Expand a thread and a message to see quoted history collapse, with the matched rule named.
 
 **Reverting.** [`scripts/seed/revert-s1.mjs`](../../scripts/seed/revert-s1.mjs) (dry-run by default,
-`--confirm` to apply) unregisters the form from the CSW app, deletes the form, deletes the managed
-solution, and republishes the app. `cleanup.mjs` removes the seed Case separately.
+`--confirm` to apply): unregister the form from the CSW app → republish → delete the form → delete the
+solution → delete the leftover custom control → republish. `cleanup.mjs` removes the seed Case
+separately.
+
+#### Correction, 2026-09-10 — dev must be unmanaged
+
+S1 was first deployed as a **managed** solution, which was wrong: managed components cannot be
+customised in the environment they are installed into, so they fight the dev loop. It has been
+reinstalled **unmanaged** (`ismanaged = false`, verified on both the solution and the control), and the
+spike form recreated — its id is now **`4fe309a1-dbac-f111-aaab-000d3ab16615`**.
+
+Four things learned in the process, all worth keeping:
+
+1. **`pac solution init` ships `SolutionPackageType` commented out, and the effective default is
+   Managed.** That is how a managed solution reached dev unnoticed. Set it explicitly.
+2. **A `Condition="'$(SolutionPackageType)' == ''"` guard on that property never fires** — the
+   PowerApps `.props` import assigns `Managed` before the project's own `PropertyGroup` is evaluated,
+   so the condition is already false. Set it unconditionally. Confirm with
+   `unzip -p …/solution.zip solution.xml | grep -o '<Managed>[01]</Managed>'` → `0` is unmanaged.
+3. **Uninstalling was blocked by a published dependency.** `0x8004f01d` — *"Solution dependencies
+   exist… DependentComponentObject: SystemForm 'Case - Email Client Spike (S1)' … DependencyType:
+   Published"*. And the form itself would not delete (`0x8004f01f`) until it had been unregistered
+   from the app **and the app republished**. The republish is the step that is easy to miss.
+4. **Deleting an unmanaged solution removes only the container** — components stay in the environment.
+   The managed uninstall did remove the control for us; that is the one thing managed was better at
+   here, and it is not a reason to install managed into a dev environment. `revert-s1.mjs` now deletes
+   the custom control explicitly.
 
 ### S2 — Placement matrix confirmation
 

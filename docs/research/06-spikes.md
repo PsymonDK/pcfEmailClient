@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1 PASSED; S2 PASSED; S8 partially run
+## Status: S1, S2, S6 PASSED; S8 partially run
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -11,6 +11,11 @@ RESTORED`, `init #2`), the `caseId = Param("recordId")` binding delivers the Cas
 `context.webAPI` works at runtime there. The side-pane route also renders — correcting a
 treat-as-unsupported note — though it gets no record context. See
 [S2 result](#s2-result--2026-09-10-passed-both-halves).
+
+**S6 has passed**, and corrected [`04`](04-data-model.md): `MaxUploadFileSize` caps only the *inline*
+attachment path (6 MB fails with a clean HTTP 400), while the **chunked path ignores it entirely** —
+40 MB uploaded against a 5 MB cap. Large attachments therefore need the chunked API, not an admin
+raising a setting. See [S6 result](#s6-result--2026-09-10-passed-and-it-corrects-the-data-model-doc).
 
 **S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
 
@@ -28,8 +33,8 @@ System Settings.
 [`02`](02-hosting-and-placement.md) and [`04`](04-data-model.md) have both now been **corrected by
 measurement** (RQ1 real estate, side-pane support, and the `regardingobjecttypecode` / threading
 findings). The recommendation in [`07-decision.md`](07-decision.md) now has its load-bearing claim
-**confirmed for BOTH placements** — form tab (S1) and custom page (S2). S6 and S7 remain the open
-gates on full-client feasibility.
+**confirmed for BOTH placements** — form tab (S1) and custom page (S2). S6 has since passed and
+corrected `04`. **S7 is the last open gate** on full-client feasibility.
 
 ### Prerequisites before any spike can run
 
@@ -398,6 +403,63 @@ Upload a ~1 KB and a ~10 MB file to a draft email from inside the component, the
 5 MB, so the 10 MB case is expected to fail until raised), that the failure above the ceiling is a
 catchable error rather than a hang, and whether chunked upload is required at the target size.
 
+#### S6 result — 2026-09-10: **PASSED**, and it corrects the data model doc
+
+`Organization.MaxUploadFileSize` read as **5242880 bytes (exactly 5 MB)** — the documented default,
+unchanged. Per the environment guardrails I did **not** raise it; I probed both sides of it instead.
+
+| Upload | Path | Result |
+|---|---|---|
+| 1 KB | inline base64 → `activitymimeattachment.body` | ✅ OK (1299 ms) |
+| 4 MB | inline | ✅ OK (860 ms) |
+| **6 MB** | **inline** | ❌ **HTTP 400 — *"Attachment file size is too big."*** |
+| **6 MB** | **chunked** (Initialize / UploadBlock / Commit) | ✅ **OK** (1623 ms, 2 blocks) |
+| 4 MB | chunked | ✅ OK (1130 ms) |
+| 10 MB | chunked | ✅ OK (2358 ms, 3 blocks) |
+| 20 MB | chunked | ✅ OK (3564 ms, 5 blocks) |
+| **40 MB** | **chunked** | ✅ **OK** (7015 ms, 10 blocks) — 8× the org cap |
+
+**Download round-trip verified byte-for-byte**: every successful upload was read back via
+`$select=body`, and the SHA-256 of the returned bytes matched the source, with `filesize` exact
+(1024 / 4194304 / 6291456 / 4194304).
+
+##### The correction
+
+[`04-data-model.md`](04-data-model.md) said the ceiling is `Organization.MaxUploadFileSize` and that
+chunked upload is for getting large files "above the inline-payload comfort zone" through. **That is
+wrong.** Measured behaviour:
+
+- **`MaxUploadFileSize` governs only the inline path** (base64 into `activitymimeattachment.body`).
+  Exceeding it fails fast with a clean, catchable **HTTP 400** — no hang, no partial write.
+- **The chunked path is not governed by it at all.** 40 MB uploaded successfully against a 5 MB cap.
+
+So supporting large attachments (R13) does **not** require an admin to raise a System Setting — it
+requires using the chunked API. That is a materially better answer than "ask for the limit to be
+raised", and it removes an admin dependency from the design.
+
+Caveat worth carrying: this says nothing about whether **sending** such an email succeeds. Exchange
+transport limits and any send-time size check are S7's territory, and a 40 MB attachment that stores
+happily may still be undeliverable.
+
+##### An architectural consequence: `context.webAPI` cannot do this
+
+Checked against the shipped type definitions (`@types/powerapps-component-framework`): the PCF
+`WebApi` interface exposes exactly **`createRecord`, `deleteRecord`, `retrieveMultipleRecords`,
+`retrieveRecord`, `updateRecord`** — there is **no `execute`**. The chunked upload messages are
+unbound actions, so they are **unreachable through `context.webAPI`**.
+
+Verified the working route from inside the running app: **`Xrm.WebApi.online.execute`** exists and a
+6 MB chunked upload through it succeeded from the browser (2 blocks, committed, attachment id
+returned). So a PCF must reach `window.Xrm.WebApi.online.execute` for attachment upload, with a
+hand-built `getMetadata()` on each request.
+
+This **qualifies the "always use `context.webAPI`" rule** in [`CLAUDE.md`](../../CLAUDE.md): it holds
+for CRUD, but attachment upload has to go through `Xrm.WebApi.online.execute`.
+
+##### Cleanup
+
+All 8 test attachments (90.0 MB) and the draft email were deleted after measuring. Nothing left behind.
+
 ### S7 — Send round-trip *(gate on this before deciding)*
 
 Compose a reply with rich text and quoted history, send via
@@ -517,7 +579,7 @@ finding and must be recorded, not discarded.)*
 | S3 | — | **Not run** — P7 unverified; also deprioritised | |
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |
 | S5 | — | **Not run** — P1–P2 unverified | |
-| S6 | — | **Not run** — P1–P2 unverified | Gates the decision |
+| S6 | 2026-09-10 | **PASSED** — inline capped at 5 MB (clean 400); chunked ignores the cap (40 MB OK) | Corrects `04`. Also: `context.webAPI` has no `execute`, so chunked upload needs `Xrm.WebApi.online.execute`. 90 MB of test data cleaned up. See [result](#s6-result--2026-09-10-passed-and-it-corrects-the-data-model-doc) |
 | S7 | — | **Not run** — P6 unverified | Gates the decision |
 | S8 | 2026-09-09 | **Partial — grouping half validated; nesting half permanently needs synced mail** | Read-only measurement, then seed data created. 3 corrections to `04`. See [result](#s8-result-partial--2026-09-09) and [follow-up](#s8-follow-up--seed-data-created-2026-09-09) |
 | S9 | — | **Not run** — P1–P2 unverified | |

@@ -7,7 +7,7 @@
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
 | **Eliminated** | Generative page (platform facts); custom page alone, code app via iframe, HTML web resource (MUST-requirement failure) |
-| **Confidence** | **High for both placements.** S1 (form tab) and S2 (custom page) both passed live on 2026-09-10, each confirming the load-bearing claim by measurement. What remains open is full-client *functional* feasibility — S6 (attachments) and S7 (send + quoted history). |
+| **Confidence** | **High for both placements.** S1 (form tab) and S2 (custom page) both passed live on 2026-09-10, each confirming the load-bearing claim by measurement. S6 (attachments) has since passed. **S7 (send + quoted history) is the last open gate.** |
 
 ## Context
 
@@ -88,7 +88,7 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/
 | **Quoted-history splitting (R4/R12) has no API** — one HTML blob, no quote marker | **High** | Client-side heuristic over `blockquote`, `divRplyFwdMsg`, `gmail_quote`, `-----Original Message-----`; localisation-aware. Control our own emitted structure on compose; never re-serialise an inherited quote. Prototype in S7 before committing estimates. |
 | **No per-agent read state on `email`** (R6) — `lastopenedtime`/`opencount` are recipient-side tracking | Medium | Custom column or a small join table keyed by email + user. Decide in implementation planning. |
 | **Threading columns may be sparsely populated** on manually created, imported or Flow-created email | Medium | S8 measures the real fallback rate against production-like data; subject-normalisation fallback sized to that number. |
-| **Attachment ceiling defaults to 5 MB** (`Organization.MaxUploadFileSize`), raisable to 125 MB, with chunked upload needed above the inline comfort zone | Medium | S6 establishes the real configured ceiling and confirms oversize failures are catchable. Reuse `attachmentid` on forward rather than re-uploading. |
+| ~~Attachment ceiling defaults to 5 MB~~ | **RESOLVED** | **S6, 2026-09-10:** `MaxUploadFileSize` caps only the *inline* path (6 MB → clean HTTP 400); the **chunked path ignores it** (40 MB OK). Use chunked upload; no admin change needed. Requires `Xrm.WebApi.online.execute` — `context.webAPI` has no `execute`. Reuse `attachmentid` on forward. Open question: whether large attachments *send* (S7). |
 | **Full-tab real estate on the enhanced Case form is unverified** | Low | S1. Dataset components get 100%-of-space growth with `allocatedHeight` = -1 and CSS filling; the unknown is surrounding form chrome, not the PCF. |
 
 ## What would reverse this decision
@@ -112,9 +112,9 @@ Named up front so the decision is falsifiable:
 
 ## Next steps
 
-1. **Run S6 and S7** — the two remaining gates, both on *functional* feasibility rather than hosting:
-   the attachment ceiling and the send round-trip (which also closes S8's `conversationindex` nesting
-   half). S7 needs an approved mailbox (P6, unverified).
+1. **Run S7** — the last gate: the send round-trip, which also sizes the quoted-history risk and closes
+   S8's `conversationindex` nesting half. Needs an approved mailbox (P6, unverified). Note S6 showed a
+   40 MB attachment *stores* fine; whether it *sends* is exactly what S7 must find out.
 2. **Spike the platform rich-text editor.** `MscrmControls.RichTextEditor.RichTextEditorControl` exists
    and is already used on the enhanced Case form. If it is reusable from a PCF, R11 needs no bundled
    third-party editor — removing the largest remaining risk against this architecture.

@@ -163,13 +163,30 @@ affect architecture selection, but it should be prototyped early (spike S7).
 | R20 regarding | Set `regardingobjectid` to the Case on create | Trivial; also what scopes it back into our own view |
 | R19 Copilot | `context.Copilot` in PCF / `Xrm.Copilot` in MDA script | See [`03-candidates.md`](03-candidates.md) |
 
-### RQ7 — attachment size ceilings
+### RQ7 — attachment size ceilings — MEASURED, and not what the docs imply (S6, 2026-09-10)
 
-- Governed by **`Organization.MaxUploadFileSize`**, set in System Settings → Email. "The default setting
-  is 5 MB." This limit covers email attachments, notes and web resources together.
-- Raisable to **131,072,000 bytes (125 MB)**.
-- Above the inline-payload comfort zone, use the **chunked upload** messages rather than a single
-  base64 `body` write. `BlocksDownloadRequest` is the counterpart for large downloads.
+**`Organization.MaxUploadFileSize` governs only the inline path.** Measured against a live org with the
+default **5242880 bytes (5 MB)**, unchanged:
+
+| Path | Behaviour |
+|---|---|
+| Inline base64 → `activitymimeattachment.body` | Capped by `MaxUploadFileSize`. 4 MB succeeded; **6 MB failed with HTTP 400 *"Attachment file size is too big."*** — fast and catchable, no hang or partial write. |
+| **Chunked** (`InitializeAttachmentBlocksUpload` → `UploadBlock` → `CommitAttachmentBlocksUpload`) | **Not capped by `MaxUploadFileSize`.** 6 MB, 10 MB, 20 MB and **40 MB** all succeeded against the 5 MB cap. |
+
+Round-trips verified byte-for-byte (SHA-256 of the re-read `body` matched the source; `filesize` exact).
+
+**Design consequence:** supporting large attachments (R13) does **not** need an admin to raise a System
+Setting — it needs the chunked API. That removes an admin dependency from the design. The docs' framing
+("default 5 MB, raisable to 125 MB; use chunking above the inline comfort zone") describes the inline
+path only.
+
+**Two caveats.**
+- This measures *storing* an attachment, not *sending* one. Exchange transport limits and any send-time
+  size check are separate — S7. A 40 MB attachment that stores fine may be undeliverable.
+- **`context.webAPI` cannot perform chunked upload.** Its interface is only `createRecord`,
+  `deleteRecord`, `retrieveMultipleRecords`, `retrieveRecord`, `updateRecord` — no `execute`. The
+  chunked messages are unbound actions, so a PCF must use **`Xrm.WebApi.online.execute`**
+  (verified working from inside the app). `BlocksDownloadRequest` is the counterpart for large downloads.
 - **Attachment reuse is free**: creating an `activitymimeattachment` that references an existing
   `attachmentid` points at the same file BLOB without duplicating storage — relevant for forwarding a
   message with attachments (R9 forward), which should reuse rather than re-upload.

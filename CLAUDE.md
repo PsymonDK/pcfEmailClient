@@ -11,8 +11,8 @@ activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
 **Current state: research plus a spike control.** The architecture decision is **spike-validated for
 hosting on both target placements** — S1 (Case form tab) and S2 (custom page) both confirmed live that
-`setControlState` survives a CSW two-session teardown. What is still open is *functional* feasibility:
-S6 (attachment ceiling) and S7 (send round-trip). The spike control in `pcf/` is throwaway
+`setControlState` survives a CSW two-session teardown. S6 (attachments) has also passed. **S7 (send round-trip) is
+the last open gate.** The spike control in `pcf/` is throwaway
 diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
 at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 
@@ -155,6 +155,10 @@ bite if forgotten:
   search must go through **Dataverse search**. Don't write a `$filter` against it and expect it to work.
 - Select columns explicitly. Never `retrieveMultipleRecords` without `$select`.
 - Use `context.webAPI`, not raw `fetch`, so security trimming and the platform's request pipeline apply.
+  **Exception — anything that needs an unbound action.** `context.webAPI` exposes only `createRecord`,
+  `deleteRecord`, `retrieveMultipleRecords`, `retrieveRecord`, `updateRecord`; there is **no `execute`**.
+  Actions (chunked attachment upload, `SendEmail`, `InstantiateTemplate`) must go through
+  **`window.Xrm.WebApi.online.execute`** with a hand-built `getMetadata()` per request. Verified 2026-09-10.
 
 **Writing**
 - Recipients are **`activityparty` rows**, not strings. `participationtypemask`: **1** Sender,
@@ -165,9 +169,12 @@ bite if forgotten:
   to resolve template content without sending, and `SendEmailFromTemplate` to send.
 - Sending: `POST /api/data/v9.2/emails(<id>)/Microsoft.Dynamics.CRM.SendEmail` with `{"IssueSend": true}`.
 - Attachments: `activitymimeattachment` with `objectid` = the email and `objecttypecode` = `email`.
-  Default ceiling is **5 MB** (`Organization.MaxUploadFileSize`, raisable to 125 MB); use chunked upload
-  above the inline comfort zone. On **forward, reuse the existing `attachmentid`** rather than
-  re-uploading — it points at the same file BLOB for free.
+  **`Organization.MaxUploadFileSize` (5 MB here) caps only the INLINE base64 path** — 6 MB inline fails
+  with HTTP 400 *"Attachment file size is too big."* The **chunked** path is not capped by it at all
+  (40 MB measured OK). So use chunked upload for anything non-trivial; **don't ask an admin to raise the
+  setting.** Chunked upload needs `Xrm.WebApi.online.execute` — `context.webAPI` can't do it.
+  On **forward, reuse the existing `attachmentid`** rather than re-uploading — same file BLOB, free.
+  Storing is not sending: transport limits are a separate question (S7).
 - Pre-flight mailbox approval (`SystemUser.EmailRouterAccessApproval`) and warn the agent up front
   rather than failing at send (R18).
 

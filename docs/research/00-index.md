@@ -73,7 +73,7 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
 | RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ6 | Rich-text compose and quoted-history handling per host | Provisional | [03](03-candidates.md), [04](04-data-model.md) |
-| RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | Answered (desk) | [04](04-data-model.md) |
+| RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | **Answered (measured)** — inline capped at 5 MB, chunked uncapped (40 MB OK) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | Answered | [04](04-data-model.md) |
 | RQ9 | Templates & signatures instantiation from code | Answered | [04](04-data-model.md) |
 | RQ10 | Threading fidelity available in Dataverse | Answered — **better than assumed**, and now **measured** (S8 partial) | [04](04-data-model.md), [06](06-spikes.md) |
@@ -95,10 +95,15 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
   (`state RESTORED`, `init #2`), the `caseId = Param("recordId")` binding delivers the Case id, and
   `context.webAPI` works at runtime there. The side-pane route renders too — correcting a
   treat-as-unsupported note — but gets **no record context**.
+- **S6 PASSED** live on 2026-09-10, and **corrected [`04`](04-data-model.md)**:
+  `Organization.MaxUploadFileSize` (5 MB) caps only the **inline** attachment path — 6 MB inline fails
+  with a clean HTTP 400, while the **chunked path ignores the cap entirely** (40 MB uploaded fine).
+  Large attachments need the chunked API, **not** an admin raising a setting. It also established that
+  `context.webAPI` has **no `execute`**, so chunked upload must go via `Xrm.WebApi.online.execute`.
 - **S8 partially run** (read-only), validating the threading strategy and correcting three claims.
 
 The recommendation in [`07-decision.md`](07-decision.md) is now **measured on both target placements**
-— form tab (S1) and custom page (S2) — so the hosting decision is settled. **S6** (attachment ceiling)
-and **S7** (send round-trip, which also closes S8's `conversationindex` half) are the remaining gates,
-and they test *functional* feasibility rather than hosting. S2 also surfaced a deployment cost: wiring
+— form tab (S1) and custom page (S2) — so the hosting decision is settled, and **S6** has since settled
+attachments. **S7** (send round-trip, which also closes S8's `conversationindex` half) is the last
+remaining gate. S2 also surfaced a deployment cost: wiring
 a custom page into the managed CSW app needs the app designer, per environment.

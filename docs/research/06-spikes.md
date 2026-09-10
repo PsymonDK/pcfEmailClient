@@ -50,6 +50,25 @@ Note that this is a **shared demo environment** — see the environment guardrai
 [`CLAUDE.md`](../../CLAUDE.md) before running anything that writes, sends email, or changes
 System Settings.
 
+### Artefacts removed — 2026-09-10
+
+All spike artefacts and seed data have been deleted and the removal verified: solution, custom control,
+custom page, spike form, the page's `appelement`, the seed Case, all 12 seeded emails, and every
+S6/S7 attachment probe. **Org email count is back to its pre-spike 48.**
+
+The two *real* S7 emails lived on the seed Case and went with it. Their metadata — the
+`conversationindex` 44 → 54 chain and matching hash that closed S8 — was captured first to
+[`evidence/s7-s8-conversation.json`](evidence/s7-s8-conversation.json). **Bodies were deliberately
+excluded**: they contain the recipient's signature and phone number, which do not belong in the repo.
+The delivered `.msg` also still exists outside Dataverse, in the requester's own mailbox and Downloads.
+
+**Cleanup taught one thing worth keeping:** removing a custom page from an app takes three steps, not
+one. `RemoveAppComponents` clears the registration but the designer also leaves an **`appelement`**
+(component type 10088) linking page → app, and the page delete fails with `0x8004f01f` until that row
+is deleted too. Note the asymmetry: `RemoveAppComponents` **accepts** `canvasapp` for removal even
+though `AddAppComponents` **refuses** it for addition. `revert-s1.mjs` now does all three steps in the
+right order (app → appelement → page → control).
+
 [`03`](03-candidates.md) remains desk research from Microsoft documentation and community prior art.
 [`02`](02-hosting-and-placement.md) and [`04`](04-data-model.md) have both now been **corrected by
 measurement** (RQ1 real estate, side-pane support, and the `regardingobjecttypecode` / threading

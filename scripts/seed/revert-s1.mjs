@@ -65,6 +65,34 @@ const steps = [
     what: `delete systemform ${SPIKE_FORM_ID} ("Case - Email Client Spike (S1)")`,
     run: () => call(`systemforms(${SPIKE_FORM_ID})`, 'DELETE'),
   },
+  // A custom page added through the app designer leaves BOTH an appmodulecomponent-style
+  // registration AND an `appelement` row (component type 10088) linking page -> app.
+  // `RemoveAppComponents` clears the former; the appelement must be deleted explicitly or
+  // the page delete fails with 0x8004f01f "referenced by 1 other components".
+  // Discovered the hard way during cleanup on 2026-09-10.
+  {
+    what: `unregister custom page ${SPIKE_PAGE_ID} from the CSW app`,
+    run: () =>
+      call('RemoveAppComponents', 'POST', {
+        AppId: APP_ID,
+        Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.canvasapp', canvasappid: SPIKE_PAGE_ID }],
+      }),
+  },
+  {
+    what: 'delete the appelement(s) linking that page to the app',
+    run: async () => {
+      const { txt } = await call(
+        `appelements?$select=appelementid,name&$filter=_canvasappid_value eq ${SPIKE_PAGE_ID}`,
+        'GET',
+      );
+      const rows = JSON.parse(txt).value ?? [];
+      if (rows.length === 0) return { status: 404 };
+      let last = { status: 404 };
+      for (const r of rows) last = await call(`appelements(${r.appelementid})`, 'DELETE');
+      return last;
+    },
+  },
+  { what: 'republish the CSW app (so the page reference is really gone)', run: publishApp },
   {
     what: `delete custom page ${SPIKE_PAGE_ID} ("Case Email Client Page (S2 spike)")`,
     run: () => call(`canvasapps(${SPIKE_PAGE_ID})`, 'DELETE'),

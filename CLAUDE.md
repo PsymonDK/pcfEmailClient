@@ -265,21 +265,37 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
 - Cite sources for non-obvious platform claims, with links, the way the existing research files do.
 - Don't commit or push unless asked.
 
-## Seed data in the demo environment
+## Spike artefacts and seed data — REMOVED 2026-09-10
 
-A seed Case exists for spike work: **`TEST - Email client threading seed (deep chain)`** — 12 emails
-across a 7-message thread, a 3-message thread, and 2 hash-less orphans. Created and removable via
-[`scripts/seed/`](scripts/seed/README.md) (`cleanup.mjs` is dry-run by default; pass `--confirm`).
+The environment has been cleaned. Verified afterwards: solution, custom control, custom page, spike
+form, the page's `appelement`, the seed Case, all 12 seeded emails and every S6/S7 attachment probe
+are gone, and the org email count is back to its pre-spike **48**.
 
-Two things to remember when using it:
+Nothing needs cleaning up. If you re-run the spikes, the scripts in
+[`scripts/seed/`](scripts/seed/README.md) and [`scripts/spikes/`](scripts/spikes/README.md) recreate
+and remove everything — both cleanup scripts are dry-run by default.
 
-- **`conversationindex` is null on every seeded row** and always will be — the column is
-  `IsValidForCreate: false` / `IsValidForUpdate: false`. Seeded data validates grouping and the
-  `createdon` ordering fallback; it cannot validate `conversationindex` nesting.
-- **`baseconversationindexhash` is writable**, so it is advisory rather than platform-guaranteed.
-  Degrade gracefully if two unrelated threads collide on a hash.
+Two things worth knowing before you re-seed:
 
-Clean the seed up when the spikes are done — this is a shared environment.
+- **`conversationindex` is null on any seeded row** and always will be (`IsValidForCreate: false` /
+  `IsValidForUpdate: false`). Seeded data validates grouping and the `createdon` ordering fallback; it
+  cannot validate `conversationindex` nesting. That needs a real send + reply.
+- **`baseconversationindexhash` is writable but the platform overwrites it on send**, so seeded
+  hashes do not survive a real send and cannot be used to force outbound threading.
+
+### Removing a custom page from an app takes THREE steps, not one
+
+Learned during cleanup. `RemoveAppComponents` alone is not enough — the designer also leaves an
+**`appelement`** row (component type 10088) linking page → app, and the page delete fails with
+`0x8004f01f` *"referenced by 1 other components"* until it is gone:
+
+1. `RemoveAppComponents` with `Microsoft.Dynamics.CRM.canvasapp` (this **is** accepted for removal,
+   even though `AddAppComponents` refuses it for addition — note the asymmetry).
+2. Delete every `appelements` row where `_canvasappid_value` is the page.
+3. Republish the app, *then* delete the `canvasapp`.
+
+Then the custom control can be deleted (it was blocked by the page). Order matters:
+app → appelement → page → control.
 
 ## Custom page (session-tab placement)
 

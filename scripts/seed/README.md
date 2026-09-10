@@ -1,5 +1,9 @@
 # Seed data for the research spikes
 
+> **Status: nothing is deployed.** All spike artefacts and seed data were removed on 2026-09-10 and the
+> removal verified (org email count back to its pre-spike 48). These scripts recreate everything if the
+> spikes need re-running. Both cleanup scripts are dry-run unless you pass `--confirm`.
+
 Creates a Case with a deliberately deep email chain so spikes **S1** (render), **S7** (quoted history)
 and **S8** (threading) have realistic data. The target environment's own email is too shallow — 26 of
 34 threads were single messages, deepest chain 5.
@@ -59,3 +63,8 @@ node scripts/seed/cleanup.mjs --confirm
 
 This is a **shared demo environment**. Clean up when the spikes are done rather than leaving test
 Cases lying around.
+
+**`revert-s1.mjs` order matters** (10 steps, dry-run by default). Removing a custom page from an app
+needs three of them: `RemoveAppComponents`, then deleting the `appelement` rows that link page → app
+(component type 10088), then a republish — only then will the `canvasapp` delete. The custom control
+can only go after the page. Chain: **app → appelement → page → control**.

@@ -1,0 +1,31 @@
+{
+  "note": "S7/S8 evidence, captured before the spike Case was deleted. Bodies deliberately EXCLUDED - they contain the recipient's signature and phone number. The metadata below is what the research cites.",
+  "captured": "2026-09-10T11:41:19.037Z",
+  "source": "seed Case TEST - Email client threading seed (deep chain)",
+  "emails": [
+    {
+      "subject": "RE: Reklamation: utaette samlinger efter montage - Jensen VVS CRM:0100009",
+      "direction": "Outgoing",
+      "status": "Sent",
+      "createdon": "2026-09-10T10:39:20Z",
+      "attachments": 1,
+      "conversationindex": "01E1ECB8719970468FB42521B09111CCB3DD4110A4DE",
+      "conversationindexLength": 44,
+      "baseconversationindexhash": 100487241,
+      "messageid": "<880ACBC28F0D454F93A14C10C458409A1DD4110A4DE0@care.example.invalid>",
+      "trackingtoken": "CRM:0100009"
+    },
+    {
+      "subject": "Re: Reklamation: utaette samlinger efter montage - Jensen VVS CRM:0100009",
+      "direction": "Incoming",
+      "status": "Received",
+      "createdon": "2026-09-10T10:51:49Z",
+      "attachments": 1,
+      "conversationindex": "01E1ECB8719970468FB42521B09111CCB3DD4110A4DEF6A8B3B849",
+      "conversationindexLength": 54,
+      "baseconversationindexhash": 100487241,
+      "messageid": "<VI2P190MB2124AF8760B50C29A5759F5698BF2@VI2P190MB2124.EURP190.PROD.OUTLOOK.COM>",
+      "trackingtoken": "CRM:0100009"
+    }
+  ]
+}

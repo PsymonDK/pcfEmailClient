@@ -196,6 +196,25 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
 
   const savedAt = asStr(restoredState?.savedAt);
 
+  // Rich-text-editor spike probe: is there ANY runtime hook for hosting another code
+  // component (e.g. the platform RTE) inside a PCF? The shipped typings expose only
+  // getPopupService/requestRender, but older community work used an untyped
+  // factory.createComponent. This reports what actually exists at runtime.
+  const factoryProbe = React.useMemo(() => {
+    const f = context.factory as unknown as Record<string, unknown> | undefined;
+    if (!f) return 'no factory';
+    const own = Object.keys(f);
+    const proto: unknown = Object.getPrototypeOf(f);
+    const protoKeys =
+      proto === null || proto === undefined
+        ? []
+        : Object.getOwnPropertyNames(proto).filter((k) => k !== 'constructor');
+    const names = [...new Set([...own, ...protoKeys])];
+    const fns = names.filter((k) => typeof f[k] === 'function');
+    const hasCreate = typeof f.createComponent === 'function';
+    return `${hasCreate ? 'createComponent PRESENT' : 'no createComponent'} · fns: ${fns.join(',') || '(none)'}`;
+  }, [context]);
+
   return (
     <div className="cec-root" ref={rootRef}>
       {/* ---------- S1 diagnostics. This panel IS the spike result. ---------- */}
@@ -221,6 +240,7 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
           <span>init at {initAt}</span>
           {savedAt && <span>state saved at {savedAt}</span>}
           <span>case {caseId ?? '(unresolved)'} · via <b>{caseIdSource}</b></span>
+          <span>factory: <b>{factoryProbe}</b></span>
         </div>
         <div className="cec-diag-row">
           <Text size={200}>Draft proxy — type, switch Case session, come back:</Text>

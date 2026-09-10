@@ -72,7 +72,7 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 | RQ3 | Can a generative page be reached from the Case form at all? | Answered — **no, for our placements** | [02](02-hosting-and-placement.md) |
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
 | RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
-| RQ6 | Rich-text compose and quoted-history handling per host | **Answered for reading (measured)** — split verified 10/10 on delivered HTML and on a real Outlook reply. Compose editor choice still open (see the rich-text spike) | [04](04-data-model.md), [06](06-spikes.md) |
+| RQ6 | Rich-text compose and quoted-history handling per host | **Answered (measured)** — reading split verified 10/10 on delivered HTML and on a real Outlook reply; **S10** settled that the platform RTE is not reusable, so compose needs a bundled editor | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | **Answered (measured)** — inline capped at 5 MB, chunked uncapped (40 MB OK) | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | **Answered (measured, real send)** — note `Pending Send` ≠ `Sent`; R18 approval guard still untested | [04](04-data-model.md), [06](06-spikes.md) |
 | RQ9 | Templates & signatures instantiation from code | Answered | [04](04-data-model.md) |
@@ -112,7 +112,8 @@ Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
 The recommendation in [`07-decision.md`](07-decision.md) is now **measured on both target placements**
 — form tab (S1) and custom page (S2) — so the hosting decision is settled, and **S6** (attachments)
 and **S7** (real send) have settled the functional gates too. **No gate remains open.** S8 is closed. The research pass has answered every RQ it set out to answer;
-what remains is implementation planning, plus two optional follow-ups: the **R18 approval guard** (needs
-a queue that has an address but is unapproved) and the **platform rich-text editor** spike, which could
-remove the bundled-editor risk entirely. S2 also surfaced a deployment cost: wiring
+what remains is implementation planning. The **platform rich-text editor** question has since been
+answered (**S10: no** — it cannot be reused from a PCF, so R11 needs a bundled editor). Two small
+follow-ups remain, neither gating: the **R18 approval guard** (needs a queue with an address but
+unapproved) and a **bundle-size benchmark** for the chosen editor, which did not complete here. S2 also surfaced a deployment cost: wiring
 a custom page into the managed CSW app needs the app designer, per environment.

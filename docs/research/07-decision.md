@@ -69,8 +69,12 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/
 
 **Accepted.**
 - No low-code surface. Everything is TypeScript/React; handover to low-code makers is not possible.
-- We own the rich-text editor. Prior art is good (TinyMCE-based rich text PCFs are in production), but
-  bundle size needs code-splitting discipline and TinyMCE's commercial licensing is a procurement item.
+- **We own the rich-text editor — now confirmed, not assumed.** S10 established that the platform RTE
+  **cannot** be reused from a PCF in any supportable way, so R11 needs a bundled editor. The pick is a
+  design decision, not just a size one: a headless/schema editor (TipTap/ProseMirror, Lexical) gives
+  *controlled HTML output* which directly serves R12's "never re-serialise an inherited quote" rule,
+  whereas TinyMCE gives better paste-from-Word cleanup but looser output and a licensing question.
+  Bundle cost is still unmeasured — the benchmark did not complete (see S10).
 - Two registrations to maintain, and the custom page wrapper drags in the canvas host's baggage:
   8-hour session timeout, third-party-cookie requirement, and app-wide connector consent dialogs.
 - Body-text search must go via Dataverse search, because `Email.Description` now lives in Azure Blob
@@ -81,6 +85,7 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 81/
 | Risk | Severity | Mitigation |
 |---|---|---|
 | ~~`setControlState` inside a custom page is undocumented~~ | **RESOLVED** | **S2, 2026-09-10: it survives.** Measured `state RESTORED` / `init #2` after a two-session teardown inside the custom page. Durable drafts in Dataverse (`statecode` 0 / `statuscode` 1) are still recommended as defence in depth, but are no longer load-bearing. |
+| **R11 needs a bundled rich-text editor, and React 16 constrains the choice** (S10) | Medium | The platform RTE mounts inside a PCF via undocumented `factory.createComponent`/`bindDOMComponent` but never initialises into a usable editor. Do not depend on it. And because a virtual PCF shares the platform's **React 16.14**, the React bindings of modern editors are unusable (`@tiptap/react` needs 17+, `@lexical/react` needs 18+) — use their **framework-agnostic cores** (`@tiptap/core`, `lexical`, `quill` declare no React peer) mounted imperatively into a ref'd div. Severity reduced from Medium-high: the path is now clear. Bundle cost still unmeasured. |
 | **A PCF update may not reach hosting custom pages automatically** (S2 observation) | Medium | The page rendered an older control bundle while the environment had a newer version registered. Probable cause is version pinning at page publish time. **Confirm this**, and if true, add "republish hosting pages" to the release checklist. |
 | **Layout is the component's job, and differs per host** (S1 + S2) | Medium | On a form tab `allocatedHeight` is -1 and the host is content-sized, so height must be claimed from the viewport. In a custom page `allocatedHeight` is a real number and claiming over-claims. The control is now host-aware; keep that. |
 | **The Case id arrives differently per host** (S2) | Medium | `contextInfo` is form-only — empty in a side pane, and a custom page passes `recordId` as a *page* input the component cannot read. The component needs an explicit `caseId` input property that the custom page binds to `Param("recordId")`. Implemented. |

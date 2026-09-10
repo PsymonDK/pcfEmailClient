@@ -227,8 +227,18 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
 - **Persist drafts to Dataverse on blur and on an interval**, not only via `setControlState`. Whether
   `setControlState` survives teardown *inside a custom page* is undocumented — durable drafts remove the
   dependency on the answer. Do this from day one.
-- Keep the bundle disciplined: code-split the rich-text editor. Bundling an editor plus a mail UI in one
-  control is the known bundle-size risk.
+- **The platform rich-text editor is NOT reusable from a PCF** (S10, 2026-09-10). `context.factory`
+  exposes 11 undocumented functions at runtime (only 2 are typed), and `createComponent` +
+  `bindDOMComponent` really do mount `MscrmControls.RichTextEditorV2.RichTextEditorControlV2` inside a
+  PCF's DOM — but it never initialises into an editor (0 `contenteditable`). **Don't build on it.**
+  R11 needs a bundled editor — and **React 16 constrains which one**. A virtual PCF shares the
+  platform's React (**16.14.0** here), so the React *bindings* of modern editors are unusable:
+  `@tiptap/react` needs React ^17/18/19, `@lexical/react` needs >=18. Their **framework-agnostic cores
+  are fine** — `@tiptap/core`+`@tiptap/pm`, `lexical`, and `quill` declare no React peer. **Mount the
+  editor core imperatively into a ref'd div**, don't reach for its React wrapper. Prefer a
+  headless/schema editor for *controlled HTML output*, which R12 depends on. A standard (non-virtual)
+  control bundling its own React 18 is the fallback, but forfeits the shared-React bundle win
+  (39.2 KiB today). Verified 2026-09-10.
 - Declare `<external-service-usage>` in the manifest **only** if calling external services. Our
   Dataverse-only scope should not need it — adding it makes the component premium.
 - Quoted-history splitting (R4/R12) is a **client-side heuristic**, not an API: `blockquote`,

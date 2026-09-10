@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7 PASSED; S8 CLOSED. No open gates.
+## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 answered (negative). No open gates.
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -22,6 +22,12 @@ with a chunk-uploaded 1 MB attachment. It broke two of my own assumptions: the p
 `baseconversationindexhash` on send**, and it **appends the tracking token to the subject** (which my
 `normaliseSubject` failed to strip — now fixed). See
 [S7 result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions).
+
+**S10 answered, negatively.** The platform rich-text editor **cannot be reused** from a PCF in any
+supportable way. The undocumented `factory.createComponent` / `bindDOMComponent` pair does mount
+`RichTextEditorControlV2` inside a PCF's DOM, but it never initialises into a usable editor. **R11 still
+needs a bundled editor**, so that risk stands rather than being removed. See
+[S10 result](#s10-result--2026-09-10-no--do-not-depend-on-it-mechanism-works-editor-does-not).
 
 **S8 is CLOSED.** The S7 send plus the requester's reply produced a genuine two-message conversation
 (`conversationindex` 44 → 54 chars, same hash), so grouping, **cIdx ordering** and the depth formula are
@@ -695,6 +701,102 @@ of seeding will change this.
 | Grouping by `baseconversationindexhash`, plus `createdon` ordering fallback, plus subject-normalisation fallback | ✅ **Testable now** against the seed Case |
 | Ordering and parent/child **nesting** by `conversationindex` | ⚠️ **Still open** — requires mail that has round-tripped through a synced mailbox (a real send + external reply), which is S7 territory and needs an approved mailbox (P6) |
 
+### S10 — Can the platform rich-text editor be reused from a PCF? *(added 2026-09-10)*
+
+**Why.** R11 (rich-text compose with paste-from-Word cleanup) was the largest remaining risk against the
+recommended architecture, because it implied bundling a third-party editor. S1 spotted
+`MscrmControls.RichTextEditor.RichTextEditorControl` already in use on the enhanced Case form, which
+raised the possibility of reusing a platform editor instead.
+
+**Confirms / breaks:** whether R11 can be satisfied without a bundled editor.
+
+#### S10 result — 2026-09-10: **NO — do not depend on it.** Mechanism works, editor does not.
+
+**Six** rich-text controls exist in the environment, all `ismanaged=true` (Microsoft-owned):
+
+| Control | Type | Notes |
+|---|---|---|
+| `MscrmControls.RichTextEditor.RichTextEditorControl` v1.26082.1 | `standard` | The legacy one, on the Case form for `description` |
+| **`MscrmControls.RichTextEditorV2.RichTextEditorControlV2`** v1.26083.1 | **`virtual`** | Modern. Props: `value` (bound), `isReadOnly`, `configurationJson`, `configUrl`, `mentionableEntitiesConfig`, `autoExpand`, `enableReadonlyTranslation`. React 16.8.6 + Fluent 9.4.0 |
+| `MscrmControls.RichTextEditor.StructuredTemplatesControl` | virtual | Template picker, not an editor |
+| `MsdynmktControls.RichTextEditorV3.RichTextEditorControlV3` | virtual, **hidden** | Marketing |
+| `MsdynmktControls.RichTextControl.RichTextControl` | virtual, **hidden** | Marketing; large surface incl. Copilot |
+| `MsdynmktControls.FieldControls.UTMRichTextWrapperControl` | virtual | Marketing |
+
+##### The typings hide most of the factory
+
+`ComponentFramework.Factory` in the shipped `@types/powerapps-component-framework` declares exactly
+**two** members — `getPopupService()` and `requestRender()`. At runtime the same object exposes
+**eleven**:
+
+```
+createElement, createComponent, bindDOMElement, bindDOMComponent, createFileObject,
+fireEvent, getControlDefaultMapping, getPopupService, requestRender,
+unbindDOMComponent, updateComponent
+```
+
+That is a complete component-hosting lifecycle, plus `createFileObject` (potentially interesting for
+attachments). **All of it is untyped and undocumented.**
+
+##### The mechanism works — the editor doesn't
+
+`factory.createComponent('MscrmControls.RichTextEditorV2.RichTextEditorControlV2', id, props)` returns a
+descriptor (`{IsVirtualComponent: true, _type, _componentId, _properties, _children, render}`), and
+`factory.bindDOMComponent(descriptor, hostElement)` **genuinely mounts it inside the PCF's own DOM** —
+verified: 2864 characters of platform markup appeared, tagged
+`data-lp-id="MscrmControls.RichTextEditorV2.RichTextEditorControlV2|Subgrid_emailclient.rteSpike1|incident"`.
+
+But it never becomes an editor. Two attempts — a plain `value` string, then a full reconstructed PCF
+property descriptor (`raw`/`formatted`/`type`/`attributes`/`security`) plus `configurationJson`,
+`autoExpand` and an `onChange` — both produced the same inert shell: **zero `contenteditable`
+elements**, no toolbar, no text, one stray button. The host box rendered empty.
+
+##### Verdict
+
+**R11 needs a bundled editor.** Making the platform RTE work would mean reverse-engineering
+undocumented internal property shapes, and even then it would rest on an **undocumented API that
+Microsoft can change without notice** — exactly the upgrade risk that C5 penalises other candidates
+for. The risk against the architecture therefore **stands rather than being removed**.
+
+##### BONUS FINDING: React 16 rules out the React bindings of every modern editor
+
+The bundle benchmark failed to install — and the failure was the finding. `npm install @tiptap/react`
+returned **ERESOLVE**:
+
+> `Found: @types/react@16.14.70` · `Could not resolve dependency: peer @types/react@"^17.0.0 || ^18.0.0 || ^19.0.0" from @tiptap/react@3.31.3`
+
+A **virtual** PCF shares the *platform's* React, which is **16.14.0** here (and the platform's own RTE
+V2 declares React 16.8.6). Modern editors' React bindings require 17+. Checked across the field:
+
+| Package | React peer requirement | Usable in a React-16 virtual PCF? |
+|---|---|---|
+| `@tiptap/react` | `^17 \|\| ^18 \|\| ^19` | ❌ |
+| **`@tiptap/core` + `@tiptap/pm`** | **none** | ✅ mount imperatively into a ref'd DOM node |
+| **`quill`** | **none** (deps: parchment, quill-delta, lodash-es, eventemitter3) | ✅ |
+| **`lexical`** (core) | only `typescript >=5.2` | ✅ |
+| `@lexical/react` | `react >=18` | ❌ |
+
+**The pattern: the framework-agnostic cores are fine; only the React wrappers are blocked.** So R11's
+real constraint is not "which editor is best" but **"use the editor's core and mount it imperatively,
+not its React bindings"** — a standard pattern (a `useRef` host div plus an effect that instantiates
+and tears down the editor).
+
+The alternative — a **standard** (non-virtual) control bundling its own React 18 — would work but
+forfeits the platform-React sharing that keeps the current bundle at **39.2 KiB**, since React and
+Fluent would ship inside the component.
+
+**Bundle cost is still unmeasured.** No number was produced, because the install never resolved. Redo
+it against `@tiptap/core` (not `@tiptap/react`) to get a real figure before committing to an editor.
+
+Two consolations:
+- `createComponent` / `bindDOMComponent` being real is worth knowing for *other* problems, with the
+  same caveat attached. `createFileObject` in the same list may be relevant to R13.
+- The choice of editor is a genuine design lever, not just a size cost: a **headless/schema-based**
+  editor (TipTap/ProseMirror, Lexical) gives *controlled HTML output*, which directly serves R12's
+  "never re-serialise an inherited quote" rule. TinyMCE gives better paste-from-Word cleanup out of the
+  box but emits looser HTML and carries a commercial licensing question. That trade-off — clean output
+  vs. clean paste — should drive the pick, not bundle size alone.
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.
@@ -724,4 +826,5 @@ finding and must be recorded, not discarded.)*
 | S6 | 2026-09-10 | **PASSED** — inline capped at 5 MB (clean 400); chunked ignores the cap (40 MB OK) | Corrects `04`. Also: `context.webAPI` has no `execute`, so chunked upload needs `Xrm.WebApi.online.execute`. 90 MB of test data cleaned up. See [result](#s6-result--2026-09-10-passed-and-it-corrects-the-data-model-doc) |
 | S7 | 2026-09-10 | **PASSED** — real send from the Care queue, receipt confirmed | Broke 2 assumptions: platform overwrites the conversation hash on send, and appends the tracking token to the subject (`normaliseSubject` fixed). R18 approval guard still untested. See [result](#s7-result--2026-09-10-sent-successfully-and-it-broke-two-of-my-own-assumptions) |
 | S8 | 2026-09-09 | **Partial — grouping half validated; nesting half permanently needs synced mail** | Read-only measurement, then seed data created. 3 corrections to `04`. See [result](#s8-result-partial--2026-09-09) and [follow-up](#s8-follow-up--seed-data-created-2026-09-09) |
-| S9 | — | **Not run** — P1–P2 unverified | |
+| S9 | — | **Not run** | |
+| S10 | 2026-09-10 | **Answered — NEGATIVE.** Platform RTE not reusable from a PCF | `factory.createComponent`/`bindDOMComponent` exist at runtime (untyped) and mount the control, but it stays inert — 0 `contenteditable`. R11 needs a bundled editor. See [result](#s10-result--2026-09-10-no--do-not-depend-on-it-mechanism-works-editor-does-not) |

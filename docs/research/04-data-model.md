@@ -192,9 +192,25 @@ sending and receiving one:
    server-side sync transmits it afterwards. A client that reports "sent" on the HTTP 200 is lying
    slightly — poll `statuscode`, or present it as queued.
 
-**Still untested:** the approval guard itself (R18). The S7 probe used a queue with *no* address, which
-fails with a different (though equally clean) error. A queue that has an address but is unapproved is
-needed to exercise `SystemUser.EmailRouterAccessApproval` / `Queue.EmailRouterAccessApproval` properly.
+**The approval guard does not exist (R18, measured 2026-09-10).** Tested with a queue that *has* an
+address (`doesntexists@invalid.local`) and `emailrouteraccessapproval = 2 (Pending Approval)`, with the
+org requiring queue approval:
+
+- `SendEmail` returned **HTTP 200**.
+- The email went to `Completed` / **`Pending Send`** and **stayed there** — 8 polls over ~2 minutes,
+  never Failed, never Sent.
+- The mailbox recorded **nothing**: `outgoingemailstatus` = *Not Run*, `mailboxstatus` = *Not Run*,
+  `lastsyncerror` / `lastsyncerrorcode` / `lastsyncerrorcount` all null.
+
+The mailbox is never enabled because it is unapproved, so no sync runs and no error is generated. **The
+send is silently stranded while the API reports success.** A client must therefore **pre-flight**: org
+`requireapprovalforqueueemail` / `requireapprovalforuseremail`, sender `emailrouteraccessapproval` = 1,
+mailbox `outgoingemailstatus` = Success. Reacting to failure is not an option — there is no failure to
+react to.
+
+Contrast: a queue with **no** address fails **loudly** with a synchronous HTTP 400
+(*"Could not find email address for recipient of type 'Queue'"*). The more complete the
+misconfiguration, the quieter the failure.
 
 ### Bodies contain content no sender wrote (S7, 2026-09-10)
 

@@ -183,8 +183,16 @@ bite if forgotten:
   setting.** Chunked upload needs `Xrm.WebApi.online.execute` — `context.webAPI` can't do it.
   On **forward, reuse the existing `attachmentid`** rather than re-uploading — same file BLOB, free.
   Storing is not sending: transport limits are a separate question (S7).
-- Pre-flight mailbox approval (`SystemUser.EmailRouterAccessApproval`) and warn the agent up front
-  rather than failing at send (R18).
+- **PRE-FLIGHT SEND APPROVAL — mandatory, not advisory.** Measured 2026-09-10: sending from an
+  addressed-but-**unapproved** queue returns **HTTP 200**, parks the email at `Pending Send`
+  **forever**, and records **no error anywhere** (mailbox `outgoingemailstatus` = Not Run,
+  `lastsyncerror` null). There is no synchronous guard and no async failure signal, so a client that
+  trusts the 200 will tell agents mail was sent that never leaves. Before offering Send, check:
+  org `requireapprovalforqueueemail` / `requireapprovalforuseremail`, then the sender's
+  `emailrouteraccessapproval` (**1 = Approved**, on `queue` or `systemuser`), then the mailbox's
+  `outgoingemailstatus` (want *Success*) and `mailboxstatus`.
+  Counter-intuitive companion finding: a queue with **no** address fails **loudly** (synchronous 400);
+  a queue with an **unapproved** address fails **silently**. Don't infer one from the other.
 
 **Threading** — group by `baseconversationindexhash` (100% populated), order/nest by
 `conversationindex`, then `correlatedactivityid` / `parentactivityid`, with normalised-subject as the

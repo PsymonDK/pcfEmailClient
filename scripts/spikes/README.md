@@ -42,3 +42,18 @@ Result (2026-09-10): sent and received. Two findings — the platform **overwrit
 
 Its second probe (send from an unapproved queue) did **not** test the approval guard, because the queue
 it used has no email address at all. That path is still untested.
+
+## `r18-approval-probe.mjs`
+
+**SENDS (attempts to send) REAL EMAIL.** Probes what happens when the sender is an addressed but
+**unapproved** queue — the R18 approval guard.
+
+Result (2026-09-10, queue `Offensive Support` / `doesntexists@invalid.local`, approval = 2): there is
+**no guard and no failure signal**. `SendEmail` returns HTTP 200, the email parks at `Pending Send`
+indefinitely, and the mailbox records nothing (`outgoingemailstatus` = Not Run, `lastsyncerror` null).
+
+**Consequence:** a client must pre-flight approval state rather than react to failure. See
+[`../../docs/research/06-spikes.md`](../../docs/research/06-spikes.md).
+
+Note it leaves a stranded `Pending Send` email on the Case — delete it afterwards, as the 2026-09-10
+run did.

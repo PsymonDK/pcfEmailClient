@@ -34,7 +34,7 @@ Priority: **M** = MUST (in scope, blocking) · **S** = SHOULD (in scope, non-blo
 | R15 | M | The agent's **signature** is inserted automatically on new compose | Start a reply; the default signature is present and editable | Inconsistent |
 | R16 | M | **Drafts persist** — an unsent reply survives navigating away and coming back | Type a reply, switch session, return; the draft text is still there | No draft concept in Timeline |
 | R17 | M | **Send** delivers the mail and reflects success/failure to the agent | Send a reply; it arrives, and the record shows as Sent | — |
-| R18 | M | A failed send (unapproved mailbox, oversize, invalid recipient) surfaces an actionable message | Send from an unapproved mailbox; the agent sees why, not a silent failure | Errors are opaque |
+| R18 | M | A failed send surfaces an actionable message. **CORRECTED by measurement (2026-09-10):** the platform gives **no** failure signal for an unapproved sender — `SendEmail` returns 200 and the email is stranded at `Pending Send` with no error recorded. So this MUST be met by **pre-flighting** the sender's `emailrouteraccessapproval` and the mailbox's `outgoingemailstatus` **before** offering Send, not by reacting to a failure | Block Send (or warn) when the sending queue/user is unapproved, naming the reason; never present a send that will silently vanish | Errors are opaque — and for this case, absent entirely |
 | R19 | S | Copilot "draft a reply for me" is reachable from within the client | Invoke AI draft; generated text lands in the editor | Exists but in a separate pane |
 | R20 | S | Sent mail is auto-associated to the Case (`regardingobjectid`) without the agent doing anything | Send a reply; the new email row is regarding the Case | Manual in some flows |
 

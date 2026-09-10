@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 answered (negative). No open gates.
+## Status: S1, S2, S6, S7 PASSED; S8 CLOSED; S10 + R18 answered. No open gates.
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -28,6 +28,13 @@ supportable way. The undocumented `factory.createComponent` / `bindDOMComponent`
 `RichTextEditorControlV2` inside a PCF's DOM, but it never initialises into a usable editor. **R11 still
 needs a bundled editor**, so that risk stands rather than being removed. See
 [S10 result](#s10-result--2026-09-10-no--do-not-depend-on-it-mechanism-works-editor-does-not).
+
+**R18 answered, 2026-09-10 — and it inverts the requirement.** Sending from an addressed-but-unapproved
+queue returns **HTTP 200**, parks the email at `Pending Send` **forever**, and records **no error
+anywhere** (mailbox `outgoingemailstatus` = Not Run, `lastsyncerror` null). There is neither a
+synchronous guard nor an async failure signal, so R18 can only be met by **pre-flighting the sender's
+approval state before offering Send**. See
+[R18 result](#r18-result--2026-09-10-there-is-no-failure-signal-at-all-pre-flight-is-mandatory).
 
 **S8 is CLOSED.** The S7 send plus the requester's reply produced a genuine two-message conversation
 (`conversationindex` 44 → 54 chars, same hash), so grouping, **cIdx ordering** and the depth formula are
@@ -587,7 +594,45 @@ as a new requirement (**R21** in [`01-requirements.md`](01-requirements.md)).
 Null on the real synced inbound reply. The 500-character cap noted earlier is therefore moot — the
 column is simply empty here, so it is unusable for threading regardless of its size.
 
-##### R18 — not properly tested
+##### R18 result — 2026-09-10: **there is no failure signal at all.** Pre-flight is mandatory.
+
+The requester created a queue in exactly the state needed: **Offensive Support**,
+`doesntexists@invalid.local`, `emailrouteraccessapproval = 2 (Pending Approval)`, with the org set to
+`requireapprovalforqueueemail = true`. Sent from it:
+
+| Observation | Result |
+|---|---|
+| `SendEmail` with `IssueSend: true` | **HTTP 200 OK** in 6181 ms — **no synchronous guard** |
+| Email state afterwards | `Completed` / **`Pending Send`** |
+| After ~2 minutes of polling (8 polls) | **still `Pending Send`** — never reaches Failed or Sent |
+| Mailbox `outgoingemailstatus` | `Not Run` |
+| Mailbox `mailboxstatus` | `Not Run` |
+| Mailbox `lastsyncerror` / `lastsyncerrorcode` / `lastsyncerrorcount` | **all null** |
+
+**Nothing anywhere says why.** The mailbox was never enabled because it is unapproved, so no sync ever
+runs and no error is recorded. The email is silently stranded forever, while the API reported success.
+
+**This inverts R18's acceptance criterion.** R18 said *"Send from an unapproved mailbox; the agent sees
+why, not a silent failure."* The platform **gives** a silent failure and cannot be made to report one —
+so R18 is **unachievable by reacting to the platform**. It can only be met by **pre-flighting before
+offering Send**, checking:
+
+- org `requireapprovalforqueueemail` / `requireapprovalforuseremail`, and if set:
+- the sender's `emailrouteraccessapproval` — `1` = Approved (queue or systemuser), and
+- the mailbox's `outgoingemailstatus` (want *Success*) and `mailboxstatus` (want *Run*).
+
+The data-model doc already *recommended* pre-flighting. This makes it **mandatory**, and names the
+exact columns.
+
+**A counter-intuitive detail worth keeping:** a queue with **no email address** fails **loudly** —
+synchronous HTTP 400, *"Could not find email address for recipient of type 'Queue'"* (the earlier
+probe). A queue with an **unapproved address** fails **silently**. The more complete the
+misconfiguration, the quieter the failure. Do not infer from one that the other is covered.
+
+The stranded probe email was deleted; left in place it would have sat in `Pending Send` on the Case
+indefinitely. The queue itself was left alone — it is the requester's.
+
+##### Earlier R18 attempt — invalid, kept for the record
 
 The probe sent from `<Care Agents>` (approval = 0) failed with a clean HTTP 400 —
 *"Could not find email address for recipient of type 'Queue' with ID …"* — but that is a **missing

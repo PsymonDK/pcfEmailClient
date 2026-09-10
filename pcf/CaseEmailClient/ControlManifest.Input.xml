@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="JHRB" constructor="CaseEmailClient" version="0.0.1"
+  <control namespace="JHRB" constructor="CaseEmailClient" version="0.0.2"
            display-name-key="Case Email Client (S1 spike)"
            description-key="Spike control for the Case-scoped email client research. Measures full-tab real estate and setControlState survival across CSW session switches."
            control-type="virtual">

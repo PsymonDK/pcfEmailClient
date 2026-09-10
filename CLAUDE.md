@@ -138,8 +138,13 @@ Full detail in [`docs/research/04-data-model.md`](docs/research/04-data-model.md
 bite if forgotten:
 
 **Querying**
-- Scope every query by `regardingobjectid` **and** guard on `_regardingobjecttypecode` — GUIDs can
-  collide across tables.
+- Scope and type-guard in one clause with the **typed navigation property**:
+  `$filter=regardingobjectid_incident/incidentid eq <caseId>`. This guarantees the regarding object is
+  a Case, so GUIDs cannot collide across tables.
+- **`regardingobjecttypecode` is NOT a queryable OData property.** It is a FetchXML attribute only;
+  filtering on it over the Web API fails with *"Could not find a property named
+  'regardingobjecttypecode' on type 'Microsoft.Dynamics.CRM.email'"* (HTTP 400). Verified 2026-09-10 —
+  this file previously told you to guard on it, and that was wrong.
 - **Never fetch `description` (the body) in a list query.** `Email.Description` now lives in Azure Blob
   storage; fetch it lazily per message on expand. This is a hard performance requirement (N5), not an
   optimisation.
@@ -172,8 +177,16 @@ reconstruction. `messageid` is populated for **received** mail only.
 
 - **Virtual (React) dataset component.** Virtual so it shares the host's React and Fluent instance
   instead of bundling its own.
-- Call `context.mode.trackContainerResize(true)`; expect `allocatedHeight` = **-1** on dataset
-  components and fill 100% with CSS. Handle `"layout"` in `context.updatedProperties`.
+- `allocatedHeight` is **-1** on dataset components — confirmed live. But **`height: 100%` gets you
+  nothing on a form tab**: a subgrid cell is *content*-sized, and every ancestor sizes itself to the
+  component's own `min-height`. The docs' "grow to use 100% of the space" applies to a main/related
+  grid page, not a subgrid cell on a form. **Claim height from the viewport instead** —
+  `window.innerHeight - rootTop - gutter`, recomputed on resize (measured 552–658px depending on
+  window size). Verified 2026-09-10.
+- Call `context.mode.trackContainerResize(true)` and handle `"layout"` in `context.updatedProperties`
+  for width changes.
+- **`context.webAPI` rejects with a plain object, not an `Error`.** `err instanceof Error ? … : …`
+  collapses real failures to "Unknown error". Dig through `message` / `error.message` / `JSON.stringify`.
 - **Persist drafts to Dataverse on blur and on an interval**, not only via `setControlState`. Whether
   `setControlState` survives teardown *inside a custom page* is undocumented — durable drafts remove the
   dependency on the answer. Do this from day one.

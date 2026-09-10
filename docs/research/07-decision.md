@@ -7,7 +7,7 @@
 | **Decision** | Build the Case-scoped email client as a **React (virtual) PCF code component**, placed directly on a Case form tab, and hosted inside a **thin custom page** for the CSW session tab |
 | **Runner-up** | PCF alone, form-tab placement only |
 | **Eliminated** | Generative page (platform facts); custom page alone, code app via iframe, HTML web resource (MUST-requirement failure) |
-| **Confidence** | Medium-high on the choice; **not yet validated by any hands-on spike** |
+| **Confidence** | **High for the Case form tab placement** — S1 passed live on 2026-09-10, confirming the load-bearing claim. Medium for the CSW session-tab half, which still rests on documentation until S2 runs. |
 
 ## Context
 
@@ -35,8 +35,13 @@ and `emailsignature`. Sending is the `SendEmail` action. AI drafting uses `conte
 
 Three findings drove this, in order of weight.
 
-**1. Multi-session state is the real discriminator — not UI capability.** Every candidate can be made
-to look like a mail client. Only one survives CSW's tab lifecycle. Microsoft documents state loss on
+**1. Multi-session state is the real discriminator — not UI capability. Now measured, not assumed.**
+S1 confirmed live on 2026-09-10: switching between two concurrent Case sessions really does destroy and
+re-initialise the control (`init #2`), and `setControlState` really does restore the in-progress draft
+(`state RESTORED`), with no cross-session bleed. That was the single assumption the whole
+recommendation rested on, and it holds.
+
+Every candidate can be made to look like a mail client. Only one survives CSW's tab lifecycle. Microsoft documents state loss on
 session/tab switch for custom pages ("state is also not persisted when switching between multi-session
 tabs"), for web resource app tabs ("the page is refreshed to the initial state"), and for external sites
 in panes ("the state isn't restored"). PCF, by contrast, advertises the "ability to handle being
@@ -74,7 +79,8 @@ Full scoring in [`05-capability-matrix.md`](05-capability-matrix.md) (hybrid 77/
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| **`setControlState` behaviour inside a custom page is undocumented.** If it does not survive custom-page teardown, the session-tab placement loses draft state | **High** | Spike S1 tests this explicitly. Mitigation regardless: write drafts as real Dataverse rows (`statecode` 0 / `statuscode` 1 Draft) on blur and on an interval, so recovery never depends on in-memory state. Do this from day one — it is cheap and it de-risks the one unknown that the scorecard had to discount for. |
+| **`setControlState` behaviour inside a custom page is undocumented.** If it does not survive custom-page teardown, the session-tab placement loses draft state | **High** | **Still open — now owned by S2.** S1 proved it works on the *form tab*; the custom-page host is untested. Mitigation regardless: write drafts as real Dataverse rows (`statecode` 0 / `statuscode` 1 Draft) on blur and on an interval, so recovery never depends on in-memory state. Do this from day one. |
+| **Layout is the component's job, not the host's** (found by S1) | Medium | A subgrid cell on a form tab is content-sized; `height: 100%` yields nothing. Claim height from the viewport and recompute on resize. Already implemented in the spike control. |
 | **Quoted-history splitting (R4/R12) has no API** — one HTML blob, no quote marker | **High** | Client-side heuristic over `blockquote`, `divRplyFwdMsg`, `gmail_quote`, `-----Original Message-----`; localisation-aware. Control our own emitted structure on compose; never re-serialise an inherited quote. Prototype in S7 before committing estimates. |
 | **No per-agent read state on `email`** (R6) — `lastopenedtime`/`opencount` are recipient-side tracking | Medium | Custom column or a small join table keyed by email + user. Decide in implementation planning. |
 | **Threading columns may be sparsely populated** on manually created, imported or Flow-created email | Medium | S8 measures the real fallback rate against production-like data; subject-normalisation fallback sized to that number. |

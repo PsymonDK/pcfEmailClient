@@ -38,7 +38,9 @@ rejected three more on a MUST-requirement failure:
 2. **Multi-session state loss is the discriminator, not UI capability.** In CSW, web resources,
    external sites and custom pages all lose their in-memory state when the agent switches session or
    tab. For a mail client holding an unsent draft, that is a data-loss defect. **PCF is the only
-   candidate with a documented state-preservation contract for exactly this destroy/reload cycle.**
+   candidate with a state-preservation contract for exactly this destroy/reload cycle — and S1 has now
+   verified it live** on the Case form tab placement (`state RESTORED`, `init #2`, no cross-session
+   bleed). Note the teardown only fires between *concurrent record sessions*, not on every switch.
 3. **The A+B hybrid resolves the two-placement requirement with one codebase.** Code components in
    custom pages are GA, so the same React PCF serves the Case form tab natively and the CSW session
    tab through a thin custom page wrapper.
@@ -64,11 +66,11 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 
 | RQ | Question | Status | Where |
 |---|---|---|---|
-| RQ1 | Can a PCF occupy a full Case form tab with mail-client real estate? Which flavour? | Provisional | [02](02-hosting-and-placement.md), [03](03-candidates.md) |
+| RQ1 | Can a PCF occupy a full Case form tab with mail-client real estate? Which flavour? | **Answered (measured)** — yes, but height must be claimed, not inherited | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ2 | Which app tab template type hosts each candidate? Can a session template auto-open it with Case id? | Answered | [02](02-hosting-and-placement.md) |
 | RQ3 | Can a generative page be reached from the Case form at all? | Answered — **no, for our placements** | [02](02-hosting-and-placement.md) |
 | RQ4 | Code app behind an iframe: what breaks? | Answered (desk) | [03](03-candidates.md) |
-| RQ5 | Does each candidate survive CSW multi-session? | Answered — **the discriminator** | [02](02-hosting-and-placement.md) |
+| RQ5 | Does each candidate survive CSW multi-session? | **Answered (measured for PCF on a form tab)** — the discriminator | [02](02-hosting-and-placement.md), [06](06-spikes.md) |
 | RQ6 | Rich-text compose and quoted-history handling per host | Provisional | [03](03-candidates.md), [04](04-data-model.md) |
 | RQ7 | Attachments: create/read `activitymimeattachment`, real size ceilings | Answered (desk) | [04](04-data-model.md) |
 | RQ8 | Sending: `SendEmail` vs statecode, server-side sync, draft and error handling | Answered | [04](04-data-model.md) |
@@ -82,11 +84,15 @@ but a spike should confirm) · **Spike required** (cannot be answered from docum
 
 ## Status of this pass
 
-Phase 1 (desk research) is **complete**. Phase 2 (spikes) has **started**: the target environment is
-confirmed (the demo environment, with CSW present) and **S8 has run in read-only form**, validating
-the threading strategy and correcting two claims in [`04-data-model.md`](04-data-model.md). Every other
-spike is recorded as not run, with the specific claim it would confirm.
+Phase 1 (desk research) is **complete**. Phase 2 (spikes) is **under way**:
 
-The recommendation in [`07-decision.md`](07-decision.md) remains a **desk-research recommendation**,
-still gated on **S1, S6 and S7** — S1 in particular, because it holds the one genuinely undocumented
-question (whether `setControlState` survives teardown inside a custom page).
+- **S1 PASSED** live on 2026-09-10. `setControlState` survives a genuine two-Case-session
+  destroy/reload with no cross-session bleed — the single assumption the recommendation rested on. It
+  also **corrected** two claims: a subgrid cell on a form tab is content-sized (`height: 100%` yields
+  nothing), and `regardingobjecttypecode` is not a queryable OData property.
+- **S8 partially run** (read-only), validating the threading strategy and correcting three claims.
+
+The recommendation in [`07-decision.md`](07-decision.md) is now **measured for the Case form tab
+placement**. The remaining gate is **S2** — whether `setControlState` also survives teardown *inside a
+custom page*, which is the session-tab half of the architecture. S6 and S7 still gate the full-client
+feasibility.

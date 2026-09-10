@@ -1,10 +1,11 @@
 # 06 — Spikes
 
-## Status: S1 deployed (observation outstanding); S8 partially run
+## Status: S1 PASSED (observed live); S8 partially run
 
-**S1** is built, deployed and wired into Copilot Service workspace, but its three on-screen
-measurements have not been read — no signed-in browser was drivable from this session. The control
-self-reports, so finishing it is a ~1 minute manual read: see [S1 result](#s1-result--2026-09-09-built-and-deployed-observation-outstanding).
+**S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
+two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
+quoted-history logic render correctly on the seed Case. It forced three corrections, including one to
+`04`/`CLAUDE.md` and one to `02`. See [S1 result](#s1-result--2026-09-10-passed-observed-in-the-live-app).
 **S8** ran in read-only form (`pac org fetch` aggregates): [S8 (partial)](#s8-result-partial--2026-09-09).
 
 The remaining spikes are **unblocked** as of 2026-09-09: `pac` CLI 2.11.2 is authenticated against
@@ -17,9 +18,11 @@ Note that this is a **shared demo environment** — see the environment guardrai
 [`CLAUDE.md`](../../CLAUDE.md) before running anything that writes, sends email, or changes
 System Settings.
 
-Everything in [`02`](02-hosting-and-placement.md), [`03`](03-candidates.md) and
-[`04`](04-data-model.md) is **desk research from Microsoft documentation and community prior art**. The
-recommendation in [`07-decision.md`](07-decision.md) is correspondingly a desk-research recommendation.
+[`03`](03-candidates.md) remains desk research from Microsoft documentation and community prior art.
+[`02`](02-hosting-and-placement.md) and [`04`](04-data-model.md) have both now been **corrected by
+measurement** (RQ1 real estate, and the `regardingobjecttypecode` / threading findings). The
+recommendation in [`07-decision.md`](07-decision.md) has its load-bearing claim confirmed for the
+Case form tab placement, but the custom-page half is still unverified.
 
 ### Prerequisites before any spike can run
 
@@ -55,7 +58,75 @@ single-column tab of the enhanced Case form in CSW.
 **Success signal.** Renders at full tab height; open two Cases, set some component state in the first,
 switch away and back — state restored, and the second Case never shows the first's state.
 
-#### S1 result — 2026-09-09: BUILT AND DEPLOYED, observation outstanding
+#### S1 result — 2026-09-10: **PASSED**, observed in the live app
+
+Read directly from the control's diagnostics panel in Copilot Service workspace, on the seed Case.
+
+| Question | Answer |
+|---|---|
+| **RQ5 — does `setControlState` survive a CSW session switch?** | **YES.** After a genuine two-Case-session switch the control re-initialised (`init #2`) and the panel showed **`state RESTORED`**, with the draft probe text `RQ5-PROBE-unsent-reply-42` intact. `state saved at 08:44:53Z` → `init at 08:50:23Z`, so a real destroy/reload cycle happened in between. |
+| **No cross-session bleed** | **Confirmed.** The second Case session reported `state NOT restored`, `init #1`, an empty draft box, its own Case id, and `0 messages → 0 threads` (that Case has no email) — which also proves the Case-scoping filter. |
+| **RQ1 — real estate** | `allocatedHeight` = **-1** as documented, `allocatedWidth` = full width (1857–2262px across window sizes). Height needed **claiming** — see the correction below. |
+| Threading, live | `12 messages → 3 threads`, badged `hash` (7), `hash` (3), `subject` (2) — identical to the offline run. All three badged `createdon order`, correct for seeded rows with no `conversationindex`. |
+| Quoted history, live | The deepest message in the 7-chain rendered **only its new text** ("Tusind tak - det ser taet ud nu…") with history collapsed by default and `matched divRplyFwdMsg · depth 6`. R2/R3/R4 demonstrated. |
+
+**Three things had to be fixed before it worked, all worth keeping.**
+
+**1. `regardingobjecttypecode` is not a queryable OData property.** The first deploy failed with
+*"Could not find a property named 'regardingobjecttypecode' on type 'Microsoft.Dynamics.CRM.email'"*.
+It exists as a FetchXML attribute, but not in the Web API. Verified against the live environment:
+
+| Filter | Result |
+|---|---|
+| `_regardingobjectid_value eq <id>` | HTTP 200, 12 rows — works, but no type guard |
+| `regardingobjectid_incident/incidentid eq <id>` | HTTP 200, 12 rows — **works and is inherently type-safe** |
+| `_regardingobjectid_value eq <id> and regardingobjecttypecode eq 'incident'` | **HTTP 400** |
+
+The typed navigation property is the correct way to express "scope to this Case *and* guarantee the
+regarding object is a Case". `CLAUDE.md` previously said to "guard on `_regardingobjecttypecode`",
+which is wrong for the Web API path; it has been corrected.
+
+**2. RQ1 correction — a subgrid cell on a form tab is CONTENT-sized, not viewport-sized.** This
+contradicts what [`02-hosting-and-placement.md`](02-hosting-and-placement.md) originally assumed.
+Measured: `allocatedHeight` = -1, and **every ancestor sized itself to the component's own
+`min-height`** (`cssHeight: 320px` on four levels of `pa-cu flexbox` parents). So `height: 100%`
+resolves to nothing — the parent flexes to the child, not the reverse. The docs' "grow to use 100% of
+the space" applies to a **main grid or related-records grid page**, not a subgrid cell on a form tab.
+
+A mail client must therefore **claim** its height from the viewport rather than inherit it. The control
+now sets `height = window.innerHeight - rootTop - gutter` on mount and on resize, which yielded
+**658px** at one window size and **552px** at another — adapting correctly. Fixed `calc(100vh - …)` in
+CSS would work too but hard-codes the form chrome offset.
+
+**3. Error reporting.** `context.webAPI` rejects with a plain object, not an `Error`, so
+`err instanceof Error ? err.message : …` collapsed the real failure to "Unknown error" and cost time.
+The control now digs through `message` / `error.message` / `JSON.stringify`. Worth doing in the real
+client from the start.
+
+**Deployment notes for anyone repeating this:** the control bundle is cached hard — bump the manifest
+`version` (0.0.1 → 0.0.2) and reimport, then reload with
+`&flags=DisableWebResourceCache%3Dtrue`. Also, driving this via browser automation, `element.click()`
+on the tab `<li role="tab">` works, but coordinate clicks need the **screenshot** coordinate frame
+(1568×684 here), which differs from the page's CSS pixel frame (~1878×1134) — mixing them silently
+clicks the wrong place. And React inputs need the native value setter plus a bubbling `input` event.
+
+##### What this means for the architecture decision
+
+The load-bearing claim in [`07-decision.md`](07-decision.md) — that PCF's `setControlState` genuinely
+survives CSW's destroy/reload where custom pages, web resources and code apps do not — is now
+**empirically confirmed for the Case form tab placement**. That was the whole basis of the
+recommendation.
+
+Still open, and unchanged: whether the same holds **inside a custom page** (the session-tab placement).
+That needs S2. The durable-draft mitigation stays recommended regardless.
+
+One nuance worth recording so nobody over-reads this: a **Home ↔ Case** session switch and an
+**in-session tab switch** did *not* tear the control down at all — it stayed mounted (`init #1`,
+React state simply never lost). Only switching between **two record sessions** produced a real
+re-init. So "CSW tears controls down on every switch" is too strong; the teardown is driven by
+memory pressure across concurrent sessions, which is exactly when it matters.
+
+#### S1 build record — 2026-09-09
 
 The control is written, built, deployed and wired to a Case form in CSW. **The three on-screen
 measurements have not been read yet**, because no signed-in browser was drivable from this session
@@ -310,7 +381,7 @@ finding and must be recorded, not discarded.)*
 
 | Spike | Date | Outcome | Notes |
 |---|---|---|---|
-| S1 | 2026-09-09 | **Built & deployed; on-screen measurements unread** | Control live in CSW on a spike form. Fluent-version + publisher-prefix findings recorded. See [result](#s1-result--2026-09-09-built-and-deployed-observation-outstanding) |
+| S1 | 2026-09-10 | **PASSED** — `setControlState` survives a real two-session teardown; no bleed | RQ1 corrected: a subgrid cell is content-sized, height must be claimed. `regardingobjecttypecode` is not queryable in OData. See [result](#s1-result--2026-09-10-passed-observed-in-the-live-app) |
 | S2 | — | **Not run** — P1–P2 unverified | |
 | S3 | — | **Not run** — P7 unverified; also deprioritised | |
 | S4 | — | **Not run** — deprioritised, candidate eliminated on documented facts | |

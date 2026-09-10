@@ -51,8 +51,23 @@ function resolveCaseId(context: ComponentFramework.Context<IInputs>): string | n
   return id ? id.replace(/[{}]/g, '') : null;
 }
 
-const errText = (err: unknown): string =>
-  err instanceof Error ? err.message : typeof err === 'string' ? err : 'Unknown error';
+// context.webAPI rejects with a plain object, not an Error, so `err.message` alone
+// produced a useless "Unknown error". Dig for whatever the platform actually gave us.
+const errText = (err: unknown): string => {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string') return err;
+  if (err !== null && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const nested = o.message ?? (o.error as Record<string, unknown> | undefined)?.message;
+    if (typeof nested === 'string' && nested) return nested;
+    try {
+      return JSON.stringify(err).slice(0, 400);
+    } catch {
+      /* fall through */
+    }
+  }
+  return 'Unknown error';
+};
 
 export const EmailClient: React.FC<EmailClientProps> = (props) => {
   const { context, restoredState, initAt, initCount, persistState } = props;
@@ -79,7 +94,12 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
     const run = async (): Promise<void> => {
       // Deliberately NOT selecting `description`: the body lives in Azure Blob storage
       // and is fetched lazily on expand. See docs/research/04-data-model.md.
-      const filter = `_regardingobjectid_value eq ${caseId} and regardingobjecttypecode eq 'incident'`;
+      //
+      // Scope AND type-guard in one clause via the typed navigation property.
+      // `regardingobjecttypecode` is a FetchXML attribute and is NOT a queryable OData
+      // property - filtering on it fails with "Could not find a property named
+      // 'regardingobjecttypecode' on type 'Microsoft.Dynamics.CRM.email'".
+      const filter = `regardingobjectid_incident/incidentid eq ${caseId}`;
       const query = `?$select=${SELECT}&$filter=${filter}&$orderby=createdon asc&$top=200`;
       try {
         const res = await ctxRef.current.webAPI.retrieveMultipleRecords('email', query);
@@ -117,22 +137,31 @@ export const EmailClient: React.FC<EmailClientProps> = (props) => {
   const alloc = context.mode.allocatedHeight;
   const allocW = context.mode.allocatedWidth;
 
-  // allocatedHeight is -1 for dataset controls, so the only way to know whether the CSS
-  // actually stretched is to measure the rendered box. This is the RQ1 number.
+  // RQ1, measured 2026-09-10: a subgrid cell on a form tab is CONTENT-sized, not
+  // viewport-sized. `allocatedHeight` is -1 and every ancestor sized itself to this
+  // component's own min-height, so `height: 100%` resolves to nothing. The docs'
+  // "grow to use 100% of the space" applies to a main/related grid page, not a subgrid
+  // cell on a form. A mail client therefore has to CLAIM its height from the viewport.
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const [measured, setMeasured] = React.useState('measuring…');
   React.useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    const report = (): void => {
+    const BOTTOM_GUTTER = 24;
+    const MIN = 320;
+    const claim = (): void => {
+      const top = el.getBoundingClientRect().top;
+      const available = Math.max(MIN, Math.round(window.innerHeight - top - BOTTOM_GUTTER));
+      el.style.height = `${available}px`;
       const r = el.getBoundingClientRect();
-      setMeasured(`${Math.round(r.height)}px high x ${Math.round(r.width)}px wide`);
+      setMeasured(
+        `${Math.round(r.height)}px high x ${Math.round(r.width)}px wide ` +
+          `(claimed ${available}px from viewport ${window.innerHeight}px, top ${Math.round(top)}px)`,
+      );
     };
-    report();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(report);
-    ro.observe(el);
-    return () => { ro.disconnect(); };
+    claim();
+    window.addEventListener('resize', claim);
+    return () => { window.removeEventListener('resize', claim); };
   }, []);
 
   const savedAt = asStr(restoredState?.savedAt);

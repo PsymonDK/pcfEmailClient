@@ -56,11 +56,13 @@ that does — which is precisely the hybrid, scored separately.
 **C2 — D = 2, not 3.** The SPA itself has no functional ceiling, but the frame has no `Xrm`, so R19
 (Copilot draft), notifications and navigation all require `postMessage` plumbing you own and maintain.
 
-**C3 — A+B = 2, not 3.** Honest discount. The PCF's `setControlState` contract is exactly designed for
-CSW's destroy/reload cycle, which earns a 3 for the form-tab placement. But the custom page wrapper
-carries the documented "state is not persisted when switching between multi-session tabs" behaviour,
-and whether `setControlState` survives a custom-page teardown is **not documented**. Spike S1 must
-test this. Draft durability must be solved in the component regardless.
+**C3 — A+B = 2, not 3.** Honest discount, and the discount is now **half retired**. S1 confirmed live
+(2026-09-10) that `setControlState` genuinely survives a two-session destroy/reload on the **form tab**
+placement, with no cross-session bleed — so candidate **A alone scores a measured 3**. The hybrid stays
+at 2 only because the **custom page wrapper** half is still unverified: it carries the documented
+"state is not persisted when switching between multi-session tabs" behaviour, and whether
+`setControlState` survives a custom-page teardown remains undocumented. **S2 now owns that question.**
+Draft durability must be solved in the component regardless.
 
 **C3 — B/D/E = 0.** Documented state loss on tab switch. See
 [`02`](02-hosting-and-placement.md#rq5--csw-multi-session-behaviour-the-discriminator).

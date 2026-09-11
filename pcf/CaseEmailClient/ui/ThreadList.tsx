@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { Thread } from '../domain/threading';
 import { normaliseSubject } from '../domain/threading';
+import { listView } from '../domain/listState';
 import { formatWhen, RADIUS, T } from './tokens';
 import { AttachmentIcon, Avatar, Card, CardHeader, GroupHeader, IconButton, Shimmer, StatusBadge, UnreadDot } from './parts';
 
@@ -31,6 +32,12 @@ export interface ThreadListProps {
   selectedKey?: string;
   unreadTotal: number;
   loading: boolean;
+  /**
+   * The load failure, if any. **Must be passed.** Without it the list falls through to the empty
+   * state and a failed load reads as "this customer has never emailed" — see domain/listState.ts.
+   */
+  error?: { headline: string; reassurance?: string; detail: string };
+  onRetry: () => void;
   onSelect: (key: string) => void;
   onRefresh: () => void;
   /** Total count including anything the filters are hiding — see the zero-results rule. */
@@ -42,13 +49,23 @@ export interface ThreadListProps {
 
 export const ThreadList: React.FC<ThreadListProps> = (props) => {
   const {
-    summaries, selectedKey, unreadTotal, loading, onSelect, onRefresh,
+    summaries, selectedKey, unreadTotal, loading, error, onRetry, onSelect, onRefresh,
     totalThreadCount, filterActive, onClearFilters, parentCaseThreadCount,
   } = props;
 
   const listRef = React.useRef<HTMLDivElement>(null);
   // Remembered across focus loss, per the interaction spec.
   const [focusIndex, setFocusIndex] = React.useState(0);
+
+  // One decision, taken in a tested pure function, instead of a scatter of `!loading &&` guards
+  // that made a failed load indistinguishable from an empty case.
+  const view = listView({
+    loading,
+    error,
+    visibleCount: summaries.length,
+    totalCount: totalThreadCount,
+    filterActive,
+  });
 
   const unread = summaries.filter((s) => s.unreadCount > 0 && !s.parentCaseNumber);
   const read = summaries.filter((s) => s.unreadCount === 0 && !s.parentCaseNumber);
@@ -124,14 +141,19 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
         onKeyDown={onKeyDown}
         style={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, outlineOffset: '-2px' }}
       >
-        {loading && <ListSkeleton />}
+        {view === 'loading' && <ListSkeleton />}
 
-        {!loading && ordered.length === 0 && (
-          <EmptyList filterActive={filterActive} total={totalThreadCount} onClearFilters={onClearFilters} />
+        {/* Error BEFORE any empty state, and it stays up while a retry is in flight. */}
+        {view === 'error' && error && <ListError error={error} onRetry={onRetry} />}
+
+        {view === 'empty' && <EmptyNoMail />}
+
+        {view === 'empty-filtered' && (
+          <EmptyFiltered total={totalThreadCount} onClearFilters={onClearFilters} />
         )}
 
-        {!loading && unread.length > 0 && <GroupHeader label="Unread" count={unread.length} />}
-        {!loading && unread.map((s) => (
+        {view === 'rows' && unread.length > 0 && <GroupHeader label="Unread" count={unread.length} />}
+        {view === 'rows' && unread.map((s) => (
           <ThreadRow
             key={s.thread.key}
             summary={s}
@@ -141,8 +163,8 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
           />
         ))}
 
-        {!loading && read.length > 0 && <GroupHeader label="Earlier" count={read.length} />}
-        {!loading && read.map((s) => (
+        {view === 'rows' && read.length > 0 && <GroupHeader label="Earlier" count={read.length} />}
+        {view === 'rows' && read.map((s) => (
           <ThreadRow
             key={s.thread.key}
             summary={s}
@@ -152,10 +174,10 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
           />
         ))}
 
-        {!loading && parent.length > 0 && (
+        {view === 'rows' && parent.length > 0 && (
           <GroupHeader label="Parent case" note={parent[0].parentCaseNumber} tone="warn" />
         )}
-        {!loading && parent.map((s) => (
+        {view === 'rows' && parent.map((s) => (
           <ThreadRow
             key={s.thread.key}
             summary={s}
@@ -298,13 +320,87 @@ const ListSkeleton: React.FC = () => (
 );
 
 /**
- * The empty state, which is two different states wearing the same clothes.
- *
- * Saying WHICH matters: "no results" and "this customer has never emailed" look identical unless
- * the count is stated, and the wrong reading changes how an agent handles the case.
+ * The load-failure state. Takes precedence over every empty state, because the two are not
+ * interchangeable: one means "nothing to deal with", the other means "we do not know".
  */
-const EmptyList: React.FC<{ filterActive: boolean; total: number; onClearFilters: () => void }> = ({
-  filterActive, total, onClearFilters,
+const ListError: React.FC<{
+  error: { headline: string; reassurance?: string; detail: string };
+  onRetry: () => void;
+}> = ({ error, onRetry }) => {
+  const [showDetail, setShowDetail] = React.useState(false);
+  return (
+    <div
+      role="alert"
+      style={{
+        margin: '12px', padding: '10px', boxSizing: 'border-box', background: T.dangerBg,
+        border: `1px solid ${T.dangerStroke}`, borderRadius: RADIUS.md,
+        display: 'flex', flexDirection: 'column', gap: '6px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px' }} aria-hidden="true">
+          <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
+        </svg>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{error.headline}</span>
+      </div>
+      {/* The agent's first question, answered before they ask it. */}
+      {error.reassurance && <span style={{ fontSize: '12px', color: '#3b3a39' }}>{error.reassurance}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px', height: '26px', padding: '0 10px',
+            boxSizing: 'border-box', borderRadius: RADIUS.md, background: T.bg1,
+            border: `1px solid ${T.stroke1}`, font: 'inherit', fontSize: '12px', cursor: 'pointer',
+          }}
+        >
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDetail((v) => !v)}
+          style={{ border: 'none', background: 'transparent', font: 'inherit', fontSize: '12px', color: T.link, cursor: 'pointer' }}
+        >
+          {showDetail ? 'Hide details' : 'Details'}
+        </button>
+      </div>
+      {showDetail && (
+        <code style={{ fontFamily: T.mono, fontSize: '11px', color: T.fg2, wordBreak: 'break-all' }}>
+          {error.detail}
+        </code>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Genuinely no mail. The ONLY state allowed to say "yet" — that word is what separates "nothing
+ * here" from "something is wrong", and it must never appear over a failure.
+ */
+const EmptyNoMail: React.FC = () => (
+  <div
+    style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: '8px', padding: '32px 24px', boxSizing: 'border-box', textAlign: 'center',
+    }}
+  >
+    <svg width="38" height="38" viewBox="0 0 20 20" fill="none" stroke="#c8c6c4" strokeWidth="1.1" aria-hidden="true">
+      <path d="M2.5 5.5h15v9h-15z" /><path d="m2.5 6 7.5 5 7.5-5" />
+    </svg>
+    <span style={{ fontSize: '14px', fontWeight: 600, color: T.fg1 }}>No email on this case yet</span>
+    <span style={{ fontSize: '12px', color: T.fg3 }}>
+      When the customer writes in, or you send the first message, it appears here.
+    </span>
+  </div>
+);
+
+/**
+ * Mail exists, the filters hide it. **States the real total**, because "no results" and "this
+ * customer has never emailed" are indistinguishable unless the count is spelled out.
+ */
+const EmptyFiltered: React.FC<{ total: number; onClearFilters: () => void }> = ({
+  total, onClearFilters,
 }) => (
   <div
     style={{
@@ -313,39 +409,24 @@ const EmptyList: React.FC<{ filterActive: boolean; total: number; onClearFilters
     }}
   >
     <svg width="38" height="38" viewBox="0 0 20 20" fill="none" stroke="#c8c6c4" strokeWidth="1.1" aria-hidden="true">
-      {filterActive
-        ? <><circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.8 12.8 17 17" /></>
-        : <><path d="M2.5 5.5h15v9h-15z" /><path d="m2.5 6 7.5 5 7.5-5" /></>}
+      <circle cx="8.5" cy="8.5" r="5.5" /><path d="M12.8 12.8 17 17" />
     </svg>
-
-    {filterActive ? (
-      <>
-        <span style={{ fontSize: '14px', fontWeight: 600, color: T.fg1 }}>No email matches these filters</span>
-        <span style={{ fontSize: '12px', color: T.fg3 }}>
-          This case has <strong>{total} {total === 1 ? 'thread' : 'threads'}</strong>. They are hidden
-          by the filters, not missing.
-        </span>
-        <button
-          type="button"
-          onClick={onClearFilters}
-          style={{
-            marginTop: '4px', height: '30px', padding: '0 14px', border: `1px solid ${T.stroke1}`,
-            borderRadius: RADIUS.md, background: T.bg1, font: 'inherit', fontSize: '14px',
-            color: T.fg1, cursor: 'pointer',
-          }}
-        >
-          Clear all filters
-        </button>
-      </>
-    ) : (
-      <>
-        {/* "yet" is doing real work: it separates "nothing here" from "something is wrong". */}
-        <span style={{ fontSize: '14px', fontWeight: 600, color: T.fg1 }}>No email on this case yet</span>
-        <span style={{ fontSize: '12px', color: T.fg3 }}>
-          When the customer writes in, or you send the first message, it appears here.
-        </span>
-      </>
-    )}
+    <span style={{ fontSize: '14px', fontWeight: 600, color: T.fg1 }}>No email matches these filters</span>
+    <span style={{ fontSize: '12px', color: T.fg3 }}>
+      This case has <strong>{total} {total === 1 ? 'thread' : 'threads'}</strong>. They are hidden by
+      the filters, not missing.
+    </span>
+    <button
+      type="button"
+      onClick={onClearFilters}
+      style={{
+        marginTop: '4px', height: '30px', padding: '0 14px', border: `1px solid ${T.stroke1}`,
+        borderRadius: RADIUS.md, background: T.bg1, font: 'inherit', fontSize: '14px',
+        color: T.fg1, cursor: 'pointer',
+      }}
+    >
+      Clear all filters
+    </button>
   </div>
 );
 

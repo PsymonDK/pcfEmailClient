@@ -6,6 +6,7 @@ import {
   type Attachment, type MessageParties, type WebApiLike,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
+import { browserDownloadIo, downloadAttachment } from '../data/attachments';
 import { ThreadList, type ThreadSummary } from './ThreadList';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { T } from './tokens';
@@ -59,6 +60,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const [states, setStates] = React.useState<Map<string, MessageState>>(new Map());
   const [collapsedOlder, setCollapsedOlder] = React.useState(0);
   const [readIds, setReadIds] = React.useState<Set<string>>(new Set(restored?.readMessageIds ?? []));
+  /** Transient notice for a failed download. Not persisted — it is about one click. */
+  const [notice, setNotice] = React.useState<{ headline: string; detail: string }>();
 
   // Bodies are cached for the control's lifetime and deliberately NOT persisted: they are large
   // and re-fetchable, and putting them in setControlState would bloat every session switch.
@@ -227,8 +230,40 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         fontSize: '14px',
         color: T.fg1,
         minWidth: 0,
+        position: 'relative',
       }}
     >
+      {/* A refused download must be visible. A click that silently does nothing is worse than an
+          error message, because the agent assumes the file is on its way. */}
+      {notice && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute', left: '8px', right: '8px', bottom: '8px', zIndex: 2,
+            display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px',
+            boxSizing: 'border-box', background: '#fdf6f6', border: '1px solid #eec7c8',
+            borderRadius: '4px',
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#a4262c" strokeWidth="1.5" style={{ flex: '0 0 15px', marginTop: '2px' }} aria-hidden="true">
+            <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
+          </svg>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#a4262c' }}>{notice.headline}</span>
+            <span style={{ fontSize: '12px', color: '#3b3a39' }}>{notice.detail}</span>
+          </div>
+          <span style={{ flexGrow: 1 }} />
+          <button
+            type="button"
+            onClick={() => setNotice(undefined)}
+            aria-label="Dismiss"
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg2, font: 'inherit', fontSize: '13px' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Below 900px the list and the reading pane share one column; above it, two panes. */}
       {(layout.layout === 'two-pane' || !selected) && (
         <ThreadList
@@ -236,6 +271,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           selectedKey={selectedKey}
           unreadTotal={unreadTotal}
           loading={loading}
+          error={listError}
+          onRetry={() => void load()}
           onSelect={selectThread}
           onRefresh={() => void load()}
           totalThreadCount={threads.length}
@@ -255,7 +292,29 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           onToggleMessage={toggleMessage}
           onToggleQuote={(id) => setStates((p) => withState(p, id, (s) => ({ ...s, quoteExpanded: !s.quoteExpanded })))}
           onToggleNotices={(id) => setStates((p) => withState(p, id, (s) => ({ ...s, noticesExpanded: !s.noticesExpanded })))}
-          onDownloadAttachment={(a) => { void a; /* Phase 1b: chunked download */ }}
+          onDownloadAttachment={(a) => {
+            setNotice(undefined);
+            void downloadAttachment(
+              webApiRef.current,
+              {
+                activityMimeAttachmentId: a.id,
+                filename: a.filename,
+                mimeType: a.mimeType,
+                fileSize: a.fileSize,
+              },
+              browserDownloadIo,
+            ).then((outcome): void => {
+              // A refusal must be visible. A click that silently does nothing is worse than an
+              // error, because the agent assumes the file is on its way.
+              if (!outcome.ok) {
+                setNotice({
+                  headline: outcome.reason ?? "Couldn't download that file",
+                  detail: outcome.detail ?? '',
+                });
+              }
+              return undefined;
+            });
+          }}
           onDwellRead={markRead}
           loading={loading && !!selectedKey}
           error={listError}

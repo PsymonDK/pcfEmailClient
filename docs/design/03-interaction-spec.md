@@ -28,12 +28,16 @@ regions are unchanged, so what flexes is the scroll region:
 
 | At | Scroll region left |
 |---|---:|
-| 661px (best case) | 529px |
-| 536px (original assumption) | 404px |
-| **471px (measured floor)** | **339px** |
+| 661px (best case) | 493px |
+| 536px (original sample) | 368px |
+| **471px (measured floor)** | **303px** |
 
-339px is about five collapsed thread rows, or one expanded message. It is workable, and it is the
-number to check designs against.
+**These figures are corrected.** An earlier version of this table listed the 36px list footer as a
+fixed cost and then failed to subtract it, giving 404px at 536px. Including it — as the code does —
+the honest numbers are above: **303px at the floor, about four collapsed thread rows, not five.**
+
+The arithmetic now lives in `domain/layout.ts` as `budgetFor()`, with tests that reproduce all three
+measured height readings, so the table and the build cannot drift apart again.
 
 `allocatedHeight` is **−1 on both placements**, so height is **claimed from the viewport**
 (`window.innerHeight − rootTop − gutter`), never inherited. One code path, no per-placement branch.
@@ -50,7 +54,7 @@ viewport calculation.
 | Card header | 44 | **no** |
 | Search field + filter chips | 72 | no — left card only; first to collapse under pressure |
 | List footer (parent-case link) | 36 | no — left card only |
-| **Scroll region** | **≥ 404** | **yes — everything that grows lives here** |
+| **Scroll region** | **≥ 303** | **yes — everything that grows lives here** |
 | Compose, when docked | 222 → ~380 ceiling | yes, taken from the reading pane |
 
 ### Three rules that follow, and they are not negotiable
@@ -59,8 +63,8 @@ viewport calculation.
    exists to prevent.
 2. **Nothing above the scroll region may grow.** Header, search and chips are fixed heights. A toolbar
    that wraps to a second line silently eats the reading area and nobody notices until it ships.
-3. **Compose is docked, not overlaid.** At 222px it leaves 184px of thread visible, which is the point
-   of composing in place.
+3. **Compose is docked, not overlaid.** At 222px it leaves 189px of the reading pane visible at the
+   floor, which is the point of composing in place — you can still see what you are answering.
 
 ### Breakpoint
 

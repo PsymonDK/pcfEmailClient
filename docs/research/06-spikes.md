@@ -1077,6 +1077,56 @@ what the question deserved.
 **Artefact removed.** The one draft email created by half A was deleted in the same run
 (`Deleted draft 5e45a3e4-c8ad-f111-aaab-0022489d55b0 -> ok`). Nothing was sent.
 
+### Phase 0 deploy verification — *(2026-09-11)*
+
+Not a spike: the first deployment of the real control, recorded here because it measured three
+things and **corrected two** design assumptions.
+
+Control `jhrb_JHRB.CaseEmailClient` v1.0.1, unmanaged solution `JHRBCaseEmailClient`, on a dedicated
+Case form (`Case - Email Client`) registered with the CSW app. Read from the **published app** —
+Studio reports "Method not implemented" for data calls and hands out a dummy case id, so nothing it
+says counts.
+
+**Confirmed as designed**
+
+| Fact | Reading |
+|---|---|
+| `allocatedHeight` | **−1**, so height must be claimed from the viewport |
+| Case id | `40a5d940-0ef6-f011-8406-000d3ab7be36`, correct |
+| Source of the id | **`contextInfo`** — the form-host path both placements rely on |
+| Sanitiser | **available** — DOMPurify runs in the real host |
+| `setControlState` round-trip | **`init #2`, `state RESTORED`, probe `PHASE0-STATE-PROBE-42` intact** after a real two-session teardown, with the control verifiably unmounted in between |
+
+**Correction 1: width must be claimed as well as height.** Setting `height` and leaving width to
+inherit produced a control **588px wide inside a full-width tab** — the subgrid cell's ancestors
+content-size their child, exactly as S1 found for height. Fixed with `width: 100%`; re-measured at
+1354px, matching `allocatedWidth`. The rule is now **claim both dimensions, inherit neither**, and
+it is commented in the code so it is not learned a third time.
+
+**Correction 2: the height budget is a range, not 536px.** Three readings from the same form:
+
+| Chrome showing | `allocatedWidth` | Top edge | Height claimed |
+|---|---:|---:|---:|
+| Copilot pane, process bar | 1354 | 455px | 531px |
+| Copilot pane, process bar collapsed | 1354 | 325px | **661px** |
+| Customer Details pane, process bar | 1414 | 515px | **471px** |
+
+536 was a valid reading of one configuration, not a constant. The real floor is **471px high and
+1354px wide**, because agents work with a side pane open. [`03-interaction-spec.md`](../design/03-interaction-spec.md#1-the-height-budget--binding)
+has been rewritten around the floor; the scroll region shrinks from 404px to **339px** in the worst
+case, which is about five collapsed thread rows.
+
+**One half not tested live.** Cross-session *bleed* — case Y must never show case X's state — was not
+exercised, because the second session opened on the standard Case form, which does not host the
+control. The guard (discard restored state whose `caseId` does not match) is unit-tested in
+`host/__tests__/caseId.test.ts` and implemented in `index.ts`, but the live half needs the email
+form on two cases at once. Worth doing when the session template exists.
+
+**Deployed and left in place**, deliberately — this is the product now, not a spike:
+control v1.0.1, solution `JHRBCaseEmailClient` (unmanaged, verified `<Managed>0</Managed>` before
+import), and form `729d9197-cdad-f111-aaac-000d3ab163fb`. Removable with
+[`scripts/deploy/revert-deploy.mjs`](../../scripts/deploy/revert-deploy.mjs) (dry-run by default).
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.

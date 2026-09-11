@@ -1,0 +1,180 @@
+// Creates the dedicated Case form that hosts the email client, and registers it with the
+// Copilot Service Workspace app.
+//
+//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
+//   DV_ORG=https://your-org.crm4.dynamics.com \
+//     node scripts/deploy/create-case-form.mjs [--confirm]
+//
+// Dry run unless --confirm.
+//
+// This is the SESSION-TAB placement from docs/design/01-design-decisions.md: an `Entity record`
+// application tab template points at this form, so the agent gets a second app tab on the same
+// case showing nothing but the email client. It is also the quickest way to verify the control in
+// the PUBLISHED app, which is the only place that tells the truth — Studio reports "Method not
+// implemented" for data calls and hands out a dummy case id.
+//
+// Why a dedicated form rather than editing the out-of-the-box one: this is a SHARED environment.
+// Exporting a modified OOB Case form is how you carry someone else's customisations out, or
+// overwrite them on import. See docs/design/01-design-decisions.md.
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+
+const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
+const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
+const CONFIRM = process.argv.includes('--confirm');
+
+const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';   // Copilot Service workspace
+const CONTROL = 'jhrb_JHRB.CaseEmailClient';
+const SOURCE_FORM_NAME = 'Enhanced full case form';       // what CSW opens a case on today
+const NEW_FORM_NAME = 'Case - Email Client';
+const RELATIONSHIP = 'Incident_Emails';
+const TARGET = 'email';
+const VIEW = '{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}';    // All Emails
+const IDS_FILE = `${import.meta.dirname}/deployed-ids.json`;
+
+const api = async (path, method = 'GET', body, extra = {}) => {
+  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${TOK}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'OData-Version': '4.0',
+      ...extra,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const txt = await r.text();
+  let json = null;
+  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
+  if (!r.ok) throw new Error(`${method} ${path} -> ${r.status}: ${txt.slice(0, 400)}`);
+  return json;
+};
+
+const guid = () => `{${crypto.randomUUID().toUpperCase()}}`;
+
+console.log(`Target: ${ORG}\n`);
+
+// ── 1. the source form ───────────────────────────────────────────────────────
+// Fetched live rather than from a local copy, so the new form starts from whatever the
+// environment actually has today.
+const found = await api(
+  `systemforms?$select=formid,name,formxml&$filter=objecttypecode eq 'incident' and name eq '${SOURCE_FORM_NAME}'`,
+);
+if (!found.value?.length) throw new Error(`source form "${SOURCE_FORM_NAME}" not found`);
+const source = found.value[0];
+console.log(`Source form: ${source.name} (${source.formid}), ${source.formxml.length} bytes of XML`);
+
+// ── 2. inject the tab ────────────────────────────────────────────────────────
+const tabId = guid();
+const sectionId = guid();
+const cellId = guid();
+const ctrlUnique = guid();
+
+// A single-column, single-section tab with the grid cell filling it, so the control gets the whole
+// tab. `rowspan` is what gives the cell its height; `showlabel="false"` keeps the section chrome
+// out of the 536px budget (docs/design/03-interaction-spec.md).
+const newTab =
+  `<tab name="tab_emailclient" id="${tabId}" IsUserDefined="1" locklevel="0" showlabel="true" verticallayout="true">` +
+    `<labels><label description="Email" languagecode="1033" /></labels>` +
+    `<columns><column width="100%"><sections>` +
+      `<section name="section_emailclient" id="${sectionId}" IsUserDefined="1" locklevel="0" ` +
+        `showlabel="false" showbar="false" layout="varwidth" celllabelalignment="Left" ` +
+        `celllabelposition="Left" columns="1" labelwidth="115">` +
+        `<labels><label description="" languagecode="1033" /></labels>` +
+        `<rows><row>` +
+          `<cell id="${cellId}" locklevel="0" colspan="1" rowspan="20" auto="false" showlabel="false">` +
+            `<labels><label description="Case Email Client" languagecode="1033" /></labels>` +
+            // The subgrid classid is what makes this a DATASET host. The control never reads the
+            // dataset — it queries via context.webAPI — but the declaration is what lets a PCF
+            // occupy a whole form tab rather than a field-sized box.
+            `<control indicationOfSubgrid="true" id="Subgrid_emailclient" ` +
+              `classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}" uniqueid="${ctrlUnique}">` +
+              `<parameters>` +
+                `<RecordsPerPage>50</RecordsPerPage>` +
+                `<AutoExpand>Fixed</AutoExpand>` +
+                `<EnableQuickFind>false</EnableQuickFind>` +
+                `<EnableViewPicker>false</EnableViewPicker>` +
+                `<EnableChartPicker>false</EnableChartPicker>` +
+                `<ChartGridMode>Grid</ChartGridMode>` +
+                `<RelationshipName>${RELATIONSHIP}</RelationshipName>` +
+                `<TargetEntityType>${TARGET}</TargetEntityType>` +
+                `<ViewId>${VIEW}</ViewId>` +
+                `<ViewIds>${VIEW}</ViewIds>` +
+              `</parameters>` +
+            `</control>` +
+          `</cell>` +
+        `</row></rows>` +
+      `</section>` +
+    `</sections></column></columns>` +
+  `</tab>`;
+
+let xml = source.formxml;
+if (!xml.includes('</tabs>')) throw new Error('no </tabs> in the source form xml');
+xml = xml.replace('</tabs>', `${newTab}</tabs>`);
+
+// Bind the PCF to that subgrid. The control name MUST carry the publisher prefix
+// (jhrb_JHRB.CaseEmailClient, not JHRB.CaseEmailClient) or the form silently renders a plain grid.
+// formFactor 0/1/2 = desktop/tablet/phone; register all three so it renders everywhere.
+const customControls = [0, 1, 2]
+  .map((f) => `<customControl formFactor="${f}" name="${CONTROL}"><parameters /></customControl>`)
+  .join('');
+const desc = `<controlDescription forControl="${ctrlUnique}">${customControls}</controlDescription>`;
+
+xml = xml.includes('</controlDescriptions>')
+  ? xml.replace('</controlDescriptions>', `${desc}</controlDescriptions>`)
+  : xml.replace('</form>', `<controlDescriptions>${desc}</controlDescriptions></form>`);
+
+console.log(`Built form xml: ${xml.length} bytes (source ${source.formxml.length})`);
+console.log(`  tab id      ${tabId}`);
+console.log(`  control uid ${ctrlUnique}`);
+
+if (!CONFIRM) {
+  console.log('\nDRY RUN — nothing created. Re-run with --confirm.');
+  console.log(`Would create systemform "${NEW_FORM_NAME}" (incident, type 2),`);
+  console.log(`register it with app ${APP_ID}, publish, and write ids to deployed-ids.json.`);
+  process.exit(0);
+}
+
+// ── 3. create it ─────────────────────────────────────────────────────────────
+const created = await api('systemforms', 'POST', {
+  name: NEW_FORM_NAME,
+  description:
+    'Hosts the JHRB.CaseEmailClient PCF on a single "Email" tab. Opened as a CSW session tab by an ' +
+    'Entity record application tab template. See docs/design/01-design-decisions.md.',
+  objecttypecode: 'incident',
+  type: 2,          // Main
+  formpresentation: 1, // Unified Interface
+  formxml: xml,
+}, { Prefer: 'return=representation' });
+
+console.log(`\nCreated systemform ${created.formid}`);
+
+// ── 4. register with the app and publish ─────────────────────────────────────
+// Without this the form exists but CSW will not open it.
+await api('AddAppComponents', 'POST', {
+  AppId: APP_ID,
+  Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: created.formid }],
+});
+console.log('Registered with the Copilot Service workspace app');
+
+await api('PublishXml', 'POST', {
+  ParameterXml:
+    `<importexportxml><entities><entity>incident</entity></entities>` +
+    `<appmodules><appmodule>${APP_ID}</appmodule></appmodules></importexportxml>`,
+});
+console.log('Published incident + the app');
+
+fs.writeFileSync(IDS_FILE, JSON.stringify({
+  createdAt: new Date().toISOString(),
+  org: ORG,
+  formId: created.formid,
+  formName: NEW_FORM_NAME,
+  sourceFormId: source.formid,
+  tabId,
+  controlUniqueId: ctrlUnique,
+  controlName: CONTROL,
+  appId: APP_ID,
+}, null, 2) + '\n');
+console.log(`\nWrote ${IDS_FILE}`);
+console.log('Remove it all again with: node scripts/deploy/revert-deploy.mjs --confirm');

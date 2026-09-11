@@ -9,15 +9,25 @@ Workspace (CSW)** app. It gives agents a native mail experience (threading, in-p
 attachments, templates, signatures, drafts) scoped to a single Case — where the OOB Timeline is an
 activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
-**Current state: research complete; every spike artefact has been removed from the environment.** The
+**Current state: Phase 0 complete and deployed.** The control (v1.0.1, unmanaged solution
+`JHRBCaseEmailClient`) is in the demo environment on a dedicated `Case - Email Client` form, verified
+in the published app. Design is signed off — see [`docs/design/`](docs/design/01-design-decisions.md).
+Phase 1 (the reading slice) is next. The
 architecture decision is **spike-validated on both target placements** — S1 (Case form tab) and S11
 (session tab, via an `Entity record` app tab template) both confirmed live that `setControlState`
 survives a CSW two-session teardown. S2 confirmed the same inside a custom page, which S11 then made
 unnecessary. S6 (attachments) and S7 (real send, receipt
 confirmed) have also passed, and **S8 is closed** — grouping, `conversationindex` ordering and the
-depth formula are all verified on a real conversation. **No research gate remains open.** The spike control in `pcf/` is throwaway
-diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
-at [`docs/research/07-decision.md`](docs/research/07-decision.md).
+depth formula are all verified on a real conversation. **No research gate remains open.**
+
+`pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
+splitting, sanitising — 103 tests), `host/` the platform-shaped helpers. The `host/DeployCheck.tsx`
+readout is Phase 0 scaffolding and gets replaced by the real UI in Phase 1.
+
+See [`docs/design/01-design-decisions.md`](docs/design/01-design-decisions.md) for what to build,
+[`docs/design/02-component-inventory.md`](docs/design/02-component-inventory.md) for what builds it,
+[`docs/research/00-index.md`](docs/research/00-index.md) and the ADR at
+[`docs/research/07-decision.md`](docs/research/07-decision.md) for why.
 
 ## The architecture decision — read this before proposing anything
 
@@ -235,6 +245,13 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
     Size). Claiming from the viewport over-claims and overflows. **Honour the host.** Only relevant if
     the custom-page fallback is ever taken.
   - Rule: `allocatedHeight > 0` → `height: 100%`; `=== -1` → claim from viewport.
+  - **Claim WIDTH too.** Measured 2026-09-11 in the published app: with `height` set and width left
+    to inherit, the control rendered **588px wide inside a full-width tab**, because the subgrid
+    cell's ancestors content-size their child. `width: 100%` on the root fixes it. Same trap as
+    height, same hosts — **claim both dimensions, inherit neither**.
+  - **The budget is a RANGE, not 536px.** Three readings on one form gave 531 / 661 / 471px high and
+    1354–1414px wide, depending on whether a side pane and the process bar are showing. Design to the
+    floor: **471 × 1354**. See [`docs/design/03-interaction-spec.md`](docs/design/03-interaction-spec.md).
 - **The Case id comes from `context.mode.contextInfo`, and that is form-only.** It is populated on
   **both chosen placements** — the Case form tab (S1) and the `Entity record` session tab (S11) — so no
   property binding is needed. It is **empty** in a side pane, in a custom page (which receives the

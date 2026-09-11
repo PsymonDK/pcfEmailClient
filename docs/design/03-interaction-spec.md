@@ -7,12 +7,42 @@ binding: these are the values the build implements, and several were measured ra
 
 ## 1. The height budget — binding
 
-Measured live on 2026-09-10: the component gets **1600 × 536 px** on the Case form tab and
-**1627 × 536** on the session tab, on a 1072px browser viewport. The 27px width difference is not a
-design problem; the height is.
+Measured live on 2026-09-10, and **corrected on 2026-09-11** after deploying the real control.
+
+The original reading was 1600 × 536 on the Case form tab and 1627 × 536 on the session tab. Those
+numbers were right for the chrome that happened to be on screen at the time. Three readings from the
+same form on 2026-09-11 gave:
+
+| Chrome showing | `allocatedWidth` | Top edge | Height claimed |
+|---|---:|---:|---:|
+| Copilot pane open, process bar | 1354 | 455px | **531px** |
+| Copilot pane open, process bar collapsed | 1354 | 325px | **661px** |
+| Customer Details pane open, process bar | 1414 | 515px | **471px** |
+
+So the budget is a **range of roughly 471–661px**, not a constant, and width is commonly **1354–1414**
+rather than 1600 because agents run with a side pane open.
+
+**Design to the floor: 471px, and 1354px wide.** That is ~190px less height than the original figure
+and ~250px less width. The layout must not assume more. Everything below still holds — the fixed
+regions are unchanged, so what flexes is the scroll region:
+
+| At | Scroll region left |
+|---|---:|
+| 661px (best case) | 529px |
+| 536px (original assumption) | 404px |
+| **471px (measured floor)** | **339px** |
+
+339px is about five collapsed thread rows, or one expanded message. It is workable, and it is the
+number to check designs against.
 
 `allocatedHeight` is **−1 on both placements**, so height is **claimed from the viewport**
 (`window.innerHeight − rootTop − gutter`), never inherited. One code path, no per-placement branch.
+
+**Width must be claimed too — measured 2026-09-11.** Setting height alone produced a control
+**588px wide inside a full-width tab**, because the subgrid cell's ancestors content-size their
+child. It is the identical trap, on the identical hosts. The rule is therefore: **claim both
+dimensions, inherit neither.** `width: 100%` on the root is enough for width; height needs the
+viewport calculation.
 
 | Region | Height | Grows? |
 |---|---:|---|

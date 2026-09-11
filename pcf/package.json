@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@fluentui/react-components": "9.46.2",
+    "dompurify": "^3.4.15",
     "react": "16.14.0",
     "react-dom": "16.14.0"
   },

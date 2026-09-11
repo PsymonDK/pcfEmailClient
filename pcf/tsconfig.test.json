@@ -8,7 +8,7 @@
         "moduleResolution": "bundler",
         // No "vitest/globals": every test imports describe/it/expect explicitly, which keeps the
         // base tsconfig's narrow typeRoots intact.
-        "types": ["node"],
+        "types": ["node", "powerapps-component-framework"],
         "noEmit": true
     },
     // The base tsconfig EXCLUDES test files so `pcf-scripts build` does not type-check them.

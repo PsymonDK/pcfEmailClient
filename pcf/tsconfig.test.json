@@ -1,0 +1,18 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // TEST-ONLY resolution. The vitest package re-exports vite's types, which use the
+        // "#types/..." imports map and need moduleResolution node16/nodenext/bundler. The control
+        // build (tsconfig.json, via pcf-scripts) stays on "node" and is untouched by this.
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        // No "vitest/globals": every test imports describe/it/expect explicitly, which keeps the
+        // base tsconfig's narrow typeRoots intact.
+        "types": ["node"],
+        "noEmit": true
+    },
+    // The base tsconfig EXCLUDES test files so `pcf-scripts build` does not type-check them.
+    // That exclude is inherited, so it must be overridden or it cancels the include below.
+    "exclude": ["node_modules"],
+    "include": ["CaseEmailClient/**/*.test.ts", "CaseEmailClient/**/*.test.tsx"]
+}

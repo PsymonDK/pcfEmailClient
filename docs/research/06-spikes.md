@@ -1,6 +1,6 @@
 # 06 — Spikes
 
-## Status: S1, S2, S6, S7, S11 PASSED; S8 CLOSED; S10 + R18 answered. **S11 simplified the architecture — the custom page is out.**
+## Status: S1, S2, S6, S7, S11 PASSED; S8 CLOSED; S10, R18, S12 answered. **S12 confirmed the platform does not sanitise email bodies — that work is ours.**
 
 **S1 has passed**, observed live in Copilot Service workspace: `setControlState` survives a genuine
 two-session teardown (`state RESTORED`, `init #2`) with no cross-session bleed, and the threading and
@@ -1000,6 +1000,83 @@ One trap worth keeping: **do not filter template parameter rows by a `jhrb_s11` 
 order to clean them up.** The platform creates its own parameter rows on these templates, and that
 filter over-deleted them during setup. Deleting the template cascades correctly; do that instead.
 
+### S12 — Does Dataverse sanitise the email body for us? *(added 2026-09-11)*
+
+**Why.** Raised by the requester at design review, and it is the right question to ask: *we do not
+handle raw MIME, we handle a Dataverse `email` row.* If the platform strips hostile markup on the
+way in, a client-side sanitiser is redundant weight and a redundant dependency.
+
+**Method.** Two halves, because a body arrives by two different routes.
+[`scripts/spikes/s12-sanitise-probe.mjs`](../../scripts/spikes/s12-sanitise-probe.mjs), read-only by
+default.
+
+- **A — we write it.** Round-trip 17 probe blocks through `description` on a draft email: 12
+  hostile, 5 that must survive because our own features depend on them. Created one draft, never
+  sent, deleted immediately.
+- **B — the platform writes it.** Inspect the 12 most recent genuinely received emails (30.8 KiB of
+  real stored bodies) for markup a sanitiser would act on.
+
+#### S12 result — 2026-09-11: **NO. The platform does not sanitise anything.**
+
+**Half A — the round-trip is byte-identical.**
+
+```
+Wrote 1442 bytes, read back 1442 bytes  — IDENTICAL LENGTH
+17 of 17 probe blocks survived the round-trip.
+```
+
+Every one of these went in and came back out intact: `<script>`, `<img onerror>`,
+`<svg onload>`, `javascript:` href, `<iframe>`, `<object>`, a credential-harvesting `<form>`
+with a password input, `<style>`, `<meta http-equiv="refresh">`, `<base href>`, a
+`data:image/svg+xml` carrying script, and `target="_blank"` with no `rel`.
+
+The five that had to survive did: `id="divRplyFwdMsg"`, `class="gmail_quote"`, a `<table>`, a
+`style` attribute, and a `cid:` image reference. So the column is a faithful store — which is
+exactly the problem.
+
+**Half B — real inbound bodies carry things a sanitiser must handle.** Of 12 received emails:
+
+| Present in real stored bodies | Count | |
+|---|---:|---|
+| `<style>` **tag** | **8 / 12** | Unscoped CSS: `.EmailQuote {…}`, `p.MsoNormal {…}`, `@font-face {…}` |
+| `<meta>` tag | 12 / 12 | `Content-Type` charset, `Generator: Microsoft Exchange Server` |
+| `style` attribute | 12 / 12 | expected, must keep |
+| `class` attribute | 10 / 12 | expected, must keep |
+| `id` attribute | 6 / 12 | expected, must keep |
+| `<table>` | 5 / 12 | expected, must keep |
+| `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `javascript:`, `data:` SVG, `position:fixed` | 0 / 12 | — |
+
+The zeroes prove nothing on their own: these are twelve legitimate business emails, and their not
+containing a script is not evidence the platform would have removed one. Half A is what settles
+that, and it settles it the other way.
+
+**Correction to my own first pass.** I initially reported event-handler attributes in 12/12 bodies.
+That was a bug in my probe, not a finding: the pattern `on\w+\s*=\s*["']` matches `content="` as
+`ontent="`, so every Exchange body false-positived. With a word boundary the real count is **0/12**.
+The word boundary is now in the script with a comment explaining why it must stay.
+
+**Two consequences beyond "we still need to sanitise".**
+
+1. **Bodies are whole HTML documents, not fragments.** `<html><head><meta><style>…</style></head><body>…`
+   is the normal shape. Injecting that into a `<div>` hoists the `<head>` content into the host
+   page, and 8 of 12 real bodies carry unscoped rules like `p.MsoNormal { margin: 0 }` and
+   `.EmailQuote { border-left: #800000 2px solid }` that would then restyle the Dynamics chrome
+   around us. **Forbidding the `<style>` tag is not a theoretical hardening measure — it is
+   required by the data that is already in the environment.**
+2. **The quote-splitting heuristic has to survive `<style>` blocks.** A sender's stylesheet
+   mentioning `-----original message-----` or `gmail_quote` inside a CSS comment will steer the
+   split. That is now a pinned test in `domain/__tests__/quoting.test.ts` documenting the known
+   false positive, and it is the strongest argument for re-implementing the split against a parsed
+   DOM once sanitising guarantees well-formed markup.
+
+**What the platform presumably does instead** is sanitise at *render* time inside its own controls —
+Timeline renders these bodies without executing them. That does not help us: we render the body
+ourselves, so the sanitising is ours to do. Confirmed by measurement rather than assumed, which is
+what the question deserved.
+
+**Artefact removed.** The one draft email created by half A was deleted in the same run
+(`Deleted draft 5e45a3e4-c8ad-f111-aaab-0022489d55b0 -> ok`). Nothing was sent.
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.
@@ -1032,3 +1109,4 @@ finding and must be recorded, not discarded.)*
 | S9 | — | **Not run** | |
 | S10 | 2026-09-10 | **Answered — NEGATIVE.** Platform RTE not reusable from a PCF | `factory.createComponent`/`bindDOMComponent` exist at runtime (untyped) and mount the control, but it stays inert — 0 `contenteditable`. R11 needs a bundled editor. See [result](#s10-result--2026-09-10-no--do-not-depend-on-it-mechanism-works-editor-does-not) |
 | S11 | 2026-09-10 | **PASSED — architecture simplified.** An `Entity record` tab hosts the PCF; the custom page is unnecessary | Route C: same record twice in one session OK, Case id via `contextInfo`, `setControlState` survives teardown. Route B (`Control`) renders but **cannot receive the Case id** — eliminated on function. See [result](#s11-result--2026-09-10-passed-route-c-works-the-custom-page-is-unnecessary) |
+| S12 | 2026-09-11 | **Answered — NEGATIVE.** Dataverse stores email HTML verbatim; it sanitises nothing | 1442 bytes in, 1442 out, 17/17 hostile blocks intact. Real inbound bodies are whole HTML documents and **8/12 carry an unscoped `<style>` tag**, so forbidding that tag is required by existing data. See [result](#s12-result--2026-09-11-no-the-platform-does-not-sanitise-anything) |

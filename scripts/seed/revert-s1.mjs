@@ -25,7 +25,9 @@ const CONFIRM = process.argv.includes('--confirm');
 
 const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service workspace
 const SPIKE_FORM_ID = '4fe309a1-dbac-f111-aaab-000d3ab16615'; // Case - Email Client Spike (S1)
-const SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
+// Both names: the spike solution was renamed to JHRBCaseEmailClient in Phase 0, so a re-run of
+// the spikes now builds under the new name while older leftovers may still carry the old one.
+const SOLUTION_UNIQUE_NAMES = ['JHRBCaseEmailClient', 'JHRBCaseEmailClientSpike'];
 const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
 // S2 custom page: "Case Email Client Page (S2 spike)" / jhrb_caseemailclientpages2spike_314da
 const SPIKE_PAGE_ID = 'e7cb7b97-9dde-4f6a-8356-94bc9e1344d0';
@@ -98,15 +100,19 @@ const steps = [
     run: () => call(`canvasapps(${SPIKE_PAGE_ID})`, 'DELETE'),
   },
   {
-    what: `delete solution ${SOLUTION_UNIQUE_NAME} (unmanaged: container only)`,
+    what: `delete solution ${SOLUTION_UNIQUE_NAMES.join(' / ')} (unmanaged: container only)`,
     run: async () => {
-      const { txt } = await call(
-        `solutions?$select=solutionid&$filter=uniquename eq '${SOLUTION_UNIQUE_NAME}'`,
-        'GET',
-      );
-      const rows = JSON.parse(txt).value ?? [];
-      if (rows.length === 0) return { status: 404 };
-      return call(`solutions(${rows[0].solutionid})`, 'DELETE');
+      let last = { status: 404 };
+      for (const name of SOLUTION_UNIQUE_NAMES) {
+        const { txt } = await call(
+          `solutions?$select=solutionid&$filter=uniquename eq '${name}'`,
+          'GET',
+        );
+        for (const row of JSON.parse(txt).value ?? []) {
+          last = await call(`solutions(${row.solutionid})`, 'DELETE');
+        }
+      }
+      return last;
     },
   },
   {

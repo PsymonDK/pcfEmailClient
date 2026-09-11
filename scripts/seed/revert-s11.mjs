@@ -26,7 +26,9 @@ const CONFIRM = process.argv.includes('--confirm');
 
 const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service workspace
 const S11_FORM_ID = '3c4b2679-12ad-f111-aaab-002248a422bc';   // Case - Email Client (S11 tab form)
-const SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
+// Both names: the spike solution was renamed to JHRBCaseEmailClient in Phase 0, so a re-run of
+// the spikes now builds under the new name while older leftovers may still carry the old one.
+const SOLUTION_UNIQUE_NAMES = ['JHRBCaseEmailClient', 'JHRBCaseEmailClientSpike'];
 const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
 const TAB_TEMPLATES = ['jhrb_s11_entityrecord_emailform', 'jhrb_s11_control_pcfdirect'];
 
@@ -82,15 +84,19 @@ const steps = [
     run: () => call(`systemforms(${S11_FORM_ID})`, 'DELETE'),
   },
   {
-    what: `delete solution ${SOLUTION_UNIQUE_NAME} (unmanaged: container only)`,
+    what: `delete solution ${SOLUTION_UNIQUE_NAMES.join(' / ')} (unmanaged: container only)`,
     run: async () => {
-      const { txt } = await call(
-        `solutions?$select=solutionid&$filter=uniquename eq '${SOLUTION_UNIQUE_NAME}'`,
-        'GET',
-      );
-      const rows = JSON.parse(txt).value ?? [];
-      if (rows.length === 0) return { status: 404 };
-      return call(`solutions(${rows[0].solutionid})`, 'DELETE');
+      let last = { status: 404 };
+      for (const name of SOLUTION_UNIQUE_NAMES) {
+        const { txt } = await call(
+          `solutions?$select=solutionid&$filter=uniquename eq '${name}'`,
+          'GET',
+        );
+        for (const row of JSON.parse(txt).value ?? []) {
+          last = await call(`solutions(${row.solutionid})`, 'DELETE');
+        }
+      }
+      return last;
     },
   },
   {

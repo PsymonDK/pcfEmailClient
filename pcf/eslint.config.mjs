@@ -43,4 +43,25 @@ export default [
       },
     },
   },
+  {
+    // Test files are EXCLUDED from tsconfig.json so that `pcf-scripts build` does not type-check
+    // them (it would fail on the vitest imports). But typescript-eslint's projectService then
+    // cannot find them either, and every test file errors with "was not found by the project
+    // service". Pointing this block at tsconfig.test.json is what reconciles the two.
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: ["./tsconfig.test.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      // Test doubles for ComponentFramework.Context are cast through `unknown` on purpose:
+      // building a complete platform context by hand would be more fiction than fixture, and the
+      // cast is confined to one helper at the top of each test file.
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+    },
+  },
 ];

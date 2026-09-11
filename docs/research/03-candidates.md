@@ -56,8 +56,11 @@ the way there is for generative pages.
 of any candidate.
 
 **Limits.**
-- Cannot be a CSW session tab directly (`Control` app tab type is internal-use-only) — needs the
-  custom page wrapper.
+- ~~Cannot be a CSW session tab directly (`Control` app tab type is internal-use-only) — needs the
+  custom page wrapper.~~ **Corrected 2026-09-10 by S11.** No wrapper is needed: an **`Entity record`**
+  app tab template takes a `formId`, so the session tab is the same Case on a dedicated form hosting
+  the PCF. (`Control` remains unusable, but for a better reason than its support status — it cannot be
+  passed record context at all.)
 - Must hand-roll the rich-text editor and the whole mail UI; no low-code shortcuts.
 - Bundle size discipline matters; a heavy editor plus a mail UI in one control needs code-splitting.
 - No Power Fx; everything is code (a plus for this team, a cost if handover is to low-code makers).
@@ -184,15 +187,26 @@ impossible" fallback.
 
 ---
 
-## The recommended hybrid: A + B
+## The recommendation: A + A — one PCF, two *form* placements
 
-One React PCF codebase, two host registrations:
+*Superseded the A+B hybrid on 2026-09-10, when S11 showed the custom page was an avoidable layer.*
+
+One React PCF codebase, two host registrations — **both of them form tabs**:
 
 | Placement | Host | Mechanism |
 |---|---|---|
 | Case form tab | The PCF, directly | Single-column form tab, dataset control bound to a subgrid of `email` regarding the Case |
-| CSW session tab | The PCF inside a custom page | `Custom` app tab template → custom page → code component, with `recordId` = `{anchor.incidentid}` |
+| CSW session tab | The PCF, directly | `Entity record` app tab template → a dedicated Case form whose tab hosts the component, with `entityName={anchor.entityName}`, `entityId={anchor.incidentid}`, `formId=<that form>` |
 
-Both mechanisms are GA. Both placements ship in one solution. Multi-session state is handled once, in
-the component, using `setControlState` plus a durable draft write — which the custom page wrapper needs
-anyway. Full reasoning and residual risks in [`07-decision.md`](07-decision.md).
+Both mechanisms are GA. Both placements ship in one solution, and because both are the same host type
+the component needs one sizing strategy, one context path (`contextInfo`) and one state mechanism.
+Multi-session state is handled once, in the component, using `setControlState` plus a durable draft
+write.
+
+The **A+B hybrid** — the same PCF inside a custom page, opened by a `Custom` app tab template with
+`recordId = {anchor.incidentid}` — also works and was fully measured in S2. It is retained as the
+runner-up. What it costs, and A+A does not: a second hosting technology, per-environment app-designer
+registration that is not API-automatable, the `appelement` cleanup asymmetry, an 8-hour canvas session
+timeout, a third-party-cookie requirement, and app-wide connector consent dialogs.
+
+Full reasoning and residual risks in [`07-decision.md`](07-decision.md).

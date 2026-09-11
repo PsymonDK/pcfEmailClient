@@ -9,9 +9,11 @@ Workspace (CSW)** app. It gives agents a native mail experience (threading, in-p
 attachments, templates, signatures, drafts) scoped to a single Case — where the OOB Timeline is an
 activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
-**Current state: research plus a spike control.** The architecture decision is **spike-validated for
-hosting on both target placements** — S1 (Case form tab) and S2 (custom page) both confirmed live that
-`setControlState` survives a CSW two-session teardown. S6 (attachments) and S7 (real send, receipt
+**Current state: research complete; every spike artefact has been removed from the environment.** The
+architecture decision is **spike-validated on both target placements** — S1 (Case form tab) and S11
+(session tab, via an `Entity record` app tab template) both confirmed live that `setControlState`
+survives a CSW two-session teardown. S2 confirmed the same inside a custom page, which S11 then made
+unnecessary. S6 (attachments) and S7 (real send, receipt
 confirmed) have also passed, and **S8 is closed** — grouping, `conversationindex` ordering and the
 depth formula are all verified on a real conversation. **No research gate remains open.** The spike control in `pcf/` is throwaway
 diagnostics, not the product. See [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR
@@ -19,12 +21,17 @@ at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 
 ## The architecture decision — read this before proposing anything
 
-**Decided: a React (virtual) PCF code component**, registered in two places:
+**Decided: a React (virtual) PCF code component on two _form_ placements.** No custom page — S11
+measured that away on 2026-09-10.
 
 | Placement | Mechanism |
 |---|---|
 | Case form tab | The PCF directly — virtual/React **dataset** component on a single-column tab, bound to a subgrid of `email` where `regardingobjectid` = the Case |
-| CSW session tab | The **same PCF** hosted inside a thin **custom page**, opened by a `Custom` application tab template with `recordId` = `{anchor.incidentid}` |
+| CSW session tab | The **same PCF on a dedicated Case form**, opened by an **`Entity record`** application tab template: `entityName={anchor.entityName}`, `entityId={anchor.incidentid}`, `formId=<the email form>` |
+
+Because both placements are form tabs, the component gets **one** sizing strategy, **one** context path
+(`context.mode.contextInfo.entityId`) and **one** state mechanism. Do not add per-host branches, and do
+not reintroduce a canvas layer.
 
 **Rejected, and why — do not re-propose these without new evidence:**
 
@@ -32,15 +39,18 @@ at [`docs/research/07-decision.md`](docs/research/07-decision.md).
 |---|---|
 | **Generative page** | Unsupported in side panes; no `generative` page type in CSW application tab templates; restricted to a fixed Dataverse data-type list that cannot express `activityparty` recipients or `activitymimeattachment` binaries, with no route to `SendEmail` |
 | **Custom page alone** | Cannot sit on a form tab; **state is not persisted across multi-session tab switches** → loses in-progress drafts (fails MUST requirements R16/N1) |
+| **Custom page hosting the PCF** (the former A+B plan) | Works — S2 proved it, including `setControlState` survival — but it is a **layer with no payoff**: S11 showed an `Entity record` tab template reaches the same place. Costs it carried: manual per-environment app-designer registration, the `appelement` (type 10088) cleanup tangle, an 8-hour canvas session timeout, third-party-cookie requirement, and app-wide connector consent dialogs. Kept only as a documented fallback |
+| **`Control` application tab template** hosting the PCF directly | **Eliminated on function, not support status (S11).** It renders the control full-tab, but the Case id **cannot be passed in at all** — not by `{anchor.incidentid}` slug, not by a JSON `data` object, not by a literal GUID through `Xrm.Navigation.navigateTo`. `contextInfo` is empty there. Same context-free behaviour as the side pane (S2) |
 | **Code app via iframe** | Same multi-session state loss; no `Xrm` inside the frame; no Power Platform Git integration; end users need **Power Apps Premium** |
 | **Classic HTML web resource** | Same state loss; no `context` API; iframe seams; undocumented `parent`/`window.top` coupling |
 
 The deciding factor was **multi-session state**, not UI capability. PCF is the only host with a
 documented preservation contract (`context.mode.setControlState`) for CSW's destroy/reload cycle.
 
-**Reversal conditions** are listed in the ADR. The most likely one to check before building: if the
-CSW `Control` application tab template type stops being documented "for internal use only", the custom
-page wrapper becomes unnecessary and the architecture simplifies to PCF alone.
+**Reversal conditions** are listed in the ADR. One has already fired: the custom page wrapper *was*
+unnecessary, and the architecture simplified to PCF alone on two form placements (S11, 2026-09-10). Note
+that the `Control` template's "for internal use only" status turned out to be beside the point — it
+cannot receive record context, so its support status would not save it.
 
 ## Plugins and skills — which to use, which to avoid
 
@@ -218,13 +228,22 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
     use 100% of the space" applies to a main/related grid page, not a subgrid cell on a form.
     **Claim height from the viewport**: `window.innerHeight - rootTop - gutter`, recomputed on resize
     (measured 552–658px).
+  - **Session tab (`Entity record` template):** identical — `allocatedHeight` **-1**, claim from the
+    viewport (S11 measured 536px of 1072px, starting 512px down). **Both chosen placements behave the
+    same way**, so there is no per-placement branch to write.
   - **Custom page / side pane:** `allocatedHeight` is a **real number** (the control's configured
-    Size). Claiming from the viewport over-claims and overflows. **Honour the host.**
+    Size). Claiming from the viewport over-claims and overflows. **Honour the host.** Only relevant if
+    the custom-page fallback is ever taken.
   - Rule: `allocatedHeight > 0` → `height: 100%`; `=== -1` → claim from viewport.
-- **The Case id arrives differently per host.** `context.mode.contextInfo` is **form-only** — it is
-  empty in a side pane, and a custom page receives the record as a *page* input (`recordId`) that a
-  code component cannot read. The manifest therefore has an explicit **`caseId`** input property; a
-  custom page binds it to `Param("recordId")`. Prefer the property, fall back to `contextInfo`.
+- **The Case id comes from `context.mode.contextInfo`, and that is form-only.** It is populated on
+  **both chosen placements** — the Case form tab (S1) and the `Entity record` session tab (S11) — so no
+  property binding is needed. It is **empty** in a side pane, in a custom page (which receives the
+  record as a *page* input, `recordId`, that a code component cannot read), and under a `Control` app
+  tab template. In that last case the template's `data` parameter is **not** a substitute: S11 tried a
+  `{anchor.incidentid}` slug, a JSON `{"caseId":…}` object and a literal GUID through
+  `Xrm.Navigation.navigateTo` — none reached the control. The manifest keeps an optional **`caseId`**
+  input property as insurance for the custom-page fallback; prefer it if bound, fall back to
+  `contextInfo`.
 - **Never trust anything measured in Power Apps Studio.** `context.webAPI.retrieveMultipleRecords`
   reports *"Method not implemented"* at author time (the documented custom-page authoring gap), and
   author-time `contextInfo` returns a **dummy Case id**. Only the published app tells the truth.
@@ -232,9 +251,14 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
   for width changes.
 - **`context.webAPI` rejects with a plain object, not an `Error`.** `err instanceof Error ? … : …`
   collapses real failures to "Unknown error". Dig through `message` / `error.message` / `JSON.stringify`.
-- **Persist drafts to Dataverse on blur and on an interval**, not only via `setControlState`. Whether
-  `setControlState` survives teardown *inside a custom page* is undocumented — durable drafts remove the
-  dependency on the answer. Do this from day one.
+- **Persist drafts to Dataverse on blur and on an interval**, not only via `setControlState`.
+  `setControlState` is now measured to survive a real two-session teardown on **both** chosen
+  placements (S1, S11), so this is defence in depth rather than a workaround — but still do it from day
+  one. It is the difference between losing a draft and losing a draft *silently*.
+- **Pre-flight the sender's mailbox approval before offering Send** (R18). `SendEmail` returns HTTP 200
+  for an unapproved sender, parks the mail at `Pending Send` forever, and records **no error anywhere**.
+  Check org `requireapprovalfor*email`, sender `emailrouteraccessapproval` = 1 and mailbox
+  `outgoingemailstatus` = Success. Non-negotiable.
 - **The platform rich-text editor is NOT reusable from a PCF** (S10, 2026-09-10). `context.factory`
   exposes 11 undocumented functions at runtime (only 2 are typed), and `createComponent` +
   `bindDOMComponent` really do mount `MscrmControls.RichTextEditorV2.RichTextEditorControlV2` inside a
@@ -267,13 +291,16 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
 
 ## Spike artefacts and seed data — REMOVED 2026-09-10
 
-The environment has been cleaned. Verified afterwards: solution, custom control, custom page, spike
-form, the page's `appelement`, the seed Case, all 12 seeded emails and every S6/S7 attachment probe
-are gone, and the org email count is back to its pre-spike **48**.
+The environment has been cleaned **twice** — after the S1/S2/S6/S7 run, and again after S11 on the same
+day. Verified afterwards by query: no solution, custom control, custom page, spike form (S1's or S11's),
+`appelement`, S11 application tab template or template parameter remains; the seed Case, all 12 seeded
+emails and every S6/S7 attachment probe are gone; and the org email count is back to its pre-spike **48**.
 
 Nothing needs cleaning up. If you re-run the spikes, the scripts in
 [`scripts/seed/`](scripts/seed/README.md) and [`scripts/spikes/`](scripts/spikes/README.md) recreate
-and remove everything — both cleanup scripts are dry-run by default.
+and remove everything — every cleanup script is dry-run unless you pass `--confirm`.
+`revert-s1.mjs` unwinds the S1/S2 artefacts (including the custom page); `revert-s11.mjs` unwinds the
+S11 form and application tab templates.
 
 Two things worth knowing before you re-seed:
 
@@ -297,10 +324,36 @@ Learned during cleanup. `RemoveAppComponents` alone is not enough — the design
 Then the custom control can be deleted (it was blocked by the page). Order matters:
 app → appelement → page → control.
 
-## Custom page (session-tab placement)
+## Session tab (the chosen placement) — `Entity record` app tab template
 
-`Case Email Client Page (S2 spike)` / `jhrb_caseemailclientpages2spike_314da` hosts the PCF for the
-session-tab placement. Things learned the hard way (S2, 2026-09-10):
+Measured in S11, 2026-09-10. The session tab is **a second app tab on the same Case**, opened on a
+dedicated form whose single tab hosts the PCF. Nothing canvas-shaped is involved.
+
+```
+pagetype   = Entity record   (msdyn_pagetype option 509180001)
+entityName = {anchor.entityName}
+entityId   = {anchor.incidentid}
+formId     = <the email-client form>
+```
+
+- CSW is happy showing **the same record twice in one session** — anchor tab on the default form, a
+  second tab on the email form. No warning, no navigation fight.
+- Parameters are `msdyn_templateparameter` rows. Bind the lookup as
+  **`msdyn_applicationtabtemplateid@odata.bind`** — `msdyn_ApplicationTabTemplate` is not the
+  navigation property name and fails.
+- **The platform creates its own parameter rows** on these templates. Never clean up parameters by
+  `startswith(msdyn_uniquename, …)` — that over-deletes the platform's rows. Delete the *template*;
+  parameters cascade.
+- The form must be registered with the CSW app and the app published. That is one app-designer action
+  per environment (see the designer URL below) — everything else ships in the solution.
+- `Control` (option 509180003) is **not** an alternative: it renders the PCF but cannot pass it record
+  context at all. Detail in [`docs/research/06-spikes.md`](docs/research/06-spikes.md#s11-result--2026-09-10-passed-route-c-works-the-custom-page-is-unnecessary).
+
+## Custom page (FALLBACK ONLY — not the chosen architecture)
+
+Retained because it was measured and works, not because it should be built. S11 removed the need for
+it; reach for this section only if the `Entity record` route regresses. Things learned the hard way
+(S2, 2026-09-10):
 
 - **A custom page must be registered in the app, and that is NOT automatable.** `AddAppComponents`
   rejects `canvasapp`; `appmodulecomponent` cannot be created via the API. Use the app designer:

@@ -166,7 +166,7 @@ See [`06-spikes.md`](06-spikes.md#s2-result--2026-09-10-passed-both-halves).
 | Case id passed in | ✅ | ✅ | ✅ (but placement fails) | ⚠️ query-string plumbing | ⚠️ `data` param |
 | Multi-session state | ✅ documented contract | ❌ | n/a | ❌ | ❌ |
 
-## REOPENED 2026-09-10 — the custom page may be an unnecessary layer
+## RESOLVED 2026-09-10 by S11 — the custom page WAS an unnecessary layer
 
 The A+B hybrid was chosen because `Control` is documented "for internal use only", so a custom page
 looked like the only route to a session tab. **That reasoning skipped an option.** There are four ways
@@ -174,9 +174,9 @@ to get a PCF into a CSW session tab, not two:
 
 | # | Route | Supported? | Extra layer? | Status |
 |---|---|---|---|---|
-| **C** | **`Entity record`** tab template → the same Case on a **dedicated form** whose tab hosts the PCF | ✅ **fully supported page type** | **None** — it is the S1 placement, reused | **Untested. Probably the right answer.** |
-| A | `Custom` tab template → custom page → PCF | ✅ GA | Custom page | **Tested, works** (S2) |
-| B | `Control` tab template → the PCF directly | ⚠️ *"for internal use only"* | None | Untested; shape known |
+| **C** | **`Entity record`** tab template → the same Case on a **dedicated form** whose tab hosts the PCF | ✅ **fully supported page type** | **None** — it is the S1 placement, reused | ✅ **CHOSEN. Tested and passed (S11).** Case id via `contextInfo`; `setControlState` survives teardown |
+| A | `Custom` tab template → custom page → PCF | ✅ GA | Custom page | Tested, works (S2) — **no longer needed** |
+| B | `Control` tab template → the PCF directly | ⚠️ *"for internal use only"* | None | ❌ **Eliminated on function (S11)** — renders, but the Case id cannot be passed in at all |
 | D | `Web resource` tab template → HTML hosting the PCF | ❌ **not possible** | — | Ruled out by reasoning, below |
 
 ### C — an `Entity record` tab pointing at a dedicated form
@@ -233,6 +233,18 @@ Two independent reasons:
    R16/N1 failure that eliminated candidates D and E. Even if the hosting worked, wrapping the PCF in a
    web resource would throw away the property it was chosen for.
 
-**Recommendation:** test route **C** before building. If it works, the architecture simplifies from
+**Outcome (S11, 2026-09-10):** route **C** works, and the architecture simplified from
 "PCF + custom page" to **"one PCF, two form placements"** — one codebase, one artefact type, no canvas
-layer, and no manual per-environment app wiring.
+layer, and no manual per-environment app wiring. Route **B** turned out to be worse than "unsupported":
+the `Control` host renders the control but never binds its input properties, so the component cannot
+learn which Case it is looking at — tested with a bare slug, with a JSON `data` object, and with a
+literal GUID through `Xrm.Navigation.navigateTo`. That is the same context-free behaviour S2 measured
+in the side pane. Full measurements in
+[`06-spikes.md`](06-spikes.md#s11-result--2026-09-10-passed-route-c-works-the-custom-page-is-unnecessary).
+
+### What this means for the placement matrix above
+
+The session-tab row is now served by the **`Entity record`** page type, not `Custom`. Two rows of the
+matrix change character: `Control` moves from "unsupported but functional" to **non-functional for any
+control that needs record context**, and `Custom`/custom page moves from "the chosen route" to "works,
+but carries a layer we no longer pay for".

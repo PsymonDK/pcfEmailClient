@@ -47,3 +47,7 @@ coverage/
 
 # local Dataverse token captured during spikes - never commit
 .tok
+
+# Design canvas: the seeded/published page is generated from the .dc.html artboards
+# plus canvas.json (see docs/design/artboards/README.md). ~2.7 MB of editor payload.
+docs/design/artboards/case-email-client-*.html

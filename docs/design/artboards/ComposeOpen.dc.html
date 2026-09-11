@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 1080px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Compose, in place</span>
+    <span style="font-size: 12px; color: #616161;">Docked to the bottom of the reading pane at ~220px, so the message being answered stays on screen. Drawn at the real 1600 × 536 host. <strong>R9, R10, R11, R15.</strong></span>
+  </div>
+
+  <!-- ═══ the host-true mock ═══ -->
+  <div style="width: 1600px; height: 536px; flex: 0 0 536px; box-sizing: border-box; background: #fafafa; padding: 8px; display: flex; gap: 8px; border: 1px solid #d1d1d1;">
+
+    <!-- left card, compressed -->
+    <div style="width: 424px; flex: 0 0 424px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 10px; height: 44px; flex: 0 0 44px; padding: 0 12px; box-sizing: border-box;">
+        <span style="font-size: 16px; font-weight: 600;">Email</span>
+        <div style="display: flex; align-items: center; height: 20px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc;"><span style="font-size: 11px; font-weight: 600; color: #115ea3;">3 unread</span></div>
+        <div style="flex-grow: 1;"></div>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M3.5 5h13M6 10h8M8.5 15h3"/></svg>
+      </div>
+      <div style="padding: 0 12px 8px 12px; box-sizing: border-box;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px;">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.8 12.8 17 17"/></svg>
+          <span style="font-size: 14px; color: #707070;">Search email on this case</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 0 12px; box-sizing: border-box; height: 28px;">
+        <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#242424" stroke-width="1.8"><path d="M5 12l5-5 5 5"/></svg>
+        <span style="font-size: 14px;">Unread</span>
+        <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+      </div>
+
+      <!-- thread A selected, now showing a draft badge -->
+      <div style="display: flex; gap: 10px; padding: 8px 12px; box-sizing: border-box; background: #ebf3fc; border-left: 3px solid #0f6cbd;">
+        <div style="width: 32px; height: 32px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 32px;">MJ</div>
+        <div style="display: flex; flex-direction: column; gap: 1px; flex-grow: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 12px; color: #616161;">Last activity 10-09-2026 10:33</span>
+            <div style="flex-grow: 1;"></div>
+            <div style="width: 8px; height: 8px; border-radius: 10000px; background: #0f6cbd; flex: 0 0 8px;"></div>
+          </div>
+          <span style="font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger efter montage</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 14px; color: #424242;">6 messages</span>
+            <div style="display: flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; box-sizing: border-box; border-radius: 4px; background: #fff4ce; border: 1px solid #f2d999;">
+              <div style="width: 5px; height: 5px; border-radius: 10000px; background: #8a6300;"></div>
+              <span style="font-size: 11px; color: #8a6300; font-weight: 600;">Writing…</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; padding: 8px 12px 8px 15px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+        <div style="width: 32px; height: 32px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 32px;">AH</div>
+        <div style="display: flex; flex-direction: column; gap: 1px; flex-grow: 1; min-width: 0;">
+          <span style="font-size: 12px; color: #616161;">Last activity 10-09-2026 13:07</span>
+          <span style="font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Faktura 2026-4417 — etape 3</span>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; align-items: center; height: 36px; flex: 0 0 36px; padding: 0 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+        <span style="font-size: 14px; color: #242424;">View parent case (1 thread)</span>
+        <div style="flex-grow: 1;"></div>
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.6"><path d="M5 8l5 5 5-5"/></svg>
+      </div>
+    </div>
+
+    <!-- right card: thread shortened + compose docked -->
+    <div style="flex-grow: 1; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; min-width: 0;">
+
+      <div style="display: flex; align-items: center; gap: 10px; height: 44px; flex: 0 0 44px; padding: 0 14px; box-sizing: border-box;">
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <span style="font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger efter montage</span>
+          <span style="font-size: 12px; color: #616161;">6 messages · replying to Kim Petersen</span>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="#424242"><circle cx="10" cy="4.5" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="10" cy="15.5" r="1.3"/></svg>
+      </div>
+
+      <!-- what is left of the thread: ~184px -->
+      <div style="flex-grow: 1; overflow: hidden; border-top: 1px solid #f0f0f0; position: relative;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 14px; box-sizing: border-box; height: 28px;">
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#242424" stroke-width="1.8"><path d="M5 8l5 5 5-5"/></svg>
+          <span style="font-size: 14px;">4 earlier messages</span>
+          <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 6px 14px 8px 11px; box-sizing: border-box; border-top: 1px solid #f0f0f0; border-left: 3px solid #0f6cbd;">
+          <div style="width: 32px; height: 32px; border-radius: 10000px; background: #fff4ce; color: #8a6300; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 32px;">KP</div>
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+            <span style="font-size: 12px; color: #242424; font-weight: 600;">Received on: 10-09-2026 07:55</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14px;">Email from:</span>
+              <span style="font-size: 14px; font-weight: 700; color: #115ea3; text-decoration: underline;">Kim Petersen</span>
+              <span style="font-size: 12px; color: #616161;">To: Care · Cc: Morten Bach Jensen, Anne Holm</span>
+            </div>
+            <span style="font-size: 14px; line-height: 20px;">Trykprøvningen er nu gennemført på alle tre strenge. Streng 4 og 11 holder 6 bar uden fald. Streng 7 falder fortsat til 4,2 bar over 20 minutter.</span>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px; max-width: 700px; height: 26px; padding: 0 10px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px;">
+              <span style="font-size: 12px; color: #424242;">Trimmed content — 3 earlier messages</span>
+              <div style="flex-grow: 1;"></div>
+              <span style="font-size: 12px; color: #242424;">View more</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ COMPOSE, docked ══ -->
+      <div style="flex: 0 0 222px; height: 222px; border-top: 2px solid #0f6cbd; background: #ffffff; display: flex; flex-direction: column;">
+
+        <!-- header -->
+        <div style="display: flex; align-items: center; gap: 8px; height: 30px; flex: 0 0 30px; padding: 0 12px; box-sizing: border-box; background: #ebf3fc;">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.6"><path d="M7 4 2 9l5 5"/><path d="M11 4 6 9l5 5"/><path d="M6 9h6a6 6 0 0 1 6 6"/></svg>
+          <span style="font-size: 13px; font-weight: 600; color: #115ea3;">Reply all</span>
+          <span style="font-size: 12px; color: #115ea3;">from</span>
+          <div style="display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; box-sizing: border-box; border-radius: 10000px; background: #ffffff; border: 1px solid #b4d6fa;">
+            <span style="font-size: 11px; color: #115ea3; font-weight: 600;">Care</span>
+            <svg width="9" height="9" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M5 8l5 5 5-5"/></svg>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#0e700e" stroke-width="1.8"><circle cx="10" cy="10" r="7"/><path d="M6.5 10.2l2.3 2.3 4.7-5"/></svg>
+            <span style="font-size: 11px; color: #0e700e;">approved mailbox</span>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: #616161;">Saved 14:58</span>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.6"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+        </div>
+
+        <!-- recipients -->
+        <div style="display: flex; align-items: center; gap: 6px; height: 28px; flex: 0 0 28px; padding: 0 12px; box-sizing: border-box; border-bottom: 1px solid #f0f0f0;">
+          <span style="font-size: 12px; color: #616161; width: 24px; flex: 0 0 24px;">To</span>
+          <div style="display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px 0 3px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;">
+            <div style="width: 15px; height: 15px; border-radius: 10000px; background: #fff4ce; color: #8a6300; font-size: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center;">KP</div>
+            <span style="font-size: 12px; color: #242424;">Kim Petersen</span>
+            <svg width="9" height="9" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px 0 3px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;">
+            <div style="width: 15px; height: 15px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center;">MJ</div>
+            <span style="font-size: 12px; color: #242424;">Morten Bach Jensen</span>
+            <svg width="9" height="9" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <span style="font-size: 12px; color: #616161; margin-left: 8px;">Cc</span>
+          <div style="display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px 0 3px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;">
+            <div style="width: 15px; height: 15px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center;">AH</div>
+            <span style="font-size: 12px; color: #242424;">Anne Holm</span>
+            <svg width="9" height="9" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 12px; color: #115ea3;">Bcc</span>
+        </div>
+
+        <!-- toolbar -->
+        <div style="display: flex; align-items: center; gap: 2px; height: 30px; flex: 0 0 30px; padding: 0 10px; box-sizing: border-box; border-bottom: 1px solid #f0f0f0;">
+          <span style="font-size: 13px; font-weight: 700; width: 22px; text-align: center;">B</span>
+          <span style="font-size: 13px; font-style: italic; width: 22px; text-align: center;">I</span>
+          <span style="font-size: 13px; text-decoration: underline; width: 22px; text-align: center;">U</span>
+          <div style="width: 1px; height: 16px; background: #e0e0e0; margin: 0 4px;"></div>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M7 6h10M7 10h10M7 14h10"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="10" r="1"/><circle cx="4" cy="14" r="1"/></svg>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M7 6h10M7 10h10M7 14h10M3 5.5h1.5v2M3 9.5h1.8L3 12h1.8M3 13.5h1.6"/></svg>
+          <div style="width: 1px; height: 16px; background: #e0e0e0; margin: 0 4px;"></div>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M8.5 11.5a3 3 0 0 1 0-4l2-2a3 3 0 0 1 4.2 4.2l-1 1"/><path d="M11.5 8.5a3 3 0 0 1 0 4l-2 2a3 3 0 0 1-4.2-4.2l1-1"/></svg>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M2.5 4.5h15v11h-15z"/><circle cx="7" cy="8" r="1.4"/><path d="m2.5 13.5 4-3.5 3 2.5 2.5-2 5.5 4.5"/></svg>
+          <div style="width: 1px; height: 16px; background: #e0e0e0; margin: 0 4px;"></div>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M13 7.5 8 12.5a2.1 2.1 0 0 0 3 3l5.5-5.5a4 4 0 0 0-5.7-5.7L5.2 9.8a6 6 0 0 0 8.5 8.5"/></svg>
+          <div style="display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; box-sizing: border-box; border-radius: 4px; background: #f5f5f5;">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M5 2.5h6l4 4v11H5z"/><path d="M11 2.5v4h4"/></svg>
+            <span style="font-size: 12px; color: #424242;">Template</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; box-sizing: border-box; border-radius: 4px;">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.5"><path d="M10 3.2l1.6 3.9 3.9 1.6-3.9 1.6L10 14.2 8.4 10.3 4.5 8.7l3.9-1.6z"/></svg>
+            <span style="font-size: 12px; color: #115ea3;">Copilot</span>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="#424242"><circle cx="4.5" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="15.5" cy="10" r="1.3"/></svg>
+        </div>
+
+        <!-- editor -->
+        <div style="flex-grow: 1; padding: 8px 12px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 14px; line-height: 20px;">Hej Kim<br>Tak for trykrapporten. Vi sender en montør til streng 7 i morgen formiddag og udskifter fittings.<span style="display: inline-block; width: 1px; height: 15px; background: #242424; vertical-align: -2px; margin-left: 1px;"></span></span>
+          <span style="font-size: 14px; line-height: 20px; color: #707070;">Med venlig hilsen<br>Lene Sørensen · Kundeservice</span>
+          <div style="display: flex; align-items: center; gap: 8px; max-width: 700px; height: 24px; padding: 0 10px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px;">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.5"><path d="M4 6h12M4 10h12M4 14h7"/></svg>
+            <span style="font-size: 12px; color: #424242;">Quoted history will be appended — 4 messages</span>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 12px; color: #242424;">View more</span>
+          </div>
+        </div>
+
+        <!-- send row -->
+        <div style="display: flex; align-items: center; gap: 8px; height: 36px; flex: 0 0 36px; padding: 0 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+          <div style="display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd;">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#ffffff" stroke-width="1.6"><path d="M3 10l14-6-6 14-2.2-5.8z"/></svg>
+            <span style="font-size: 14px; font-weight: 600; color: #ffffff;">Send</span>
+          </div>
+          <div style="display: flex; align-items: center; height: 28px; padding: 0 12px; box-sizing: border-box; border-radius: 4px; border: 1px solid #d1d1d1;">
+            <span style="font-size: 14px;">Save draft</span>
+          </div>
+          <div style="display: flex; align-items: center; height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px;">
+            <span style="font-size: 14px; color: #115ea3;">Discard</span>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M4 15V7l6-4 6 4v8"/><path d="M4 7l6 4 6-4"/></svg>
+          <span style="font-size: 12px; color: #616161;">Pop out</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ notes row ═══ -->
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; flex-grow: 1;">
+
+    <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+      <span style="font-size: 13px; font-weight: 600;">Where reply comes from</span>
+      <span style="font-size: 11px; color: #424242; line-height: 17px;">Three entry points, all reaching the same docked surface: the per-message icons at the right of each message row, the thread-level <strong>Reply all</strong> button in the card header, and <strong>Ctrl+R</strong> / <strong>Ctrl+Shift+R</strong>.</span>
+      <span style="font-size: 11px; color: #424242; line-height: 17px;">Whichever is used, the header says which message is being answered — "replying to Kim Petersen" — because in a six-message thread that is genuinely ambiguous and getting it wrong sends an answer to the wrong person.</span>
+      <div style="height: 1px; background: #e0e0e0;"></div>
+      <span style="font-size: 11px; color: #424242; line-height: 17px;"><strong>Pop out</strong> is the escape hatch for a long reply: the same draft, in a dialog, with room. It writes the same draft row, so closing it loses nothing.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; box-sizing: border-box; background: #ebf3fc; border: 1px solid #b4d6fa; border-radius: 6px;">
+      <span style="font-size: 13px; font-weight: 600; color: #115ea3;">Reply-all, resolved explicitly</span>
+      <span style="font-size: 11px; color: #242424;">Replying to <strong>A5</strong>, where Kim wrote to Care with Morten and Anne on Cc:</span>
+      <div style="display: flex; flex-direction: column; gap: 3px; padding: 8px; box-sizing: border-box; background: #ffffff; border-radius: 4px;">
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #0e700e; width: 40px; flex: 0 0 40px;">To</span><span style="font-size: 11px; color: #242424;">Kim Petersen <span style="color: #707070;">(was the sender)</span></span></div>
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #0e700e; width: 40px; flex: 0 0 40px;"></span><span style="font-size: 11px; color: #242424;">Morten Bach Jensen <span style="color: #707070;">(was on Cc — promoted, because he is the customer)</span></span></div>
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #115ea3; width: 40px; flex: 0 0 40px;">Cc</span><span style="font-size: 11px; color: #242424;">Anne Holm</span></div>
+        <div style="height: 1px; background: #f0f0f0; margin: 3px 0;"></div>
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #a4262c; width: 40px; flex: 0 0 40px;">OUT</span><span style="font-size: 11px; color: #424242;"><strong>Care</strong> — our own sending mailbox. Never reply to ourselves.</span></div>
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #a4262c; width: 40px; flex: 0 0 40px;">OUT</span><span style="font-size: 11px; color: #424242;"><strong>Lene Sørensen</strong> — the agent's own address, if it appears anywhere.</span></div>
+        <div style="display: flex; gap: 6px;"><span style="font-size: 11px; font-weight: 700; color: #a4262c; width: 40px; flex: 0 0 40px;">OUT</span><span style="font-size: 11px; color: #424242;">Any <strong>Bcc</strong> from the original. Bcc never propagates — carrying it forward discloses a hidden recipient.</span></div>
+      </div>
+      <span style="font-size: 11px; color: #242424; line-height: 17px;">Duplicates are removed case-insensitively on the address, not the display name — the same person often appears under two spellings across a chain.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; box-sizing: border-box; background: #fff4ce; border: 1px solid #f2d999; border-radius: 6px;">
+      <span style="font-size: 13px; font-weight: 600; color: #8a6300;">The quote is not in the editor</span>
+      <span style="font-size: 11px; color: #3b3a39; line-height: 17px;">The agent edits only their own new text. The inherited chain sits <strong>below</strong> the editor as a folded, read-only strip and is appended untouched when the message is sent.</span>
+      <span style="font-size: 11px; color: #3b3a39; line-height: 17px;">This is the most important compose decision in the build. A rich-text editor that ingests arbitrary Outlook HTML will re-write it — reindenting, dropping styles, mangling tables — and R12 requires the prior chain to survive intact. Keeping it out of the editor turns "must round-trip anyone's HTML", which no editor does well, into "must handle what the agent types", which they all do.</span>
+      <div style="height: 1px; background: #f2d999;"></div>
+      <span style="font-size: 11px; color: #3b3a39; line-height: 17px;"><strong>The signature is editable</strong>, inserted from the agent's default on open, and shown in grey so it reads as boilerplate rather than as something they wrote.</span>
+      <span style="font-size: 11px; color: #3b3a39; line-height: 17px;"><strong>"Saved 14:58"</strong> is not decoration — the draft is written to the case on blur and on a timer, so switching case or closing the browser does not lose it.</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

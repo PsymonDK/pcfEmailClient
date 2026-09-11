@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 720px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Templates and Copilot drafting</span>
+    <span style="font-size: 12px; color: #616161;">Both insert text into the new-text region only — never into the inherited quote. <strong>R14, R15, R19.</strong></span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; flex-grow: 1;">
+
+    <!-- ═══ Template picker ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Template picker, with the tokens already resolved</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; box-sizing: border-box; border-bottom: 1px solid #f0f0f0;">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M5 2.5h6l4 4v11H5z"/><path d="M11 2.5v4h4"/></svg>
+          <span style="font-size: 14px; font-weight: 600;">Insert a template</span>
+          <div style="flex-grow: 1;"></div>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.6"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+        </div>
+
+        <div style="display: flex; min-height: 316px;">
+          <!-- list -->
+          <div style="width: 246px; flex: 0 0 246px; border-right: 1px solid #f0f0f0; display: flex; flex-direction: column;">
+            <div style="padding: 8px 10px; box-sizing: border-box;">
+              <div style="display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px;">
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.8 12.8 17 17"/></svg>
+                <span style="font-size: 13px; color: #707070;">Find a template</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px; box-sizing: border-box;">
+              <span style="font-size: 12px; color: #616161;">Case templates</span>
+              <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+            </div>
+            <div style="padding: 6px 10px; box-sizing: border-box; background: #ebf3fc; border-left: 3px solid #0f6cbd;">
+              <span style="font-size: 13px; font-weight: 600; color: #242424;">Montørbesøg bekræftet</span><br>
+              <span style="font-size: 11px; color: #616161;">Danish · 4 tokens</span>
+            </div>
+            <div style="padding: 6px 13px; box-sizing: border-box;">
+              <span style="font-size: 13px; color: #242424;">Sag modtaget — kvittering</span><br>
+              <span style="font-size: 11px; color: #616161;">Danish · 3 tokens</span>
+            </div>
+            <div style="padding: 6px 13px; box-sizing: border-box;">
+              <span style="font-size: 13px; color: #242424;">Anmodning om dokumentation</span><br>
+              <span style="font-size: 11px; color: #616161;">Danish · 2 tokens</span>
+            </div>
+            <div style="padding: 6px 13px; box-sizing: border-box;">
+              <span style="font-size: 13px; color: #242424;">Case resolved — summary</span><br>
+              <span style="font-size: 11px; color: #616161;">English · 5 tokens</span>
+            </div>
+            <div style="flex-grow: 1;"></div>
+            <div style="padding: 8px 10px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+              <span style="font-size: 11px; color: #707070;">Showing templates for <strong>Case</strong>. Templates for other tables are hidden.</span>
+            </div>
+          </div>
+
+          <!-- preview -->
+          <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 12px; box-sizing: border-box; background: #fafafa; border-bottom: 1px solid #f0f0f0;">
+              <span style="font-size: 12px; font-weight: 600; color: #424242;">Preview — tokens resolved against this case</span>
+            </div>
+
+            <div style="padding: 10px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 11px; color: #616161;">Subject</span>
+                <span style="font-size: 13px; color: #242424;">Montørbesøg bekræftet — sag <span style="background: #dff6dd; padding: 0 2px;">CAS-01042</span></span>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 11px; color: #616161;">Body</span>
+                <span style="font-size: 13px; line-height: 19px; color: #242424;">
+                  Hej <span style="background: #dff6dd; padding: 0 2px;">Morten Bach Jensen</span><br><br>
+                  Vi bekræfter hermed, at en montør besøger <span style="background: #dff6dd; padding: 0 2px;">Metalservice Fyn ApS</span> vedrørende sag <span style="background: #dff6dd; padding: 0 2px;">CAS-01042</span>.<br><br>
+                  Du er velkommen til at kontakte os på <span style="background: #dff6dd; padding: 0 2px;">care@…</span>, hvis tidspunktet ikke passer.
+                </span>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+                <div style="width: 12px; height: 12px; border-radius: 2px; background: #dff6dd; border: 1px solid #a7d6a7; flex: 0 0 12px;"></div>
+                <span style="font-size: 11px; color: #424242;">Green = a token the platform filled in. <strong>Resolved before insert, not after</strong> — so an unfillable token is visible here rather than posted to a customer as <span style="font-family: Consolas, monospace;">{!Case:Title;}</span>.</span>
+              </div>
+            </div>
+
+            <div style="flex-grow: 1;"></div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+              <div style="display: flex; align-items: center; height: 30px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd;"><span style="font-size: 14px; font-weight: 600; color: #ffffff;">Insert</span></div>
+              <div style="display: flex; align-items: center; height: 30px; padding: 0 12px; box-sizing: border-box; border-radius: 4px; border: 1px solid #d1d1d1;"><span style="font-size: 14px;">Replace what I've written</span></div>
+              <div style="flex-grow: 1;"></div>
+              <span style="font-size: 12px; color: #616161;">Signature is kept</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <div style="flex-grow: 1; padding: 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+          <span style="font-size: 11px; color: #424242;"><strong>Two buttons, not one.</strong> Insert adds at the cursor; Replace is a separate, labelled act. A template that silently overwrites a half-written reply is the kind of thing an agent only forgives once.</span>
+        </div>
+        <div style="flex-grow: 1; padding: 10px; box-sizing: border-box; background: #fff4ce; border-radius: 4px;">
+          <span style="font-size: 11px; color: #8a6300;"><strong>Insertion never touches the quote.</strong> Template content lands in the new-text region above the signature; the folded inherited chain below is untouched.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ Copilot draft ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Copilot draft, landing in the editor</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; box-sizing: border-box; background: #ebf3fc; border-bottom: 1px solid #b4d6fa;">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.5"><path d="M10 3.2l1.6 3.9 3.9 1.6-3.9 1.6L10 14.2 8.4 10.3 4.5 8.7l3.9-1.6z"/></svg>
+          <span style="font-size: 14px; font-weight: 600; color: #115ea3;">Draft with Copilot</span>
+          <div style="flex-grow: 1;"></div>
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.6"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+        </div>
+
+        <div style="padding: 10px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; gap: 6px;">
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;"><span style="font-size: 12px; color: #115ea3; font-weight: 600;">Answer the question</span></div>
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">Ask for details</span></div>
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">Apologise</span></div>
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">Custom…</span></div>
+          </div>
+
+          <!-- the draft -->
+          <div style="border: 1px solid #b4d6fa; border-radius: 4px; overflow: hidden;">
+            <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; box-sizing: border-box; background: #ebf3fc;">
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.5"><path d="M10 3.2l1.6 3.9 3.9 1.6-3.9 1.6L10 14.2 8.4 10.3 4.5 8.7l3.9-1.6z"/></svg>
+              <span style="font-size: 11px; font-weight: 700; color: #115ea3;">AI-GENERATED — READ IT BEFORE YOU SEND IT</span>
+            </div>
+            <div style="padding: 10px; box-sizing: border-box;">
+              <span style="font-size: 13px; line-height: 19px; color: #242424;">
+                Hej Kim<br><br>
+                Tak for trykrapporten og for den grundige gennemgang af alle tre strenge.<br><br>
+                Vi noterer, at streng 4 og 11 holder 6 bar uden fald, og at streng 7 fortsat falder til 4,2 bar over 20 minutter. Vi sender en montør ud i morgen formiddag, som udskifter fittings på streng 7 og foretager en ny trykprøve umiddelbart efter.<br><br>
+                Vi vender tilbage med resultatet, så snart montøren har afsluttet arbejdet.
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; padding: 8px 10px; box-sizing: border-box; border-top: 1px solid #e0e0e0;">
+              <div style="display: flex; align-items: center; height: 28px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd;"><span style="font-size: 13px; font-weight: 600; color: #ffffff;">Use this draft</span></div>
+              <div style="display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #d1d1d1;">
+                <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.5"><path d="M16 10a6 6 0 1 1-2.2-4.6"/><path d="M16.2 3.6v3h-3"/></svg>
+                <span style="font-size: 13px;">Try again</span>
+              </div>
+              <div style="display: flex; align-items: center; height: 28px; padding: 0 10px; box-sizing: border-box; border-radius: 4px;"><span style="font-size: 13px; color: #115ea3;">Discard</span></div>
+              <div style="flex-grow: 1;"></div>
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><path d="M6.5 9.5V16H4V9.5zM9 16V9.5l2.5-6h1A1.5 1.5 0 0 1 14 5v2h2.2a1.3 1.3 0 0 1 1.3 1.6l-1 6A1.5 1.5 0 0 1 15 16z"/></svg>
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><path d="M13.5 10.5V4H16v6.5zM11 4v6.5l-2.5 6h-1A1.5 1.5 0 0 1 6 15v-2H3.8a1.3 1.3 0 0 1-1.3-1.6l1-6A1.5 1.5 0 0 1 5 4z"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">Why it is reviewed in a panel and not typed straight in</span>
+        <span style="font-size: 11px; color: #424242; line-height: 17px;">A generated reply that appears directly in the editor is indistinguishable from something the agent wrote. It gets sent unread — and it is the agent's name on it. So it arrives in a bordered, badged panel with <strong>Use this draft</strong> as a deliberate act.</span>
+        <span style="font-size: 11px; color: #424242; line-height: 17px;">Accepted text becomes ordinary editable text with no residual marking. It is theirs now; the badge would only be theatre.</span>
+        <div style="height: 1px; background: #e0e0e0;"></div>
+        <span style="font-size: 11px; color: #424242; line-height: 17px;">The thumbs up/down are not decoration — they are what makes the quality of these drafts measurable later.</span>
+        <span style="font-size: 11px; color: #8a6300; line-height: 17px;"><strong>Scope note:</strong> R19 is a SHOULD, and the platform surface it depends on has not been exercised in this environment yet. If it does not deliver, everything else here is unaffected — this panel simply does not appear, and the entry point is hidden rather than shown broken.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

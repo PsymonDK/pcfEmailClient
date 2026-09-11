@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 800px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Filtering, empty results, and the parent case</span>
+    <span style="font-size: 12px; color: #616161;">Both are SHOULD requirements, and both are cheap once the list exists — but one of them has a platform limit that has to be said out loud in the UI. <strong>R7, R8.</strong></span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; flex-grow: 1;">
+
+    <!-- ═══ 1: filter panel open ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Filter panel open</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+          <div style="flex-grow: 1;"></div>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+          <div style="width: 24px; height: 24px; border-radius: 4px; background: #ebf3fc; display: flex; align-items: center; justify-content: center;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.6"><path d="M3.5 5h13M6 10h8M8.5 15h3"/></svg>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M4 6h12M4 10h8M4 14h5"/></svg>
+        </div>
+
+        <div style="padding: 0 12px 8px 12px; box-sizing: border-box;">
+          <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px; border-bottom: 2px solid #0f6cbd;">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.8 12.8 17 17"/></svg>
+            <span style="font-size: 14px; color: #242424;">trykprøv</span>
+            <div style="flex-grow: 1;"></div>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.6"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+        </div>
+
+        <!-- the honest note about body search -->
+        <div style="margin: 0 12px 10px 12px; padding: 8px 10px; box-sizing: border-box; background: #fff4ce; border-radius: 4px; display: flex; gap: 8px;">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#8a6300" stroke-width="1.5" style="flex: 0 0 14px; margin-top: 1px;"><circle cx="10" cy="10" r="7"/><path d="M10 13.5V9.5M10 6.8v.4"/></svg>
+          <span style="font-size: 11px; color: #8a6300; line-height: 16px;">Searching <strong>subjects and people</strong> is instant. Searching <strong>message text</strong> takes a moment longer — it goes through Dataverse search, not the list.</span>
+        </div>
+
+        <div style="padding: 0 12px 12px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px;">
+
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <span style="font-size: 12px; font-weight: 600; color: #242424;">Participant</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+              <div style="display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 4px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;">
+                <div style="width: 18px; height: 18px; border-radius: 10000px; background: #fff4ce; color: #8a6300; font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center;">KP</div>
+                <span style="font-size: 12px; color: #115ea3; font-weight: 600;">Kim Petersen</span>
+                <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+              </div>
+              <div style="display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 4px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;">
+                <div style="width: 18px; height: 18px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center;">MJ</div>
+                <span style="font-size: 12px; color: #424242;">Morten Bach Jensen</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 4px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;">
+                <div style="width: 18px; height: 18px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center;">AH</div>
+                <span style="font-size: 12px; color: #424242;">Anne Holm</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <span style="font-size: 12px; font-weight: 600; color: #242424;">Date</span>
+            <div style="display: flex; gap: 5px;">
+              <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">7 days</span></div>
+              <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;"><span style="font-size: 12px; color: #115ea3; font-weight: 600;">30 days</span></div>
+              <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">All</span></div>
+              <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 12px; color: #424242;">Custom…</span></div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 12px; font-weight: 600; color: #242424;">Show only</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="width: 16px; height: 16px; border-radius: 3px; background: #0f6cbd; display: flex; align-items: center; justify-content: center; flex: 0 0 16px;">
+                <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="#ffffff" stroke-width="2.4"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>
+              </div>
+              <span style="font-size: 13px; color: #242424;">Unread</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="width: 16px; height: 16px; border-radius: 3px; border: 1px solid #616161; flex: 0 0 16px;"></div>
+              <span style="font-size: 13px; color: #242424;">Has attachments</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="width: 16px; height: 16px; border-radius: 3px; border: 1px solid #616161; flex: 0 0 16px;"></div>
+              <span style="font-size: 13px; color: #242424;">Sent by us</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="width: 16px; height: 16px; border-radius: 3px; border: 1px solid #616161; flex: 0 0 16px;"></div>
+              <span style="font-size: 13px; color: #242424;">Has an unsent draft</span>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0;">
+            <div style="display: flex; align-items: center; height: 30px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd;"><span style="font-size: 14px; font-weight: 600; color: #ffffff;">Apply</span></div>
+            <div style="display: flex; align-items: center; height: 30px; padding: 0 12px; box-sizing: border-box; border-radius: 4px;"><span style="font-size: 14px; color: #115ea3;">Clear all</span></div>
+            <div style="flex-grow: 1;"></div>
+            <span style="font-size: 12px; color: #616161;">2 filters active</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <span style="font-size: 11px; color: #424242;"><strong>Active filters stay visible as chips on the list</strong> when this panel closes. A filtered list that looks like an unfiltered one is how an agent concludes a customer never wrote to them.</span>
+      </div>
+    </div>
+
+    <!-- ═══ 2: zero results ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Nothing matched</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; height: 300px;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+          <div style="flex-grow: 1;"></div>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 5px; padding: 0 12px 10px 12px; box-sizing: border-box;">
+          <div style="display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;">
+            <span style="font-size: 12px; color: #115ea3;">"garanti"</span>
+            <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;">
+            <span style="font-size: 12px; color: #115ea3;">Unread</span>
+            <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;">
+            <span style="font-size: 12px; color: #115ea3;">7 days</span>
+            <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+        </div>
+
+        <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 0 24px; box-sizing: border-box;">
+          <svg width="40" height="40" viewBox="0 0 20 20" fill="none" stroke="#c8c6c4" stroke-width="1.1"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.8 12.8 17 17"/></svg>
+          <span style="font-size: 14px; font-weight: 600; color: #242424;">No email matches these filters</span>
+          <span style="font-size: 12px; color: #616161; text-align: center;">This case has <strong>3 threads and 9 messages</strong>. They are hidden by the filters above, not missing.</span>
+          <div style="display: flex; align-items: center; height: 30px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; border: 1px solid #d1d1d1; margin-top: 4px;">
+            <span style="font-size: 14px; color: #242424;">Clear all filters</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px; box-sizing: border-box; background: #dff6dd; border-radius: 4px;">
+        <span style="font-size: 11px; color: #0e700e;"><strong>The count is the important part.</strong> "No results" and "this customer has never emailed" look identical unless you say which one it is — and the wrong reading changes how an agent handles the case.</span>
+      </div>
+
+      <div style="padding: 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <span style="font-size: 11px; color: #424242;">This state is also the <strong>permission-trimmed</strong> state. If a message exists but the agent may not read it, it is absent from the list and absent from the count — it must never appear as an error, and never as a greyed row that hints at content (N4).</span>
+      </div>
+    </div>
+
+    <!-- ═══ 3: parent case included ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Parent case included</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+          <div style="display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;">
+            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="1.5"><path d="M7 3.5h9v9M13 7 4 16"/></svg>
+            <span style="font-size: 11px; color: #115ea3; font-weight: 600;">Parent case on</span>
+            <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="#115ea3" stroke-width="2"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+          </div>
+          <div style="flex-grow: 1;"></div>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+        </div>
+
+        <!-- this case -->
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 12px; box-sizing: border-box; height: 28px;">
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#242424" stroke-width="1.8"><path d="M5 12l5-5 5 5"/></svg>
+          <span style="font-size: 14px; color: #242424;">This case</span>
+          <span style="font-size: 12px; color: #616161;">CAS-01042</span>
+          <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+        </div>
+
+        <div style="display: flex; gap: 10px; padding: 8px 12px 8px 9px; box-sizing: border-box; border-left: 3px solid #0f6cbd; background: #ebf3fc;">
+          <div style="width: 28px; height: 28px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 28px;">MJ</div>
+          <div style="display: flex; flex-direction: column; min-width: 0; flex-grow: 1;">
+            <span style="font-size: 12px; color: #616161;">10-09-2026 10:33</span>
+            <span style="font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 8px 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+          <div style="width: 28px; height: 28px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 28px;">AH</div>
+          <div style="display: flex; flex-direction: column; min-width: 0; flex-grow: 1;">
+            <span style="font-size: 12px; color: #616161;">10-09-2026 13:07</span>
+            <span style="font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Faktura 2026-4417 — etape 3</span>
+          </div>
+        </div>
+
+        <!-- parent case group, visibly other -->
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 12px; box-sizing: border-box; height: 30px; background: #faf9f8; border-top: 1px solid #e0e0e0;">
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#8a6300" stroke-width="1.8"><path d="M5 12l5-5 5 5"/></svg>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#8a6300" stroke-width="1.5"><path d="M7 3.5h9v9M13 7 4 16"/></svg>
+          <span style="font-size: 14px; color: #8a6300; font-weight: 600;">Parent case</span>
+          <span style="font-size: 12px; color: #8a6300;">CAS-01038 · Etape 3, Nordhavn</span>
+          <div style="flex-grow: 1; height: 1px; background: #f2d999;"></div>
+        </div>
+
+        <div style="display: flex; gap: 10px; padding: 8px 12px 8px 9px; box-sizing: border-box; border-left: 3px solid #f2c811; background: #fffbe6;">
+          <div style="width: 28px; height: 28px; border-radius: 10000px; background: #f0f0f0; color: #616161; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 28px;">MJ</div>
+          <div style="display: flex; flex-direction: column; min-width: 0; flex-grow: 1;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 12px; color: #616161;">25-08-2026 09:12</span>
+              <div style="display: flex; align-items: center; height: 16px; padding: 0 5px; box-sizing: border-box; border-radius: 3px; background: #fff4ce; border: 1px solid #f2d999;">
+                <span style="font-size: 10px; color: #8a6300; font-weight: 600;">CAS-01038</span>
+              </div>
+            </div>
+            <span style="font-size: 13px; color: #242424; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Rammeaftale etape 3 — tidsplan</span>
+            <span style="font-size: 12px; color: #616161;">3 messages · read-only here</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px; box-sizing: border-box; background: #fff4ce; border-radius: 4px;">
+        <span style="font-size: 11px; color: #8a6300;"><strong>Marked three ways at once</strong> — its own group header, a yellow edge, and a case-number badge on every row. An agent who quotes a commitment made on the parent case believing it was made on this one has mishandled the case. One subtle marker is not enough.</span>
+      </div>
+
+      <div style="padding: 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <span style="font-size: 11px; color: #424242;"><strong>Replying is disabled on parent-case threads.</strong> A reply would be filed against the wrong case. Opening the parent case itself is one click from the group header.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

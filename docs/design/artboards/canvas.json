@@ -1,0 +1,76 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Reading" },
+    { "id": "page-2", "name": "Compose & send" },
+    { "id": "page-3", "name": "Foundations" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1600, "h": 536, "page": "page-1", "title": "THE DESIGN · reading, default state" },
+    { "file": "QuoteAndNoise.dc.html", "x": 1700, "y": 0, "w": 1600, "h": 1240, "page": "page-1", "title": "3.4 · Quoted history and injected noise — DECIDED: folded" },
+    { "file": "BodyFidelity.dc.html", "x": 0, "y": 700, "w": 1600, "h": 860, "page": "page-1", "title": "3.3 · Body fidelity and sanitising" },
+    { "file": "FilterAndParent.dc.html", "x": 0, "y": 1680, "w": 1600, "h": 800, "page": "page-1", "title": "3.5 / 3.6 · Filter, no results, parent case" },
+    { "file": "States.dc.html", "x": 1700, "y": 1360, "w": 1600, "h": 720, "page": "page-1", "title": "5.3 · Empty, loading, broken, busy" },
+
+    { "file": "Compose.dc.html", "x": 0, "y": 0, "w": 1600, "h": 1180, "page": "page-2", "title": "4.0 · Compose at actual size — DECIDED: docked" },
+    { "file": "ComposeOpen.dc.html", "x": 1700, "y": 0, "w": 1600, "h": 1080, "page": "page-2", "title": "4.1 / 4.2 · Compose in context, at the real host size" },
+    { "file": "ComposeInserts.dc.html", "x": 0, "y": 1300, "w": 1600, "h": 720, "page": "page-2", "title": "4.3 · Templates and Copilot" },
+    { "file": "Attachments.dc.html", "x": 1700, "y": 1200, "w": 1600, "h": 700, "page": "page-2", "title": "4.4 · Attaching files" },
+    { "file": "DraftAndSend.dc.html", "x": 0, "y": 2140, "w": 1600, "h": 1000, "page": "page-2", "title": "4.5 / 4.6 · Drafts, send ladder, pre-flight — DECIDED: block" },
+
+    { "file": "Tokens.dc.html", "x": 0, "y": 0, "w": 1600, "h": 760, "page": "page-3", "title": "00 · Tokens and state vocabulary" },
+    { "file": "Placements.dc.html", "x": 1700, "y": 0, "w": 1600, "h": 1180, "page": "page-3", "title": "2 · Placements and the 536px budget" },
+    { "file": "Dark.dc.html", "x": 0, "y": 880, "w": 1600, "h": 820, "page": "page-3", "title": "5.1 · Dark theme" },
+    { "file": "Accessibility.dc.html", "x": 1700, "y": 1300, "w": 1600, "h": 840, "page": "page-3", "title": "5.2 · Keyboard, screen reader, contrast" }
+  ],
+  "annotations": [
+    {
+      "id": "decisions",
+      "x": -640,
+      "y": 0,
+      "w": 540,
+      "page": "page-2",
+      "text": "GATE 2 — DECIDED\n\n1. Injected notices: FOLDED, as drawn. Nothing deleted, one control away, fold state remembered per agent.\n\n2. Mark read: ON DWELL. A message is marked read once it has been expanded and on screen for about 1.5 seconds continuously. Scrolling past a collapsed row does not count, and neither does expanding and immediately collapsing. Ctrl+U still toggles it by hand, and a message opened by keyboard follows the same rule.\n   Why dwell rather than on expand: agents open a thread and skim, and expand-to-read marks things read that were never read. The cost of the dwell timer is one timer; the cost of the other is a message an agent believes they have dealt with.\n\n3. Pre-flight: BLOCK. Send is disabled when the sending mailbox is not approved, with the reason named and details to hand to IT. No override. The draft is always safe.\n\n4. Compose: DOCKED, with pop-out for a long reply. The overlay is rejected — it covers the message being answered and the thread list, and consulting what the customer actually asked while answering is the whole point of composing in place.\n   Drawn at actual size on 4.0 to the right, after the first attempt hid it inside a full-size mock where it could not be judged.\n\nGATE 3 CLEARED. The canvas is frozen. Changes from here are recorded amendments, and the handoff is written:\ndocs/design/01-design-decisions.md\ndocs/design/02-component-inventory.md\ndocs/design/03-interaction-spec.md\ndocs/design/00-fixture.md"
+    },
+    {
+      "id": "note-compose",
+      "x": 0,
+      "y": -230,
+      "w": 1000,
+      "page": "page-2",
+      "text": "COMPOSE AT ACTUAL SIZE — this is what you asked for.\n\nTop strip: the docked surface at its real 1148 x 222 px. Numbered callouts below name every part. Look hard at ④, the editor: three visible lines. That is honestly what 222px leaves after the context bar, recipients, one toolbar row, the quote strip and the send row have taken their fixed share. It grows as you type, up to about half the pane.\n\nBottom left: the popped-out window at its real 820 x 460, which is where a long reply belongs. Same draft — closing it keeps everything.\n\nBottom right: the OVERLAY alternative, with an honest note. It gives about twice the room and takes away the message you are replying to. My recommendation is docked plus pop-out: the common case never loses context, the rare long reply gets a proper window, and there is no third layout to maintain.\n\nIf three lines still reads as too tight to you, say so and I will take the overlay instead — but the lever is not making the dock taller, because the thread above it is the thing that makes replying in place worth doing at all."
+    },
+    {
+      "id": "brief-reading",
+      "x": -640,
+      "y": 0,
+      "w": 540,
+      "page": "page-1",
+      "text": "SIGNED OFF: 1E. The four bake-off candidates are gone.\n\nREADING (this page)\nThe hero at top left is the default state at the real 1600 x 536. Everything else here is a state it can be in. Use the pages menu in the toolbar for compose and the foundations.\n\nDECIDED on this page:\n· Injected notices and quoted history are FOLDED, as drawn on 3.4 — nothing deleted, one control away.\n· Read state is marked ON DWELL: expanded and on screen about 1.5 seconds. Skimming past a row does not mark it read.\n\n3.4 to the right is still the board worth most of your attention: the same message as delivered, cleaned, and expanded, with the confidence tiers underneath. The rule that governs it — when detection is uncertain, show the content — is the one to push back on if you disagree with anything."
+    },
+    {
+      "id": "brief-foundations",
+      "x": -640,
+      "y": 0,
+      "w": 540,
+      "page": "page-3",
+      "text": "FOUNDATIONS\n\nThe boards the build consults rather than the ones you review. Nothing here needs a decision from you — it needs to be true.\n\n00 Tokens — every colour read out of the Fluent library version this environment actually loads, not eyeballed.\n\n2 Placements — both hosts, and where the 536 vertical pixels go. Three binding rules come out of it: one scroll region per card, nothing above it may grow, compose is docked rather than overlaid.\n\n5.1 Dark — the real decision is that a sender's HTML stays on white. Inverting someone's invoice or test report alters a business document.\n\n5.2 Accessibility — tab order, shortcuts, what a screen reader says, measured contrast. Fluent gives most of this for free; the drop zone, the editor and the reading order are the three places it does not, so they are specified here."
+    },
+    {
+      "id": "note-hero",
+      "x": 0,
+      "y": -140,
+      "w": 900,
+      "page": "page-1",
+      "text": "The default state. Two cards, hairline borders, near-white page — the Case form's own card language. Thread A is open with A3 and A5 expanded; A5 is the unread one carrying the folded notices and the folded quote.\n\nEvery pattern here is lifted from the real form: the card header with its icon row, the grey-filled search, the \"Unread ────\" group headers, the 32px two-letter avatars, \"Email from: X\" plus a status badge, blue attachment chips, and the platform's own \"View more ⌄\" expander doing the work for both folds."
+    },
+    {
+      "id": "note-quotefirst",
+      "x": 1700,
+      "y": -140,
+      "w": 900,
+      "page": "page-1",
+      "text": "DECIDED: folded, as drawn here.\n\nLeft column is what the Timeline shows today — the sender's actual words are the fourth thing on screen, on every external message. Middle is the default. Right is both folds open.\n\nThe rules strip at the bottom is the part still worth arguing with: four confidence tiers, and one asymmetry — when detection is uncertain, show the content. A visible banner is clutter; a hidden paragraph is a mishandled case."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-2" }
+}

@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+    .k { font-family: Consolas, 'Courier New', monospace; font-size: 11px; background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 1px 5px; color: #242424; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 840px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Keyboard, screen reader, contrast</span>
+    <span style="font-size: 12px; color: #616161;">Fluent's own components arrive labelled. The three things here that Fluent does <em>not</em> give us are the drop zone, the editor, and the reading order — so those are specified rather than assumed. <strong>N6, WCAG 2.1 AA.</strong></span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; flex-grow: 1;">
+
+    <!-- ═══ LEFT: focus order overlay ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">Tab order — 9 stops, not 60</span>
+
+      <div style="box-sizing: border-box; background: #fafafa; padding: 8px; display: flex; gap: 8px; border: 1px solid #d1d1d1; height: 340px;">
+
+        <div style="width: 300px; flex: 0 0 300px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden;">
+          <div style="display: flex; align-items: center; gap: 6px; height: 38px; flex: 0 0 38px; padding: 0 10px; box-sizing: border-box; position: relative;">
+            <span style="font-size: 14px; font-weight: 600;">Email</span>
+            <div style="flex-grow: 1;"></div>
+            <div style="display: flex; align-items: center; gap: 4px; padding: 2px; box-sizing: border-box; border: 2px solid #0f6cbd; border-radius: 4px; position: relative;">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M3.5 5h13M6 10h8M8.5 15h3"/></svg>
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M4 6h12M4 10h8M4 14h5"/></svg>
+              <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">2</span></div>
+            </div>
+          </div>
+
+          <div style="padding: 0 10px 6px 10px; box-sizing: border-box; position: relative;">
+            <div style="display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 9px; box-sizing: border-box; background: #f5f5f5; border-radius: 4px; border: 2px solid transparent;">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.4"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M12.8 12.8 17 17"/></svg>
+              <span style="font-size: 13px; color: #707070;">Search</span>
+            </div>
+            <div style="position: absolute; left: 1px; top: -3px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">1</span></div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 6px; padding: 0 10px 6px 10px; box-sizing: border-box; position: relative;">
+            <div style="display: flex; align-items: center; height: 22px; padding: 0 9px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc; border: 1px solid #b4d6fa;"><span style="font-size: 11px; color: #115ea3; font-weight: 600;">Unread</span></div>
+            <div style="display: flex; align-items: center; height: 22px; padding: 0 9px; box-sizing: border-box; border-radius: 10000px; background: #f5f5f5;"><span style="font-size: 11px; color: #424242;">Attachments</span></div>
+            <div style="position: absolute; left: 1px; top: -5px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">3</span></div>
+          </div>
+
+          <!-- the list: ONE stop, arrows inside -->
+          <div style="margin: 0 8px; border: 2px solid #0f6cbd; border-radius: 4px; position: relative; flex-grow: 1; overflow: hidden;">
+            <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center; z-index: 2;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">4</span></div>
+
+            <div style="display: flex; gap: 8px; padding: 6px 8px; box-sizing: border-box; background: #ebf3fc; border-left: 3px solid #0f6cbd;">
+              <div style="width: 24px; height: 24px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">MJ</div>
+              <div style="display: flex; flex-direction: column; min-width: 0;">
+                <span style="font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger</span>
+                <span style="font-size: 11px; color: #616161;">6 messages · 2 unread</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; padding: 6px 8px 6px 11px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+              <div style="width: 24px; height: 24px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">AH</div>
+              <div style="display: flex; flex-direction: column; min-width: 0;">
+                <span style="font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Faktura 2026-4417</span>
+                <span style="font-size: 11px; color: #616161;">1 message · unread</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px; padding: 5px 8px; box-sizing: border-box; background: #fafafa; border-top: 1px solid #f0f0f0;">
+              <span style="font-size: 10px; color: #616161;">inside the list:</span>
+              <span class="k">↑ ↓</span>
+              <span style="font-size: 10px; color: #616161;">move ·</span>
+              <span class="k">Enter</span>
+              <span style="font-size: 10px; color: #616161;">open</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex-grow: 1; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 8px; height: 38px; flex: 0 0 38px; padding: 0 10px; box-sizing: border-box; position: relative;">
+            <span style="font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger</span>
+            <div style="flex-grow: 1;"></div>
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd; border: 2px solid #0f6cbd; outline: 2px solid #ffffff; outline-offset: -4px; position: relative;">
+              <span style="font-size: 12px; font-weight: 600; color: #ffffff;">Reply all</span>
+              <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">5</span></div>
+            </div>
+            <div style="display: flex; align-items: center; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; border: 1px solid #d1d1d1; position: relative;">
+              <span style="font-size: 12px;">Forward</span>
+              <div style="position: absolute; left: -7px; top: -8px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">6</span></div>
+            </div>
+          </div>
+
+          <div style="flex-grow: 1; border-top: 1px solid #f0f0f0; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px;">
+            <div style="border: 2px solid #0f6cbd; border-radius: 4px; padding: 6px 8px; box-sizing: border-box; position: relative;">
+              <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">7</span></div>
+              <span style="font-size: 12px; color: #242424;">the conversation — <span class="k">↑ ↓</span> between messages, <span class="k">Space</span> expand or collapse</span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 9px; box-sizing: border-box; background: #fff4ce; border: 2px solid #0f6cbd; border-radius: 4px; position: relative;">
+              <span style="font-size: 11px; color: #8a6300;">3 notices added by your organisation</span>
+              <div style="flex-grow: 1;"></div>
+              <span style="font-size: 11px; color: #8a6300;">View more</span>
+              <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">8</span></div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 9px; box-sizing: border-box; background: #f5f5f5; border: 2px solid #0f6cbd; border-radius: 4px; position: relative;">
+              <span style="font-size: 11px; color: #424242;">Trimmed content — 3 earlier messages</span>
+              <div style="flex-grow: 1;"></div>
+              <span style="font-size: 11px; color: #242424;">View more</span>
+              <div style="position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 10000px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; font-weight: 700; color: #ffffff;">9</span></div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 6px; padding: 6px 8px; box-sizing: border-box; background: #fafafa; border-radius: 4px;">
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="#616161" stroke-width="1.5"><path d="M13 7.5 8 12.5a2.1 2.1 0 0 0 3 3l5.5-5.5a4 4 0 0 0-5.7-5.7L5.2 9.8a6 6 0 0 0 8.5 8.5"/></svg>
+              <span style="font-size: 11px; color: #616161;">attachments are inside stop 7, reached with <span class="k">→</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px 12px; box-sizing: border-box; background: #ebf3fc; border: 1px solid #b4d6fa; border-radius: 4px;">
+        <span style="font-size: 11px; color: #242424; line-height: 17px;"><strong>Lists and message stacks are one tab stop each, with arrow keys inside.</strong> Tabbing through 50 rows to reach a button is technically accessible and practically unusable — and this is the single most common accessibility failure in a custom mail list. Focus is remembered when you leave and come back to a region.</span>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT: shortcuts, SR, contrast ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">Shortcuts</span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 14px;">
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">↑ ↓</span><span style="font-size: 11px; color: #424242;">move in a list</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Enter</span><span style="font-size: 11px; color: #424242;">open a thread</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Space</span><span style="font-size: 11px; color: #424242;">expand a message</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Esc</span><span style="font-size: 11px; color: #424242;">back out one level</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Ctrl+R</span><span style="font-size: 11px; color: #424242;">reply</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Ctrl+Shift+R</span><span style="font-size: 11px; color: #424242;">reply all</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Ctrl+Shift+F</span><span style="font-size: 11px; color: #424242;">forward</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Ctrl+Enter</span><span style="font-size: 11px; color: #424242;">send</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">Ctrl+U</span><span style="font-size: 11px; color: #424242;">toggle read</span></div>
+          <div style="display: flex; align-items: center; gap: 7px;"><span class="k">/</span><span style="font-size: 11px; color: #424242;">jump to search</span></div>
+        </div>
+        <span style="font-size: 11px; color: #8a6300; line-height: 16px; margin-top: 2px;"><strong>Check for collisions before shipping these.</strong> Dynamics and the browser both claim shortcuts, and the editor claims more. Any collision is resolved in the platform's favour — we are the guest here.</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">What a screen reader says</span>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="padding: 6px 8px; box-sizing: border-box; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 3px;">
+            <span style="font-size: 11px; color: #616161;">thread row →</span> <span style="font-size: 11px; color: #242424;">"Unread. Reklamation: utætte samlinger efter montage. 6 messages, 2 unread. Latest from Morten Bach Jensen, 10 September 10:33. Has attachments. 1 of 3."</span>
+          </div>
+          <div style="padding: 6px 8px; box-sizing: border-box; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 3px;">
+            <span style="font-size: 11px; color: #616161;">message →</span> <span style="font-size: 11px; color: #242424;">"Received from Kim Petersen, external sender, 10 September 07:55. To Care, copy Morten Bach Jensen and Anne Holm. Unread. Collapsed."</span>
+          </div>
+          <div style="padding: 6px 8px; box-sizing: border-box; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 3px;">
+            <span style="font-size: 11px; color: #616161;">fold →</span> <span style="font-size: 11px; color: #242424;">"Show trimmed content, 3 earlier messages quoted. Collapsed. Button."</span>
+          </div>
+          <div style="padding: 6px 8px; box-sizing: border-box; background: #fffbe6; border: 1px solid #f2d999; border-radius: 3px;">
+            <span style="font-size: 11px; color: #8a6300;">live region →</span> <span style="font-size: 11px; color: #3b3a39;">"Queued. Not sent yet." … then … "Sent."</span> <span style="font-size: 11px; color: #8a6300;">Announced, because the send ladder changes on its own and a sighted agent sees it while a screen-reader user would not.</span>
+          </div>
+        </div>
+        <span style="font-size: 11px; color: #424242; line-height: 16px; margin-top: 2px;">Every icon-only control carries a real name — no "button button". Direction, read state and external-sender are <strong>spoken</strong>, not only coloured.</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">Contrast — measured, not eyeballed</span>
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #ffffff; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #242424;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">body text on card</span><span style="font-size: 11px; font-weight: 600; color: #0e700e;">14.6 : 1 ✓</span></div>
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #ffffff; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #616161;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">metadata grey</span><span style="font-size: 11px; font-weight: 600; color: #0e700e;">5.9 : 1 ✓</span></div>
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #ffffff; border: 1px solid #e0e0e0; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #707070;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">placeholder grey</span><span style="font-size: 11px; font-weight: 600; color: #8a6300;">4.6 : 1 — text only, never a control label</span></div>
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #ebf3fc; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #115ea3;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">link blue on selected row</span><span style="font-size: 11px; font-weight: 600; color: #0e700e;">6.3 : 1 ✓</span></div>
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #fff4ce; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #8a6300;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">notice text on yellow</span><span style="font-size: 11px; font-weight: 600; color: #0e700e;">5.2 : 1 ✓</span></div>
+          <div style="display: flex; align-items: center; gap: 8px;"><div style="width: 40px; height: 18px; background: #0f6cbd; display: flex; align-items: center; justify-content: center;"><span style="font-size: 10px; color: #ffffff;">Aa</span></div><span style="font-size: 11px; color: #424242; flex-grow: 1;">Send button</span><span style="font-size: 11px; font-weight: 600; color: #0e700e;">4.8 : 1 ✓</span></div>
+        </div>
+        <span style="font-size: 11px; color: #424242; line-height: 16px; margin-top: 2px;"><strong>Never colour alone.</strong> Unread is a dot <em>and</em> bold weight <em>and</em> an edge bar. Direction is a coloured arrow <em>and</em> its shape. Both survive a greyscale print and both survive colour blindness.</span>
+        <span style="font-size: 11px; color: #a4262c; line-height: 16px;"><strong>Audit, don't assume.</strong> These are computed pairs; the build must re-run them with Accessibility Insights on the real rendered control, in both themes. A sender's own HTML is out of scope — we cannot fix their contrast, but we must not make it worse.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

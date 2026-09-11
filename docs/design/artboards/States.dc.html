@@ -1,0 +1,222 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 720px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Empty, loading, broken, and busy</span>
+    <span style="font-size: 12px; color: #616161;">The four states that get skipped in design and then shipped as a blank rectangle or "Unknown error". <strong>N4, N5.</strong></span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; flex-grow: 1;">
+
+    <!-- 1 loading -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; height: 19px; padding: 0 7px; box-sizing: border-box; border-radius: 4px; background: #f0f0f0;"><span style="font-size: 10px; font-weight: 700; color: #424242;">1</span></div>
+        <span style="font-size: 13px; font-weight: 600;">First load</span>
+      </div>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; height: 300px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; flex: 0 0 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+        </div>
+        <div style="padding: 0 12px 8px 12px; box-sizing: border-box;">
+          <div style="height: 32px; background: #f5f5f5; border-radius: 4px;"></div>
+        </div>
+        <div style="padding: 0 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 10000px; background: #f0f0f0; flex: 0 0 32px;"></div>
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+              <div style="height: 9px; width: 45%; background: #f0f0f0; border-radius: 3px;"></div>
+              <div style="height: 11px; width: 85%; background: #ebebeb; border-radius: 3px;"></div>
+              <div style="height: 9px; width: 60%; background: #f0f0f0; border-radius: 3px;"></div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 10000px; background: #f0f0f0; flex: 0 0 32px;"></div>
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+              <div style="height: 9px; width: 40%; background: #f0f0f0; border-radius: 3px;"></div>
+              <div style="height: 11px; width: 70%; background: #ebebeb; border-radius: 3px;"></div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 10000px; background: #f0f0f0; flex: 0 0 32px;"></div>
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1;">
+              <div style="height: 9px; width: 38%; background: #f0f0f0; border-radius: 3px;"></div>
+              <div style="height: 11px; width: 78%; background: #ebebeb; border-radius: 3px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 9px 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <span style="font-size: 11px; color: #424242; line-height: 16px;">Skeleton rows in the shape of the real thing, not a spinner — the layout does not jump when data lands. <strong>Three rows, always</strong>, because guessing the count and being wrong is worse than a fixed placeholder.</span>
+      </div>
+    </div>
+
+    <!-- 2 empty -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; height: 19px; padding: 0 7px; box-sizing: border-box; border-radius: 4px; background: #f0f0f0;"><span style="font-size: 10px; font-weight: 700; color: #424242;">2</span></div>
+        <span style="font-size: 13px; font-weight: 600;">No email on this case</span>
+      </div>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; height: 300px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; flex: 0 0 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+          <div style="flex-grow: 1;"></div>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#424242" stroke-width="1.4"><path d="M10 4.5v11M4.5 10h11"/></svg>
+        </div>
+        <div style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 0 20px; box-sizing: border-box;">
+          <svg width="38" height="38" viewBox="0 0 20 20" fill="none" stroke="#c8c6c4" stroke-width="1.1"><path d="M2.5 5.5h15v9h-15z"/><path d="m2.5 6 7.5 5 7.5-5"/></svg>
+          <span style="font-size: 14px; font-weight: 600; color: #242424; text-align: center;">No email on this case yet</span>
+          <span style="font-size: 12px; color: #616161; text-align: center; line-height: 17px;">When the customer writes in, or you send the first message, it appears here.</span>
+          <div style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; box-sizing: border-box; border-radius: 4px; background: #0f6cbd; margin-top: 4px;">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="#ffffff" stroke-width="1.6"><path d="M10 4v12M4 10h12"/></svg>
+            <span style="font-size: 14px; font-weight: 600; color: #ffffff;">Write the first email</span>
+          </div>
+          <span style="font-size: 11px; color: #707070; margin-top: 2px;">to Morten Bach Jensen</span>
+        </div>
+      </div>
+
+      <div style="padding: 9px 10px; box-sizing: border-box; background: #dff6dd; border-radius: 4px;">
+        <span style="font-size: 11px; color: #0e700e; line-height: 16px;">An empty state that offers the obvious next action, pre-addressed to the case contact. Note it says <strong>"yet"</strong> — the difference between "nothing here" and "something is wrong" matters, and the button is the tell.</span>
+      </div>
+    </div>
+
+    <!-- 3 load error -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; height: 19px; padding: 0 7px; box-sizing: border-box; border-radius: 4px; background: #fde7e9;"><span style="font-size: 10px; font-weight: 700; color: #a4262c;">3</span></div>
+        <span style="font-size: 13px; font-weight: 600;">Something failed</span>
+      </div>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; height: 300px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px; height: 44px; flex: 0 0 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+        </div>
+
+        <!-- whole-list failure -->
+        <div style="margin: 0 12px 10px 12px; padding: 10px; box-sizing: border-box; background: #fdf6f6; border: 1px solid #eec7c8; border-radius: 4px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 7px;">
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#a4262c" stroke-width="1.5" style="flex: 0 0 15px;"><circle cx="10" cy="10" r="7.2"/><path d="M10 6.3v4.6M10 13.2v.4"/></svg>
+            <span style="font-size: 12px; font-weight: 600; color: #a4262c;">Couldn't load this case's email</span>
+          </div>
+          <span style="font-size: 11px; color: #3b3a39; line-height: 16px;">The connection to Dynamics failed. Your drafts are safe.</span>
+          <div style="display: flex; align-items: center; gap: 7px;">
+            <div style="display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; box-sizing: border-box; border-radius: 4px; background: #ffffff; border: 1px solid #d1d1d1;">
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="#242424" stroke-width="1.6"><path d="M16 10a6 6 0 1 1-2.2-4.6"/><path d="M16.2 3.6v3h-3"/></svg>
+              <span style="font-size: 12px;">Try again</span>
+            </div>
+            <span style="font-size: 11px; color: #115ea3;">Details</span>
+          </div>
+        </div>
+
+        <!-- per-message failure -->
+        <div style="padding: 0 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 11px; color: #616161;">…and when only one message fails:</span>
+          <div style="display: flex; gap: 9px; padding: 8px; box-sizing: border-box; border: 1px solid #e0e0e0; border-radius: 4px;">
+            <div style="width: 26px; height: 26px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 26px;">MJ</div>
+            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+              <span style="font-size: 11px; color: #616161;">Received on: 09-09-2026 08:41</span>
+              <span style="font-size: 12px; color: #242424;">Email from: Morten Bach Jensen</span>
+              <div style="display: flex; align-items: center; gap: 6px; padding: 5px 8px; box-sizing: border-box; background: #fdf6f6; border-radius: 3px;">
+                <span style="font-size: 11px; color: #a4262c;">Message text couldn't be loaded.</span>
+                <span style="font-size: 11px; color: #115ea3; font-weight: 600;">Retry</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 9px 10px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <span style="font-size: 11px; color: #424242; line-height: 16px;"><strong>Failures are scoped.</strong> One message that will not load must not blank the thread. And "Your drafts are safe" is there on purpose — it is the agent's first question.</span>
+      </div>
+    </div>
+
+    <!-- 4 busy case -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; height: 19px; padding: 0 7px; box-sizing: border-box; border-radius: 4px; background: #f0f0f0;"><span style="font-size: 10px; font-weight: 700; color: #424242;">4</span></div>
+        <span style="font-size: 13px; font-weight: 600;">A 50-message case</span>
+      </div>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; height: 300px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 44px; flex: 0 0 44px; padding: 0 12px; box-sizing: border-box;">
+          <span style="font-size: 16px; font-weight: 600;">Email</span>
+          <div style="display: flex; align-items: center; height: 20px; padding: 0 8px; box-sizing: border-box; border-radius: 10000px; background: #ebf3fc;"><span style="font-size: 11px; font-weight: 600; color: #115ea3;">11 unread</span></div>
+          <div style="flex-grow: 1;"></div>
+          <span style="font-size: 11px; color: #616161;">50 messages</span>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 12px; box-sizing: border-box; height: 26px;">
+          <span style="font-size: 13px;">Unread</span>
+          <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+          <span style="font-size: 11px; color: #616161;">4</span>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 5px 12px 5px 9px; box-sizing: border-box; border-left: 3px solid #0f6cbd; background: #ebf3fc;">
+          <div style="width: 24px; height: 24px; border-radius: 10000px; background: #e8ddf5; color: #5c2e91; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">MJ</div>
+          <div style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Reklamation: utætte samlinger</span><span style="font-size: 11px; color: #616161;">18 messages</span></div>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 5px 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+          <div style="width: 24px; height: 24px; border-radius: 10000px; background: #fde7e9; color: #a4262c; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">AH</div>
+          <div style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Faktura 2026-4417</span><span style="font-size: 11px; color: #616161;">4 messages</span></div>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 5px 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0;">
+          <div style="width: 24px; height: 24px; border-radius: 10000px; background: #fff4ce; color: #8a6300; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">KP</div>
+          <div style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Trykprøve etape 3 — rapport</span><span style="font-size: 11px; color: #616161;">6 messages</span></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 0 12px; box-sizing: border-box; height: 26px; border-top: 1px solid #f0f0f0;">
+          <span style="font-size: 13px;">Earlier</span>
+          <div style="flex-grow: 1; height: 1px; background: #e0e0e0;"></div>
+          <span style="font-size: 11px; color: #616161;">9</span>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 5px 12px; box-sizing: border-box;">
+          <div style="width: 24px; height: 24px; border-radius: 10000px; background: #f0f0f0; color: #616161; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 24px;">Ca</div>
+          <div style="display: flex; flex-direction: column; min-width: 0;"><span style="font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Tilbud etape 4</span><span style="font-size: 11px; color: #616161;">7 messages</span></div>
+        </div>
+        <div style="display: flex; gap: 8px; padding: 5px 12px; box-sizing: border-box; border-top: 1px solid #f0f0f0; opacity: 0.5;">
+          <div style="width: 24px; height: 24px; border-radius: 10000px; background: #f0f0f0; flex: 0 0 24px;"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;"><div style="height: 9px; width: 70%; background: #f0f0f0; border-radius: 3px;"></div><div style="height: 8px; width: 40%; background: #f5f5f5; border-radius: 3px;"></div></div>
+        </div>
+
+        <div style="flex-grow: 1;"></div>
+        <div style="display: flex; align-items: center; justify-content: center; height: 28px; flex: 0 0 28px; border-top: 1px solid #f0f0f0; background: #fafafa;">
+          <span style="font-size: 11px; color: #707070;">13 threads · loading as you scroll</span>
+        </div>
+      </div>
+
+      <div style="padding: 9px 10px; box-sizing: border-box; background: #fff4ce; border-radius: 4px;">
+        <span style="font-size: 11px; color: #8a6300; line-height: 16px;">Threading is what makes this survivable: 50 messages become 13 rows. Grouping by unread keeps the 4 that need attention at the top. <strong>Rows render as you scroll</strong> — and whether that is needed at all gets decided by measuring against a real 50-message case, not in advance.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 14px;">
+    <div style="flex-grow: 1; padding: 10px 12px; box-sizing: border-box; background: #ebf3fc; border: 1px solid #b4d6fa; border-radius: 6px;">
+      <span style="font-size: 11px; color: #242424; line-height: 16px;"><strong>A fifth state has no screen, on purpose.</strong> If an agent lacks permission to read a message, it is simply <em>not there</em> — absent from the list, absent from the counts, no greyed row, no padlock, no error. A placeholder that hints at content an agent may not see is itself a disclosure. Dataverse does the trimming; we must not undo it by drawing the gap.</span>
+    </div>
+    <div style="flex-grow: 1; padding: 10px 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+      <span style="font-size: 11px; color: #424242; line-height: 16px;"><strong>Never the word "error" alone, and never a raw platform message.</strong> Every failure here says what failed, whether anything was lost, and what to do next. "Unknown error" is what this component does today in its spike form — that is the bar to clear, and it is a low one.</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

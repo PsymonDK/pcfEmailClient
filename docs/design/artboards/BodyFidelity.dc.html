@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; }
+    a { color: #115ea3; }
+    a:hover { color: #0f548c; }
+  </style>
+</helmet>
+
+<div style="width: 1600px; height: 860px; box-sizing: border-box; background: #ffffff; font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif; color: #242424; font-size: 14px; line-height: 20px; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+  <div style="display: flex; flex-direction: column; gap: 2px;">
+    <span style="font-size: 20px; font-weight: 600;">Body fidelity — the sender's HTML, rendered as they meant it</span>
+    <span style="font-size: 12px; color: #616161;">Message A4 carries a 4-column costing table that Outlook serialises around 1400px wide, and A3 carries an inline site photo. <strong>R3.</strong></span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; flex-grow: 1;">
+
+    <!-- ═══ LEFT: the rendered message ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+      <span style="font-size: 14px; font-weight: 600;">In the reading pane, at the real 1148px pane width</span>
+
+      <div style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden;">
+        <div style="display: flex; gap: 10px; padding: 8px 12px; box-sizing: border-box;">
+          <div style="width: 32px; height: 32px; border-radius: 10000px; background: #f0f0f0; color: #616161; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: 0 0 32px;">Ca</div>
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+            <span style="font-size: 12px; color: #616161;">Sent on: 09-09-2026 15:20</span>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 14px; color: #242424;">Email from:</span>
+              <span style="font-size: 14px; color: #115ea3; text-decoration: underline;">Care</span>
+              <div style="display: flex; align-items: center; height: 18px; padding: 0 6px; box-sizing: border-box; border-radius: 4px; background: #f0f0f0;"><span style="font-size: 11px; color: #424242;">Sent</span></div>
+            </div>
+
+            <div style="margin-top: 4px; font-size: 14px; line-height: 20px;">Hermed vores opgørelse for udbedring af de tre samlinger, jf. <a href="#">vores tilbud af 2. september</a>.</div>
+
+            <!-- the body container: contained, with its own horizontal scroll -->
+            <div style="margin-top: 8px; border: 1px dashed #b4d6fa; border-radius: 4px; padding: 6px; box-sizing: border-box; position: relative;">
+              <div style="position: absolute; right: 6px; top: -9px; background: #ffffff; padding: 0 4px;"><span style="font-size: 9px; color: #115ea3; font-weight: 600;">sender HTML — contained</span></div>
+
+              <div style="overflow: hidden;">
+                <!-- table wider than the pane: clipped here, scrolls in the real thing -->
+                <div style="width: 1060px;">
+                  <div style="display: grid; grid-template-columns: 560px 110px 130px 130px 130px; font-size: 12px; border: 1px solid #d1d1d1;">
+                    <div style="padding: 5px 8px; box-sizing: border-box; background: #f5f5f5; font-weight: 600; border-right: 1px solid #d1d1d1;">Position</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; background: #f5f5f5; font-weight: 600; border-right: 1px solid #d1d1d1; text-align: right;">Mængde</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; background: #f5f5f5; font-weight: 600; border-right: 1px solid #d1d1d1; text-align: right;">Enhedspris</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; background: #f5f5f5; font-weight: 600; border-right: 1px solid #d1d1d1; text-align: right;">Total</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; background: #f5f5f5; font-weight: 600; text-align: right;">Note</div>
+
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1;">Udskiftning af presfitting, stigestreng 4</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">3 stk</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">485,00</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">1.455,00</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; text-align: right; color: #707070;">—</div>
+
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1;">Udskiftning af presfitting, stigestreng 7</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">2 stk</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">485,00</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">970,00</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; text-align: right; color: #707070;">utæt</div>
+
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1;">Montage og trykprøvning</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">6,5 timer</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">625,00</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; border-right: 1px solid #d1d1d1; text-align: right;">4.062,50</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #e0e0e0; text-align: right; color: #707070;">—</div>
+
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #d1d1d1; border-right: 1px solid #d1d1d1; font-weight: 600;">I alt ekskl. moms</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #d1d1d1; border-right: 1px solid #d1d1d1;"></div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #d1d1d1; border-right: 1px solid #d1d1d1;"></div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #d1d1d1; border-right: 1px solid #d1d1d1; text-align: right; font-weight: 600;">9.127,50</div>
+                    <div style="padding: 5px 8px; box-sizing: border-box; border-top: 1px solid #d1d1d1;"></div>
+                  </div>
+                </div>
+                <!-- the horizontal scrollbar, inside the message only -->
+                <div style="height: 8px; margin-top: 4px; background: #f0f0f0; border-radius: 10000px; position: relative;">
+                  <div style="position: absolute; left: 0; top: 0; width: 68%; height: 8px; background: #c8c6c4; border-radius: 10000px;"></div>
+                </div>
+              </div>
+
+              <!-- inline image -->
+              <div style="margin-top: 10px; width: 320px; height: 112px; border-radius: 3px; background: #eef3f7; border: 1px solid #d1d1d1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;">
+                <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="#8a8886" stroke-width="1.2"><path d="M2.5 4h15v12h-15z"/><circle cx="7" cy="8" r="1.6"/><path d="m2.5 14 4.5-4 3.5 3 3-2.5 4 3.5"/></svg>
+                <span style="font-size: 10px; color: #707070;">inline photo · cid:image001@01DC…</span>
+                <span style="font-size: 10px; color: #707070;">1200 × 800, displayed at 320px</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <div style="flex-grow: 1; padding: 10px; box-sizing: border-box; background: #dff6dd; border-radius: 4px;">
+          <span style="font-size: 11px; color: #0e700e;"><strong>The table scrolls inside the message.</strong> The app layout never moves. That is the whole rule: a sender's HTML may be any width, and the failure everyone ships is letting it push the page sideways.</span>
+        </div>
+        <div style="flex-grow: 1; padding: 10px; box-sizing: border-box; background: #ebf3fc; border-radius: 4px;">
+          <span style="font-size: 11px; color: #115ea3;"><strong>The inline photo renders in the body</strong> and does <em>not</em> also appear as a downloadable chip. It is the same stored file as an attachment row — listing it twice is a real bug the fixture is built to catch.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT: the rules ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fdf6f6; border: 1px solid #eec7c8; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600; color: #a4262c;">Before it is rendered, it is sanitised</span>
+        <span style="font-size: 12px; color: #424242; line-height: 18px;">These bodies were written by people outside the organisation and land in a page holding the agent's own Dynamics session. Rendering them raw is a cross-site-scripting hole with the agent's permissions behind it.</span>
+        <span style="font-size: 12px; color: #424242; line-height: 18px;">So every body passes through an allow-list first. That is a build requirement, not a nicety — and it is why the dashed container above is drawn at all.</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">What survives sanitising, and why</span>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #0e700e; font-weight: 700; width: 52px; flex: 0 0 52px;">KEEP</span><span style="font-size: 11px; color: #424242;">Tables and all their parts — half of B2B mail is a table.</span></div>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #0e700e; font-weight: 700; width: 52px; flex: 0 0 52px;">KEEP</span><span style="font-size: 11px; color: #424242;">Images, and the <strong>id</strong> and <strong>class</strong> attributes. Those attributes look like clutter but the quote and notice detection matches on <strong>divRplyFwdMsg</strong>, <strong>gmail_quote</strong> and the Defender markers — strip them and R4, R12 and R21 all stop working at once, silently.</span></div>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #0e700e; font-weight: 700; width: 52px; flex: 0 0 52px;">KEEP</span><span style="font-size: 11px; color: #424242;">The <strong>style attribute</strong>, property-filtered. Senders colour and align things and it carries meaning.</span></div>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #a4262c; font-weight: 700; width: 52px; flex: 0 0 52px;">DROP</span><span style="font-size: 11px; color: #424242;">Scripts, event handlers, forms, inputs, frames, embeds — and <strong>the &lt;style&gt; tag</strong>. A sender's stylesheet is unscoped and would restyle the Dynamics chrome around us.</span></div>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #a4262c; font-weight: 700; width: 52px; flex: 0 0 52px;">DROP</span><span style="font-size: 11px; color: #424242;">Any URL that is not http(s), mailto, tel, cid or a raster data image. SVG data URIs carry script.</span></div>
+        <div style="display: flex; gap: 8px;"><span style="font-size: 11px; color: #115ea3; font-weight: 700; width: 52px; flex: 0 0 52px;">ADD</span><span style="font-size: 11px; color: #424242;">Links get <strong>rel="noopener"</strong> and open in a new tab — otherwise a link in hostile mail gets a handle on the session window.</span></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #fafafa; border: 1px solid #e0e0e0; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600;">Containment — separate from sanitising, also required</span>
+        <span style="font-size: 11px; color: #424242; line-height: 17px;">Sanitising stops script. It does nothing about a 1400px table, a 96px heading or a black-on-black colour choice. So the body sits in its own container with a font and colour reset, <strong>max-width 100%</strong> and <strong>overflow-x: auto</strong> on its descendants.</span>
+        <span style="font-size: 11px; color: #424242; line-height: 17px;">Two failures to test for explicitly: a table wider than the pane (above), and a sender who sets white text — which must not become invisible against our background.</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; box-sizing: border-box; background: #ebf3fc; border: 1px solid #b4d6fa; border-radius: 6px;">
+        <span style="font-size: 13px; font-weight: 600; color: #115ea3;">Inline images need resolving, not just allowing</span>
+        <span style="font-size: 11px; color: #242424; line-height: 17px;">A <strong>cid:</strong> reference is not a URL a browser can fetch. Allowing the scheme only stops the image being thrown away; it still has to be matched to the stored attachment it points at and swapped for something renderable.</span>
+        <span style="font-size: 11px; color: #242424; line-height: 17px;">An image that cannot be resolved shows a labelled placeholder — never a broken-image icon, which reads as "our client is broken" rather than "that attachment is missing".</span>
+      </div>
+
+      <div style="padding: 10px 12px; box-sizing: border-box; background: #fff4ce; border-radius: 4px;">
+        <span style="font-size: 11px; color: #8a6300;"><strong>Bodies are fetched one at a time, on expand.</strong> Email bodies now live in blob storage rather than the database, so pulling them for a whole thread up front is what makes a 50-message case slow. Never in the list query.</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

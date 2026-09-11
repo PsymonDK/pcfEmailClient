@@ -53,8 +53,20 @@ export const LIST_COLUMNS = [
   '_regardingobjectid_value',
 ] as const;
 
+/**
+ * Recipient columns.
+ *
+ * **`_activityid_value` must be here.** It is the key `groupParties` buckets on, and OData will
+ * happily *filter* on a column it does not *return* — so omitting it produced a query that looked
+ * correct, returned the right rows, and grouped none of them. Every message rendered with no
+ * recipients at all. Found in the published app on 2026-09-11.
+ *
+ * The unit test missed it because the hand-written fixture rows included the field: the fixture
+ * was more generous than the real query. There is now a test asserting the SELECT contains it.
+ */
 const PARTY_COLUMNS = [
   'activitypartyid',
+  '_activityid_value',
   'participationtypemask',
   'addressused',
   '_partyid_value',

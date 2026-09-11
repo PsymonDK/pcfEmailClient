@@ -1,38 +1,33 @@
 import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { resolveCaseId } from './host/caseId';
-import { DeployCheck } from './host/DeployCheck';
+import { EmailClientRoot, type RestorableState } from './ui/EmailClientRoot';
+import type { WebApiLike } from './data/emailQueries';
 
 /**
  * Case Email Client — PCF entry point.
  *
- * Lifecycle only. No data access and no rendering logic lives here; see
- * docs/design/02-component-inventory.md for what gets built above it.
+ * Lifecycle only. Data loading and rendering live in ui/EmailClientRoot; the pure logic is in
+ * domain/ and is the part with real test coverage.
  *
- * NOTE: PCF allows exactly ONE export from the control source. Helpers live in host/ and domain/,
- * not beside the class — `pcf-scripts build` fails with pcf-1023 otherwise.
+ * NOTE: PCF allows exactly ONE export from the control source. Helpers live in host/, data/ and
+ * domain/, not beside the class — `pcf-scripts build` fails with pcf-1023 otherwise.
  *
- * Two measured facts shape this file, both from 2026-09-10 (S1 / S11):
- *   - `allocatedHeight` is -1 on BOTH chosen placements, so height is claimed from the viewport
- *     rather than inherited. One code path, no per-placement branch.
+ * Measured facts this file exists to respect (S1 / S11, 2026-09-10; deploy check 2026-09-11):
+ *   - `allocatedHeight` is -1 on BOTH chosen placements, and width behaves the same way. Claim
+ *     both dimensions, inherit neither. The rules live in domain/layout.ts.
  *   - CSW destroys and re-creates the control when the agent switches between concurrent case
- *     sessions. `setControlState` survives that, and is the mechanism behind R16/N1.
+ *     sessions. `setControlState` survives that, which is the mechanism behind R16/N1 —
+ *     verified in the published app with `init #2` / `state RESTORED`.
  */
 
-/** What survives a session-switch teardown. Deliberately small — bodies are re-fetchable. */
-interface PreservedState {
+interface PreservedState extends RestorableState {
   /**
    * The case this state belongs to. N1 requires no cross-session bleed, and the platform can hand
    * back state from another session — so restored state whose caseId does not match the current
-   * record is DISCARDED rather than trusted. Without this check, case Y shows case X's draft.
+   * record is DISCARDED rather than trusted. Without this check, case Y shows case X's state.
    */
   caseId?: string;
-  initCount?: number;
-  scrollTop?: number;
-  expandedThreadKey?: string;
-  expandedMessageIds?: string[];
-  composeTargetId?: string;
-  draftHtml?: string;
 }
 
 export class CaseEmailClient
@@ -40,9 +35,20 @@ export class CaseEmailClient
 {
   private persistState?: (state: PreservedState) => void;
   private state: PreservedState = {};
-  private stateRestored = false;
-  private initCount = 1;
-  private initAt = '';
+  private caseId?: string;
+
+  /**
+   * Created ONCE, in `init`, and handed to React unchanged on every render.
+   *
+   * Building this inline in `updateView` gives the component a new function identity each time,
+   * and because the callback calls `setControlState` — which makes the platform call `updateView`
+   * again — that closes an infinite loop that hangs the app. Found in the published app on
+   * 2026-09-11. The component also guards its own side with a ref; this is the other half.
+   */
+  private readonly handleStateChange = (next: RestorableState): void => {
+    this.state = { ...next, caseId: this.caseId };
+    this.persistState?.(this.state);
+  };
 
   public init(
     context: ComponentFramework.Context<IInputs>,
@@ -50,33 +56,29 @@ export class CaseEmailClient
     state?: ComponentFramework.Dictionary,
   ): void {
     this.persistState = (next) => context.mode.setControlState(next);
-    this.initAt = new Date().toISOString();
 
     // Width changes arrive as "layout" in updatedProperties; height is claimed, not given.
     context.mode.trackContainerResize(true);
 
-    const accepted = acceptRestoredState(context, state);
-    this.stateRestored = accepted !== undefined;
-    this.state = accepted ?? {};
-    this.initCount = (this.state.initCount ?? 0) + 1;
-    this.state.initCount = this.initCount;
-    this.state.caseId = resolveCaseId(context).id;
-    this.persistState(this.state);
+    this.state = acceptRestoredState(context, state) ?? {};
   }
 
   public updateView(
     context: ComponentFramework.Context<IInputs>,
   ): React.ReactElement {
-    return React.createElement(DeployCheck, {
-      context,
-      initCount: this.initCount,
-      initAt: this.initAt,
-      stateRestored: this.stateRestored,
-      restoredProbe: this.state.draftHtml,
-      onProbeChange: (value: string) => {
-        this.state.draftHtml = value;
-        this.persistState?.(this.state);
-      },
+    const { id, source } = resolveCaseId(context);
+    this.caseId = id;
+
+    return React.createElement(EmailClientRoot, {
+      caseId: id,
+      caseIdSource: source,
+      // `context.webAPI` rather than raw fetch, so Dataverse security trimming applies (N4).
+      webApi: context.webAPI as unknown as WebApiLike,
+      allocatedHeight: context.mode.allocatedHeight,
+      allocatedWidth: context.mode.allocatedWidth,
+      restored: this.state,
+      // Stable identity — see handleStateChange. Never inline a closure here.
+      onStateChange: this.handleStateChange,
     });
   }
 
@@ -93,8 +95,6 @@ export class CaseEmailClient
 /**
  * Guards N1: returns restored state only when it belongs to the case now on screen, and
  * `undefined` when there was nothing to restore or it belonged to another case.
- *
- * Not exported — see the one-export rule above.
  */
 function acceptRestoredState(
   context: ComponentFramework.Context<IInputs>,

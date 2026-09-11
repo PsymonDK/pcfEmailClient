@@ -74,6 +74,16 @@ describe('the other query builders', () => {
     expect(q).toContain('participationtypemask');
   });
 
+  it('SELECTS the grouping key, not just filters on it', () => {
+    // The bug this pins: OData will filter on a column it does not return. Without
+    // `_activityid_value` in the $select, the query fetched exactly the right rows and
+    // groupParties could key none of them — so every message rendered with no recipients.
+    // Found in the published app on 2026-09-11, not by this suite, because the hand-written
+    // fixtures below include the field while the real query did not.
+    const select = buildPartiesQuery([MSG]).split('&')[0];
+    expect(select).toContain('_activityid_value');
+  });
+
   it('NEVER selects the attachment body in the metadata query', () => {
     // Selecting `body` here would download every attachment on the case to render a filename.
     const q = buildAttachmentsQuery(MSG);

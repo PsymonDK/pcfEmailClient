@@ -20,15 +20,37 @@ const FROM_LABELS = [
   'lähettäjä', 'från', 'avsender', 'nadawca', 'origem', 'mittente',
 ];
 
-const ORIGINAL_MESSAGE_MARKERS = [
-  '-----original message-----',
-  '-----oprindelig meddelelse-----',
-  '-----ursprungliche nachricht-----',
-  '-----message d\'origine-----',
-  '-----mensaje original-----',
-  '-----originalmeddelande-----',
-  '-----alkuperäinen viesti-----',
-];
+/**
+ * The reply/forward container ids and classes, in confidence order.
+ *
+ * **`replyfwdmessage` is Dynamics' OWN marker**, and it was missing until real mail was read in the
+ * published app on 2026-09-11. That was the worst possible gap: this client's most common input is
+ * mail that Dynamics itself sent, so the one marker we lacked was the one we would meet most.
+ * Outlook uses `divRplyFwdMsg`; Dynamics uses `replyfwdmessage`, lower-case and differently named.
+ */
+const REPLY_CONTAINERS = ['divRplyFwdMsg', 'replyfwdmessage'];
+
+/**
+ * The plain-text delimiter, as a pattern rather than a list of literals.
+ *
+ * Real mail measured 2026-09-11 uses `------------------- Original Message -------------------` —
+ * nineteen dashes, spaces around the words, title case. The previous literal list required exactly
+ * five dashes and no spaces, so it matched none of it. Dash count and spacing are cosmetic and
+ * vary by client, so they must not be part of the match.
+ */
+const ORIGINAL_MESSAGE_RE = new RegExp(
+  '-{3,}\\s*(?:' + [
+    'original message',
+    'oprindelig meddelelse',
+    'ursprungliche nachricht',
+    "message d'origine",
+    'mensaje original',
+    'originalmeddelande',
+    'alkuperäinen viesti',
+    'oorspronkelijk bericht',
+  ].join('|') + ')\\s*-{3,}',
+  'i',
+);
 
 /**
  * Splits a message body into new text and quoted history.
@@ -37,22 +59,34 @@ const ORIGINAL_MESSAGE_MARKERS = [
 export function splitQuotedHistory(html: string | null | undefined): SplitBody {
   if (!html) return { newHtml: '', quotedHtml: '', matchedBy: 'none' };
 
-  // Rule 1: Outlook's reply/forward container. Highest confidence.
-  const rply = findByIdOrClass(html, 'divRplyFwdMsg');
-  if (rply !== null) return { newHtml: html.slice(0, rply), quotedHtml: html.slice(rply), matchedBy: 'divRplyFwdMsg' };
+  // Rule 1: a reply/forward CONTAINER — Outlook's or Dynamics' own. Highest confidence, because
+  // cutting at the container start puts the whole quoted block inside the fold, delimiter and all.
+  for (const token of REPLY_CONTAINERS) {
+    const at = findByIdOrClass(html, token);
+    if (at !== null) {
+      return { newHtml: html.slice(0, at), quotedHtml: html.slice(at), matchedBy: 'divRplyFwdMsg' };
+    }
+  }
 
   // Rule 2: Gmail.
   const gmail = html.search(/<div[^>]*class="[^"]*gmail_quote/i);
   if (gmail >= 0) return { newHtml: html.slice(0, gmail), quotedHtml: html.slice(gmail), matchedBy: 'gmail_quote' };
 
-  // Rule 3: plain-text original-message delimiter (localised).
-  const lower = html.toLowerCase();
-  for (const marker of ORIGINAL_MESSAGE_MARKERS) {
-    const at = lower.indexOf(marker);
-    if (at >= 0) return { newHtml: html.slice(0, at), quotedHtml: html.slice(at), matchedBy: 'original-message' };
+  // Rule 3: the plain-text delimiter, if no container wrapped it.
+  const delimiter = ORIGINAL_MESSAGE_RE.exec(html);
+  if (delimiter) {
+    return {
+      newHtml: html.slice(0, delimiter.index),
+      quotedHtml: html.slice(delimiter.index),
+      matchedBy: 'original-message',
+    };
   }
 
-  // Rule 4: an <hr> immediately followed by a localised From: header block.
+  // Rule 4: a localised From: header block, optionally preceded by an <hr>.
+  //
+  // This MUST stay below rule 3. Measured 2026-09-11: in real Dynamics mail the bolded `From:`
+  // sits ~60 bytes AFTER the delimiter, so matching it first cut the quote in the wrong place and
+  // left the "--- Original Message ---" line stranded in the new text, visible above the fold.
   const headerBlock = findHeaderBlock(html);
   if (headerBlock >= 0) {
     return { newHtml: html.slice(0, headerBlock), quotedHtml: html.slice(headerBlock), matchedBy: 'header-block' };

@@ -219,3 +219,65 @@ describe('quoteDepth', () => {
     expect(quoteDepth('')).toBe(0);
   });
 });
+
+describe('real Dynamics mail — found in the published app, 2026-09-11', () => {
+  // Structurally faithful to the bodies actually stored in the demo environment, anonymised.
+  // Every detail below is what broke the original rules:
+  //   - the container id is `replyfwdmessage`, Dynamics' OWN marker, NOT Outlook's divRplyFwdMsg
+  //   - the delimiter has NINETEEN dashes and spaces: "---…--- Original Message ---…---"
+  //   - the bolded `From:` sits ~60 bytes AFTER the delimiter
+  const DYNAMICS_REPLY =
+    '<div data-wrapper="true" dir="ltr" style="font-family:\'Segoe UI\'; font-size:9pt">' +
+    '<p style="margin:0">Venlig hilsen</p><p style="margin:0"><span>Lene</span></p>' +
+    '<p style="margin:0">Customer Care</p></div>' +
+    '<div dir="ltr" id="replyfwdmessage"><font face="Tahoma, Verdana, Arial" size="2">' +
+    '------------------- Original Message -------------------<br>' +
+    '<b>From:</b> Morten Bach Jensen &lt;mbj@jensenvvs.example.invalid&gt;; <br>' +
+    '<b>Received:</b> Tue Jan 20 2026 15:42:04 GMT+0100<br>' +
+    '<b>To:</b> Care Demo &lt;care@example.invalid&gt;;<br>' +
+    '<b>Subject:</b> Forespørgsel på ordrestatus</font></div>';
+
+  it('cuts at the Dynamics container, so the delimiter lands INSIDE the fold', () => {
+    const r = splitQuotedHistory(DYNAMICS_REPLY);
+    expect(r.matchedBy).toBe('divRplyFwdMsg');
+    // The bug this fixes: the delimiter line was rendering as new text, above the fold.
+    expect(r.newHtml).not.toContain('Original Message');
+    expect(r.quotedHtml).toContain('Original Message');
+    expect(r.quotedHtml).toMatch(/^<div dir="ltr" id="replyfwdmessage">/);
+  });
+
+  it('keeps the agent\'s own sign-off in the new text', () => {
+    const r = splitQuotedHistory(DYNAMICS_REPLY);
+    expect(r.newHtml).toContain('Venlig hilsen');
+    expect(r.newHtml).toContain('Customer Care');
+  });
+
+  it('still reassembles exactly', () => {
+    const r = splitQuotedHistory(DYNAMICS_REPLY);
+    expect(r.newHtml + r.quotedHtml).toBe(DYNAMICS_REPLY);
+  });
+
+  it.each([
+    '----- Original Message -----',
+    '------------------- Original Message -------------------',
+    '---Original Message---',
+    '----- ORIGINAL MESSAGE -----',
+    '----- Oprindelig meddelelse -----',
+    '------- Oorspronkelijk bericht -------',
+  ])('matches the delimiter as %s when no container wraps it', (delimiter) => {
+    // Dash count and spacing are cosmetic and vary by client, so they must not be part of the
+    // match. The original literal list required exactly five dashes and no spaces.
+    const r = splitQuotedHistory(`<p>Hej</p>${delimiter}<br><b>From:</b> x`);
+    expect(r.matchedBy).toBe('original-message');
+    expect(r.newHtml).toBe('<p>Hej</p>');
+  });
+
+  it('prefers the delimiter over the bolded From: that follows it', () => {
+    // Rule 3 must stay above rule 4: the From: is ~60 bytes later, and matching it first
+    // strands the delimiter in the new text.
+    const html = '<p>Hej</p>----- Original Message -----<br><b>From:</b> someone';
+    const r = splitQuotedHistory(html);
+    expect(r.matchedBy).toBe('original-message');
+    expect(r.newHtml).not.toContain('Original Message');
+  });
+});

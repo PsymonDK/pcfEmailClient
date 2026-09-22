@@ -2,7 +2,7 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { resolveCaseId } from './host/caseId';
 import { EmailClientRoot, type RestorableState } from './ui/EmailClientRoot';
-import type { WebApiLike } from './data/emailQueries';
+import type { ReadStateApiLike } from './data/readState';
 
 /**
  * Case Email Client — PCF entry point.
@@ -73,7 +73,11 @@ export class CaseEmailClient
       caseId: id,
       caseIdSource: source,
       // `context.webAPI` rather than raw fetch, so Dataverse security trimming applies (N4).
-      webApi: context.webAPI as unknown as WebApiLike,
+      webApi: context.webAPI as unknown as ReadStateApiLike,
+      // Arrives wrapped in braces — `{4F2D39F5-…}`. readState.ts strips them; an unstripped id
+      // makes every read-state filter return nothing rather than fail, which looks like the
+      // feature is broken rather than the id.
+      userId: context.userSettings.userId,
       allocatedHeight: context.mode.allocatedHeight,
       allocatedWidth: context.mode.allocatedWidth,
       restored: this.state,

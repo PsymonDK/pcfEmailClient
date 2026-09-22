@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-09-22T05:32:34.833Z",
+  "org": "https://your-org.crm4.dynamics.com",
+  "roleId": "bf5009cc-46b6-f111-aaae-000d3ab16615",
+  "roleName": "Case Email Client — Read State",
+  "table": "jhrb_emailreadstate",
+  "privileges": [
+    "prvCreatejhrb_EmailReadState",
+    "prvReadjhrb_EmailReadState",
+    "prvWritejhrb_EmailReadState",
+    "prvDeletejhrb_EmailReadState",
+    "prvAppendjhrb_EmailReadState",
+    "prvAppendTojhrb_EmailReadState"
+  ],
+  "depth": "Basic"
+}

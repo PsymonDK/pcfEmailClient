@@ -7,6 +7,10 @@ import {
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
 import { browserDownloadIo, downloadAttachment } from '../data/attachments';
+import { fetchReadState, markRead as persistRead, type ReadStateApiLike, type ReadStateMap } from '../data/readState';
+import {
+  collapsedOlderCount, isUnread, messageToOpen, worthPersisting,
+} from '../domain/unread';
 import { ThreadList, type ThreadSummary } from './ThreadList';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { T } from './tokens';
@@ -23,7 +27,9 @@ import { T } from './tokens';
 export interface EmailClientRootProps {
   caseId?: string;
   caseIdSource: 'property' | 'contextInfo' | 'unresolved';
-  webApi: WebApiLike;
+  webApi: ReadStateApiLike;
+  /** `context.userSettings.userId`, braces and all — R6 read state is per agent. */
+  userId?: string;
   allocatedHeight: number;
   allocatedWidth: number;
   /** Restored from `setControlState` after a session-switch teardown (R16/N1). */
@@ -41,7 +47,7 @@ export interface RestorableState {
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const {
-    caseId, caseIdSource, webApi, allocatedHeight, allocatedWidth, restored, onStateChange,
+    caseId, caseIdSource, webApi, userId, allocatedHeight, allocatedWidth, restored, onStateChange,
   } = props;
 
   const rootRef = React.useRef<HTMLDivElement>(null);
@@ -60,6 +66,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const [states, setStates] = React.useState<Map<string, MessageState>>(new Map());
   const [collapsedOlder, setCollapsedOlder] = React.useState(0);
   const [readIds, setReadIds] = React.useState<Set<string>>(new Set(restored?.readMessageIds ?? []));
+  /**
+   * The durable rows this agent already has (R6), keyed by message id.
+   *
+   * Held in a ref rather than state because nothing renders from it — it exists so a re-mark can
+   * skip the write. `context.webAPI` has no `execute` and therefore cannot upsert by the alternate
+   * key, so this page IS the "does a row exist?" check.
+   */
+  const readRows = React.useRef<ReadStateMap>(new Map());
+  /** Set once if a read-state write fails, so the agent is told but not nagged per message. */
+  const readStateWarned = React.useRef(false);
   /** Transient notice for a failed download. Not persisted — it is about one click. */
   const [notice, setNotice] = React.useState<{ headline: string; detail: string }>();
 
@@ -100,6 +116,25 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       setThreads(buildThreads(fetched));
       // Recipients are a second, batched query rather than an $expand on the list.
       setParties(await fetchParties(webApi, fetched.map((r) => r.activityid)));
+
+      // R6 — durable read state, one page for this case and this agent. Deliberately AFTER the
+      // list is in state: this query must never be able to delay the mail appearing, and it
+      // resolves its own failure rather than throwing, so a read-state problem renders as
+      // "everything looks unread" instead of as a case with no mail on it.
+      if (userId) {
+        const { read, error } = await fetchReadState(webApi, caseId, userId);
+        readRows.current = read;
+        // UNION with whatever `setControlState` restored, never a replacement. A mark made seconds
+        // ago whose write has not landed yet must not be undone by the server's older answer.
+        setReadIds((prev) => new Set([...prev, ...read.keys()]));
+        if (error && !readStateWarned.current) {
+          readStateWarned.current = true;
+          setNotice({
+            headline: 'Read state is not being saved',
+            detail: `${error.message} Messages you open will look unread again next time.`,
+          });
+        }
+      }
     } catch (e) {
       const normalised = e instanceof DataverseError
         ? e.normalised
@@ -110,7 +145,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     } finally {
       setLoading(false);
     }
-  }, [caseId]);
+  }, [caseId, userId]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -143,22 +178,27 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     const thread = threads.find((t) => t.key === key);
     if (!thread) return;
 
-    const newestUnread = [...thread.messages].reverse().find((m) => !readIds.has(m.activityid));
-    const target = newestUnread ?? thread.messages[thread.messages.length - 1];
+    // Newest unread INCOMING message, or the newest message if nothing is waiting. Without the
+    // direction check this auto-opened the agent's own sent mail and treated it as unread.
+    const target = messageToOpen(thread.messages, readIds);
+    if (!target) return;
 
-    setCollapsedOlder(Math.max(0, thread.messages.length - 3));
+    setCollapsedOlder(collapsedOlderCount(
+      thread.messages.length,
+      thread.messages.findIndex((m) => m.activityid === target.activityid),
+    ));
     setStates((prev) => {
       const next = new Map(prev);
       for (const m of thread.messages) {
         next.set(m.activityid, {
-          ...(next.get(m.activityid) ?? blankState(readIds.has(m.activityid))),
+          ...(next.get(m.activityid) ?? blankState(!isUnread(m, readIds))),
           expanded: m.activityid === target.activityid,
-          unread: !readIds.has(m.activityid),
+          unread: isUnread(m, readIds),
         });
       }
       return next;
     });
-    if (target) void ensureBody(target.activityid);
+    void ensureBody(target.activityid);
   }, [threads, readIds]);
 
   /** Lazy body fetch — on expand only, never in the list query. */
@@ -193,8 +233,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     if (!current?.expanded) void ensureBody(activityId);
   };
 
-  /** R6 — the dwell timer fired: this message has genuinely been read. */
+  /**
+   * R6 — the dwell timer fired: this message has genuinely been read.
+   *
+   * The UI updates first and the write follows. Read state is an ornament on a list of mail, and
+   * an agent watching a dot linger while a request completes would reasonably conclude the client
+   * is broken. If the write fails the dot has still gone — it simply comes back tomorrow, which
+   * the notice says.
+   */
   const markRead = (activityId: string) => {
+    const alreadyKnown = readIds.has(activityId);
     setReadIds((prev) => {
       if (prev.has(activityId)) return prev;
       const next = new Set(prev);
@@ -202,6 +250,38 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       return next;
     });
     setStates((prev) => withState(prev, activityId, (s) => ({ ...s, unread: false })));
+
+    // Nothing durable to do if we already knew, or if there is no agent to attribute it to.
+    if (alreadyKnown || !caseId || !userId) return;
+    // And nothing worth storing for our own sent mail: an outgoing message can never be unread,
+    // so the row could never change what anyone sees. Before this check, dwelling on a thread of
+    // replies wrote one useless row per message per agent.
+    const message = rows.find((r) => r.activityid === activityId);
+    if (message && !worthPersisting(message)) return;
+
+    void (async () => {
+      const outcome = await persistRead(
+        webApiRef.current,
+        { emailId: activityId, userId, caseId },
+        readRows.current,
+      );
+      if (outcome.ok) {
+        // Remember it so a second dwell — or a reload racing this write — skips the request.
+        readRows.current.set(
+          activityId.toLowerCase(),
+          { rowId: outcome.rowId ?? '', readOn: new Date() },
+        );
+        return;
+      }
+      if (!readStateWarned.current) {
+        readStateWarned.current = true;
+        setNotice({
+          headline: 'Read state is not being saved',
+          detail: `${outcome.error?.message ?? 'The write was refused.'} `
+            + 'Messages you open will look unread again next time.',
+        });
+      }
+    })();
   };
 
   const summaries = React.useMemo<ThreadSummary[]>(
@@ -209,9 +289,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     [threads, parties, readIds],
   );
 
-  const unreadTotal = rows.filter(
-    (r) => r.directioncode === false && !readIds.has(r.activityid),
-  ).length;
+  const unreadTotal = rows.filter((r) => isUnread(r, readIds)).length;
 
   if (caseIdSource === 'unresolved') return <NoCaseContext />;
 
@@ -357,9 +435,7 @@ function toSummary(
   return {
     thread,
     // Only INBOUND messages can be unread: we do not mark our own sent mail unread.
-    unreadCount: thread.messages.filter(
-      (m) => m.directioncode === false && !readIds.has(m.activityid),
-    ).length,
+    unreadCount: thread.messages.filter((m) => isUnread(m, readIds)).length,
     participants: [...names].slice(0, 3),
     hasAttachments: thread.messages.some((m) => (m.attachmentcount ?? 0) > 0),
     // statuscode 1 on an open email is a draft.

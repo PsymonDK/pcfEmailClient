@@ -1127,6 +1127,151 @@ control v1.0.1, solution `JHRBCaseEmailClient` (unmanaged, verified `<Managed>0<
 import), and form `729d9197-cdad-f111-aaac-000d3ab163fb`. Removable with
 [`scripts/deploy/revert-deploy.mjs`](../../scripts/deploy/revert-deploy.mjs) (dry-run by default).
 
+### R6 read-state table — `jhrb_emailreadstate` *(2026-09-11)*
+
+Created for R6's **durable, per-agent** read state. Until now read state lived only in
+`setControlState`, so it survived a session switch but not a browser restart.
+
+Created by [`scripts/deploy/create-readstate-table.mjs`](../../scripts/deploy/create-readstate-table.mjs),
+removable by [`revert-readstate-table.mjs`](../../scripts/deploy/revert-readstate-table.mjs) (both
+dry-run by default). Verified from environment metadata, not from the script's own output.
+
+| Component | Value |
+|---|---|
+| Table | `jhrb_emailreadstate`, **UserOwned**, set name `jhrb_emailreadstates` |
+| `jhrb_emailid` | Lookup → `email`, delete **Cascade** |
+| `jhrb_userid` | Lookup → `systemuser`, delete RemoveLink |
+| `jhrb_caseid` | Lookup → `incident`, delete RemoveLink — **denormalised on purpose** |
+| `jhrb_readon` | DateTime, UserLocal |
+| `jhrb_emailperagent` | Alternate key on (`jhrb_emailid`, `jhrb_userid`) — status **Active** |
+
+**Why a table and not a column on `email`:** R6 is per-*agent*. A column on `email` is single-valued
+org-wide, so the first agent to open a message would mark it read for everyone. UserOwned also means
+Dataverse's own security trims each agent to their own rows — the isolation is free rather than
+filtered-and-hoped-for.
+
+**Why the `incident` lookup is there at all:** without it, read state for a case means one query per
+message. With it, the client fetches one page filtered by case + user. On a 50-message case that is
+the difference between 1 request and 50.
+
+#### Five things measured, each of which cost a failed attempt
+
+1. **`IsValidForQueue` / `IsDuplicateDetectionEnabled` are `BooleanManagedProperty`, not booleans.**
+   Sending either as `false` on create returns a bare OData *"A 'PrimitiveValue' node with non-null
+   value was found…"* that names neither field. Both default to false on a custom table — omit them.
+2. **The metadata cache lags table creation by seconds.** `POST EntityDefinitions` returns 201 with a
+   MetadataId, and for several seconds afterwards every request touching that table fails —
+   *"was not found in the MetadataCache.LazyDynamicMetadataCache"*, or on `/Attributes` just
+   *"An unexpected error occurred."* The first run therefore created the table and then failed all
+   four columns. The script now retries these two messages with a backoff.
+3. **A table gets exactly ONE parental relationship.** `email` took it, so a second `Cascade` lookup
+   is refused: *"Cannot create another parental relation with Entity: Incident"*. Nothing is lost —
+   deleting a case already cascades to its emails, and each of those cascades to its read-state rows.
+4. **A lookup's navigation property is PascalCase from the SchemaName, not the column name.** The
+   `@odata.bind` keys are **`jhrb_EmailId` / `jhrb_UserId` / `jhrb_CaseId`**, not `jhrb_emailid`. Using
+   the logical name returns the same anonymous *"Error identified in Payload"* as (1) — it does not
+   tell you which property it disliked. Read
+   `ReferencingEntityNavigationPropertyName` off `RelationshipDefinitions` rather than guessing.
+5. **The alternate key in a URI takes the lookup's `_value` form.** `jhrb_emailreadstates(jhrb_emailid=…)`
+   fails with *"The key in the request URI is not valid"*; `(_jhrb_emailid_value=…,_jhrb_userid_value=…)`
+   works.
+
+#### Functional probe — passed, rows cleaned up afterwards
+
+| Operation | Result |
+|---|---|
+| Create a row against a real email + case | **204** |
+| Create the identical row again | **412** — *"Entity Key One row per email per agent violated"* |
+| Read `$filter=_jhrb_caseid_value eq <case> and _jhrb_userid_value eq <me>` | **200**, 1 row |
+| `PATCH jhrb_emailreadstates(_jhrb_emailid_value=…,_jhrb_userid_value=…)` | **204** |
+
+That last row is the useful one: **upsert by alternate key means mark-read is a single PATCH with no
+read first.** The client never has to ask whether a row exists — which matters, because the dwell
+timer fires per message as the agent scrolls.
+
+Both probe rows were deleted; the table is left empty (verified: 0 rows).
+
+#### The table alone does not make the feature work — privileges do
+
+**A newly created custom table grants privileges to nobody** except System Administrator and System
+Customizer. So read state works perfectly for an admin and fails for every real agent, whose first
+mark-read is refused. Worse, it fails *quietly by design*: the client treats read state as an
+ornament on a list of mail, so a refused write surfaces as one notice rather than an error. Exactly
+the kind of thing that passes a developer's test and is noticed in production.
+
+[`create-readstate-role.mjs`](../../scripts/deploy/create-readstate-role.mjs) creates a purpose-built
+role — **not** an edit to `Customer Service Representative`, because this is a shared environment and
+adding privileges to an out-of-the-box role changes what every other demo in it can do and carries
+that edit downstream.
+
+| | |
+|---|---|
+| Role | `Case Email Client — Read State`, root business unit |
+| Privileges | Create, Read, Write, Delete, **Append, AppendTo** |
+| Depth | **User (1)** — an agent may touch their own read state and nobody else's |
+| Not granted | Share, Assign. Read state is nobody's to hand around |
+
+Two things measured here:
+
+- **`Append` / `AppendTo` are needed, not optional.** The row carries three lookups, and writing one
+  is an *append*; without them a create is refused on privileges even with Create granted.
+- **Privilege names are built from the table's SchemaName, not its logical name** —
+  `prvCreatejhrb_EmailReadState`. And because Dataverse's OData string comparison is
+  case-insensitive, a filter on the logical spelling still **matches**: the first run fetched all
+  four privileges and then reported every one as missing, because the returned `name` no longer
+  equalled the string composed to find it. Match case-insensitively, or read the names off the rows.
+
+**Assigning the role to agents is deliberately not automated** — who gets it is a decision about
+people, not a deployment detail. That is a second manual per-environment step alongside registering
+the form with the CSW app, and belongs in the N3 runbook deviation.
+
+One more thing the API got wrong in a way that named nothing: `AddPrivilegesRole` takes `Depth` as
+the **PrivilegeDepth enum by name** (`Basic` / `Local` / `Deep` / `Global`). Passing the numeric
+mask (1/2/4/8) that the same concept uses elsewhere is rejected with *"Cannot read the value '1' as
+a quoted JSON string"* — a message that mentions neither depth, privileges nor the role. Also note
+Dataverse adds **9 baseline privileges** (SDK message and SharePoint reads) to every new role, so
+the role carries 15 while we asked for 6; the script now reports the two groups separately, and
+verifies the depth through `RetrieveRolePrivilegesRole`, because the association endpoint does not
+return it.
+
+#### R6 verified end to end in the published app — 2026-09-22
+
+Walked on case `CAS-01021-T1P3C2`, a real 5-message thread (1 incoming, 4 outgoing), control v1.2.2.
+
+| Step | Result |
+|---|---|
+| Open the Email tab | Thread list renders, 5 messages grouped into 1 thread, `1 unread`, Draft badge, attachment marker |
+| Select the thread | Opens the **incoming** message, expanded, body rendered |
+| Dwell | Exactly **one** row written, for the incoming message only |
+| **Full page reload** | Badge gone, group header reads *Earlier* not *Unread*, no unread dot |
+
+That last row is the whole point: a fresh page load is a brand-new control instance with no
+`setControlState` to restore from, so it is the case the old mechanism could never survive.
+
+**The published app found two bugs the 232 unit tests did not.** Both are now in `domain/unread.ts`
+with tests, and both were invisible until real data with a real direction mix went through it:
+
+1. **"Unread" meant two different things in one component.** The list badge and the thread summary
+   restricted unread to *incoming* mail; the per-message state and the "open the newest unread
+   message" selection did not. So the pane treated the agent's own four sent replies as waiting to
+   be read, auto-expanded the newest one, and wrote a read-state row for it — **one useless row per
+   outgoing message per agent**, on a table that grows with every reply. Every reload marked one
+   more. The rule now lives in one function used by all four call sites.
+2. **The fold could hide the message it had just chosen to open.** A thread shows its last three
+   messages and collapses the rest, but the only unread message here was the *oldest*. Selecting
+   the thread expanded it and then folded it out of sight, so the thread opened showing **nothing**.
+   `collapsedOlderCount` never folds past the message being opened.
+
+Two smaller observations, neither fixed:
+
+- The unread badge **flashes the pre-read-state count** for about a second on load, because read
+  state is fetched after the list. That ordering is deliberate — the mail must never wait on an
+  ornament — but the flash is visible and worth designing away later.
+- The **tab hang recurred** (script injection times out while the tab is otherwise alive) and was
+  again cleared by opening a fresh tab. Still no evidence it is our code: a new tab on the same
+  build works immediately.
+
+
 ### S9 — Template and signature instantiation
 
 Call `InstantiateTemplate` for a Case-scoped template and resolve the user's default `emailsignature`.

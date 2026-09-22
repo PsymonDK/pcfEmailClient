@@ -21,8 +21,21 @@ confirmed) have also passed, and **S8 is closed** — grouping, `conversationind
 depth formula are all verified on a real conversation. **No research gate remains open.**
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
-splitting, sanitising — 103 tests), `host/` the platform-shaped helpers. The `host/DeployCheck.tsx`
-readout is Phase 0 scaffolding and gets replaced by the real UI in Phase 1.
+splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
+helpers — **247 tests**, lint and typecheck clean.
+
+**"Unread" has one definition and it lives in [`domain/unread.ts`](pcf/CaseEmailClient/domain/unread.ts).**
+Only *incoming* mail can be unread — an agent's own sent mail never is. That rule was duplicated in
+four places and two of them omitted the direction check, which is how the reading pane came to
+treat the agent's own replies as waiting to be read. Use `isUnread` / `messageToOpen` /
+`worthPersisting`; do not re-inline the predicate.
+
+**Phase 1 (the reading slice) is built and deployed as v1.2.2**, including R6's durable per-agent
+read state on the `jhrb_emailreadstate` table (see the Dataverse section below), **verified end to
+end in the published app on 2026-09-22** — read state now survives a full page reload, which
+`setControlState` never could. Run the suite from
+`pcf/`, not the repo root — `npm test`, `npm run lint`, `npm run typecheck`. Do **not** use
+`npx vitest`: it resolves a cached global copy that has no jsdom and silently skips a test file.
 
 See [`docs/design/01-design-decisions.md`](docs/design/01-design-decisions.md) for what to build,
 [`docs/design/02-component-inventory.md`](docs/design/02-component-inventory.md) for what builds it,
@@ -64,12 +77,14 @@ cannot receive record context, so its support status would not save it.
 
 ## Plugins and skills — which to use, which to avoid
 
-Three Power Platform plugins are installed. **None of them target PCF development**, which is what this
-project needs. Getting this wrong means building the architecture we explicitly rejected.
+**None of the plugins named below target PCF development**, which is what this project needs. Getting
+this wrong means building the architecture we explicitly rejected. Note that **what is actually
+installed varies by session** — check the skill listing before reaching for one, rather than trusting
+this table. `model-apps:app-builder` was listed here as available and is not.
 
 | Plugin / skill | Use here? |
 |---|---|
-| `model-apps:app-builder` (`/app-builder`) | **Yes, for schema and app plumbing only** — Dataverse tables/columns (e.g. the read-state column for R6), the Case form tab, sitemap, security roles, solution scaffolding |
+| `model-apps:app-builder` (`/app-builder`) | **Not installed** — corrected 2026-09-11. This file claimed it was available for schema work; invoking it returns *"Unknown skill"* and it is absent from the skill listing. Do schema work through the **Dataverse Web API**, as every other environment change in this project has been (see `scripts/deploy/`) |
 | `model-apps:genpage` (`/genpage`) | **No.** Builds generative pages — the architecture we eliminated. Do not invoke it for the email client. |
 | `code-apps-preview:*` (`create-code-app`, `add-dataverse`, `deploy`, …) | **No.** Targets Power Apps code apps — candidate D, rejected on multi-session state loss and Premium licensing. |
 | `mcp-apps:*` | Not relevant. |
@@ -213,6 +228,46 @@ bite if forgotten:
   `outgoingemailstatus` (want *Success*) and `mailboxstatus`.
   Counter-intuitive companion finding: a queue with **no** address fails **loudly** (synchronous 400);
   a queue with an **unapproved** address fails **silently**. Don't infer one from the other.
+
+**Read state (R6) — `jhrb_emailreadstate`, created 2026-09-11**
+- **UserOwned**, so Dataverse's own security trims each agent to their own rows. `jhrb_emailid` →
+  `email`, `jhrb_userid` → `systemuser`, `jhrb_caseid` → `incident` (**denormalised on purpose**:
+  one page per case per agent instead of one query per message), `jhrb_readon` DateTime.
+- **Mark-read is one PATCH, never a read-then-write.** The alternate key `jhrb_emailperagent` is
+  Active, so `PATCH jhrb_emailreadstates(_jhrb_emailid_value=<email>,_jhrb_userid_value=<user>)` upserts.
+  Note the **`_value` form** — `(jhrb_emailid=…)` fails with *"The key in the request URI is not valid"*.
+- **`@odata.bind` keys are PascalCase: `jhrb_EmailId` / `jhrb_UserId` / `jhrb_CaseId`.** A lookup's
+  navigation property comes from its **SchemaName**, not its column name, and using the logical name
+  returns an anonymous *"Error identified in Payload"* that does not say which property was wrong.
+  Read `ReferencingEntityNavigationPropertyName` off `RelationshipDefinitions` before guessing.
+- Creating a duplicate returns **412**, not 409. `data/readState.ts` treats that as success — two
+  dwell timers on one message have nothing to reconcile.
+- **A new custom table grants privileges to NOBODY** but System Administrator / System Customizer, so
+  read state works for an admin and is refused for every agent. A purpose-built role carries
+  User-level Create/Read/Write/Delete **plus Append and AppendTo** (the row has three lookups, and
+  writing one is an append). Never add privileges to an out-of-the-box role in this shared
+  environment. **Assigning the role is a manual per-environment step**, alongside registering the
+  form with the CSW app — both are N3 runbook deviations.
+- **Privilege names come from the table's SchemaName** (`prvCreatejhrb_EmailReadState`), and OData
+  compares strings case-insensitively — so a filter on the logical spelling matches while the
+  returned name does not equal what you composed. Match case-insensitively.
+- **`AddPrivilegesRole` wants `Depth` as the enum NAME** — `Basic` / `Local` / `Deep` / `Global`.
+  The numeric mask the same concept uses elsewhere fails with *"Cannot read the value '1' as a
+  quoted JSON string"*, which names neither depth nor privilege. Dataverse also adds 9 baseline
+  privileges to every new role, so a role asked for 6 reports 15 — not an over-grant.
+- **Only persist read state for INCOMING mail.** A row for an outgoing message can never change
+  what anyone sees; before that check the client wrote one per sent message per agent.
+
+**Creating tables over the Web API** — three traps, each measured 2026-09-11, full detail in
+[`06-spikes.md`](docs/research/06-spikes.md):
+- `IsValidForQueue` / `IsDuplicateDetectionEnabled` are **`BooleanManagedProperty`, not booleans**.
+  Omit them; they default to false on a custom table.
+- **The metadata cache lags creation by seconds.** `POST EntityDefinitions` returns 201 and the next
+  request against that table fails with *"…not found in the MetadataCache.LazyDynamicMetadataCache"*
+  or a bare *"An unexpected error occurred."* Retry with a backoff — see
+  `withSettle` in [`create-readstate-table.mjs`](scripts/deploy/create-readstate-table.mjs).
+- **One parental relationship per table.** A second `CascadeConfiguration.Delete: 'Cascade'` lookup is
+  refused outright.
 
 **Threading** — group by `baseconversationindexhash` (100% populated), order/nest by
 `conversationindex`, then `correlatedactivityid` / `parentactivityid`, with normalised-subject as the

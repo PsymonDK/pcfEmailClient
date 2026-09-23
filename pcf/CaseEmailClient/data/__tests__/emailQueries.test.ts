@@ -4,7 +4,9 @@ import {
   buildAttachmentsQuery,
   buildBodyQuery,
   buildListQuery,
+  buildListQueryForCases,
   buildPartiesQuery,
+  fetchAncestry,
   DataverseError,
   fetchAttachments,
   fetchBody,
@@ -298,4 +300,103 @@ describe('failures carry a usable message', () => {
   });
 
   /* eslint-enable @typescript-eslint/prefer-promise-reject-errors */
+});
+
+describe('buildListQueryForCases — R8', () => {
+  const A = '40a5d940-0ef6-f011-8406-000d3ab7be36';
+  const B = '290bf70d-ebf5-f011-8406-7c1e521fcfa3';
+
+  it('ORs the typed navigation property across cases', () => {
+    const q = buildListQueryForCases([A, B]);
+    expect(q).toContain(`regardingobjectid_incident/incidentid eq ${A}`);
+    expect(q).toContain(`regardingobjectid_incident/incidentid eq ${B}`);
+    expect(q).toContain(' or ');
+  });
+
+  it('still never selects the body', () => {
+    // The same hard rule as the single-case query: bodies live in blob storage (N5).
+    expect(buildListQueryForCases([A, B])).not.toContain('description');
+  });
+
+  it('selects the regarding case, so a thread can be marked as borrowed', () => {
+    expect(buildListQueryForCases([A])).toContain('_regardingobjectid_value');
+  });
+
+  it('refuses a non-GUID and an empty list rather than building a bad filter', () => {
+    expect(() => buildListQueryForCases([A, 'nope'])).toThrow(/caseId/);
+    expect(() => buildListQueryForCases([])).toThrow(/at least one/);
+  });
+});
+
+describe('fetchAncestry — R8', () => {
+  const CHILD = '40a5d940-0ef6-f011-8406-000d3ab7be36';
+  const PARENT = '290bf70d-ebf5-f011-8406-7c1e521fcfa3';
+  const GRAND = '11c0c49d-f8f5-f011-8406-000d3ab39833';
+
+  /** A fake `incident` store keyed by id. */
+  const cases = (map: Record<string, { parent?: string; ticket: string }>) => {
+    const retrieveRecord = vi.fn((_entity: string, id: string) => {
+      const found = map[id.toLowerCase()];
+      if (!found) return Promise.reject(new Error(`no case ${id}`));
+      return Promise.resolve({
+        incidentid: id,
+        ticketnumber: found.ticket,
+        title: `Case ${found.ticket}`,
+        _parentcaseid_value: found.parent ?? null,
+      } as Record<string, unknown>);
+    });
+    return { webApi: { retrieveMultipleRecords: vi.fn(), retrieveRecord }, retrieveRecord };
+  };
+
+  it('returns an empty chain when the case has no parent', async () => {
+    const { webApi } = cases({ [CHILD]: { ticket: 'CAS-01021' } });
+    expect(await fetchAncestry(webApi, CHILD)).toEqual([]);
+  });
+
+  it('walks up one level', async () => {
+    const { webApi } = cases({
+      [CHILD]: { ticket: 'CAS-01021', parent: PARENT },
+      [PARENT]: { ticket: 'CAS-01016' },
+    });
+    const chain = await fetchAncestry(webApi, CHILD);
+    expect(chain).toEqual([{ caseId: PARENT, ticketNumber: 'CAS-01016', title: 'Case CAS-01016' }]);
+  });
+
+  it('walks the whole chain, nearest first', async () => {
+    const { webApi } = cases({
+      [CHILD]: { ticket: 'C', parent: PARENT },
+      [PARENT]: { ticket: 'P', parent: GRAND },
+      [GRAND]: { ticket: 'G' },
+    });
+    expect((await fetchAncestry(webApi, CHILD)).map((a) => a.ticketNumber)).toEqual(['P', 'G']);
+  });
+
+  it('STOPS on a cycle instead of hanging the control', async () => {
+    // `parentcaseid` is an ordinary lookup; nothing stops an import or a plugin pointing two
+    // cases at each other. An uncapped walk would spin on load — the most expensive place to
+    // find out.
+    const { webApi } = cases({
+      [CHILD]: { ticket: 'C', parent: PARENT },
+      [PARENT]: { ticket: 'P', parent: CHILD },
+    });
+    const chain = await fetchAncestry(webApi, CHILD);
+    expect(chain.map((a) => a.ticketNumber)).toEqual(['P']);
+  });
+
+  it('honours the depth cap on a long chain', async () => {
+    // A chain longer than the cap is truncated rather than followed forever.
+    const ids = [CHILD, PARENT, GRAND];
+    const { webApi } = cases({
+      [CHILD]: { ticket: 'C', parent: PARENT },
+      [PARENT]: { ticket: 'P', parent: GRAND },
+      [GRAND]: { ticket: 'G' },
+    });
+    expect(await fetchAncestry(webApi, ids[0], 1)).toHaveLength(1);
+  });
+
+  it('refuses a non-GUID before calling the platform', async () => {
+    const { webApi, retrieveRecord } = cases({});
+    await expect(fetchAncestry(webApi, 'nope')).rejects.toThrow(/caseId/);
+    expect(retrieveRecord).not.toHaveBeenCalled();
+  });
 });

@@ -24,6 +24,8 @@ export interface EmailRow {
   correlatedactivityid?: string | null;
   parentactivityid?: string | null;
   attachmentcount?: number | null;
+  /** The case this message is regarding. Set from `_regardingobjectid_value`; drives R8. */
+  regardingCaseId?: string | null;
 }
 
 export interface Thread {

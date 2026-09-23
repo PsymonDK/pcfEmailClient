@@ -1271,6 +1271,202 @@ Two smaller observations, neither fixed:
   again cleared by opening a fresh tab. Still no evidence it is our code: a new tab on the same
   build works immediately.
 
+### R7 filter and search — *(2026-09-22, v1.3.1)*
+
+Built and verified in the published app. The starting point was worse than "not built": the list
+rendered a search box, a filter button and a compose button, and **none of them did anything** — the
+search "field" was a `<span>`. Three dead controls, which by this project's own standard is worse
+than their absence.
+
+| Control | Now |
+|---|---|
+| Search | Real input over **subject and participant names/addresses**, all terms required (AND) |
+| Filter panel | Has-attachment, unread-only, participant, date from/to — inline, not a popover |
+| Chips | One per active clause, each removable, one line that scrolls rather than wraps |
+| Compose `+` | **Greyed and inert**, labelled *"New email — not built yet"* |
+
+**What search cannot do, and why the UI says so.** Message bodies are not searched: they are
+deliberately absent from the list query (blob storage, N5), and `$filter` on `description` is
+unsupported by the platform anyway — body search is Dataverse search, a different path. So the field
+carries the line *"Searches subject and participants — not message text"*. Without it, an agent who
+searches a phrase they remember from a message and gets nothing concludes the mail is not on the
+case, which is the worst failure available to a search feature because it is invisible.
+
+Two deliberate design choices worth knowing:
+
+- **A matching thread is kept whole.** Filtering individual messages out of a surviving thread would
+  hide the reply that quotes the match, making the result misleading rather than focused.
+- **A filter that hides the open thread does not close it.** The reading pane keeps showing it; the
+  list stops listing it and the chips say why. Losing your place for having narrowed the list beside
+  it would be a strange punishment.
+
+Verified live: zero-results states the real total (*"This case has 1 thread. They are hidden by the
+filters, not missing"*); multi-term AND works across fields (`jehrbo ordre` — one term from a
+participant, one from the subject); chips remove individually and restore the list; `Unread only`
+correctly matched nothing once the incoming message had been read.
+
+**The published app again found two defects the unit tests could not**, both purely about the DOM:
+
+1. **The search field had two ✕ buttons.** Chrome renders its own clear button inside
+   `type="search"`, next to ours. Changed to `type="text"` — ours is kept because the native one is
+   unstyleable and absent in Firefox, so relying on it would give different agents different
+   controls.
+2. **The participant dropdown listed strings, not people.** Built from the same list that free-text
+   search matches against, it offered *"Care"* and *"caredemo@…onmicrosoft.com"* as two separate
+   choices for one person — six entries for four people. The index now exposes two views:
+   `searchable` (names **and** addresses, so searching a domain still finds the thread) and `people`
+   (one display name each, for the panel and for exact matching). Down to four entries.
+
+### R8 parent-case mail and N7 dark theme — *(2026-09-22, v1.4.1)*
+
+Both verified together in the published app, which turned out to be the efficient order: the R8
+markings are warn-toned surfaces, and dark theme is where warn-toned surfaces go wrong.
+
+#### R8 — include parent case
+
+The three markings the design demands (*"one marker is not enough"*) were **already built** in
+`ThreadList`; what was missing was the data. Added `fetchAncestry` (walks `parentcaseid`) and
+`buildListQueryForCases` (one request across the case and its ancestors, rather than one per case),
+and `EmailRow` now carries `regardingCaseId` so a thread knows which case it came from.
+
+| | |
+|---|---|
+| Toggle | In the filter panel, below a rule — it is not a filter, it fetches more |
+| Persisted | Yes, through `setControlState`: a standing choice about what the list is *for* |
+| Markings | Group header *"Parent case CAS-01016-C3Y9M9"*, gold left edge, per-row case badge, footer link |
+
+Two things worth knowing:
+
+- **The ancestry walk is capped and cycle-guarded.** `parentcaseid` is an ordinary lookup; nothing
+  stops an import or a plugin pointing two cases at each other, and an uncapped walk would hang the
+  control *on load* — the most expensive place to discover it. It also stops if a case reappears,
+  which catches a cycle sooner than the cap.
+- **A failed ancestry walk falls back to this case's own mail**, not to an error. A broken parent
+  link must not cost the agent the case they are actually looking at.
+
+**Verification needed a data change, because no case in this environment has a parent** — R8 was
+literally unverifiable as the data stood. [`r8-parent-link.mjs`](../../scripts/deploy/r8-parent-link.mjs)
+sets and clears `parentcaseid` on the verification case: one lookup field, on one case, previously
+null. Set → verified (2 threads, all four markings present) → cleared. Confirmed afterwards by
+query: **0 cases environment-wide have a parent, as before.**
+
+#### N7 — dark theme
+
+Implemented as **CSS custom properties**, not a React context. `T.bg1` is now `var(--cec-bg1)` and
+the root element sets 60-odd variables for the active mode. The alternative was threading a theme
+object through ~200 inline-style sites across six files, which is a large mechanical change with a
+bug in every place it was missed.
+
+- **The mode follows the HOST, not the OS.** N7 is "consistent with the surrounding app", so an
+  agent who set Dynamics to dark gets this dark whatever their OS says. OS preference is the
+  fallback; light is the last resort, because the control has always rendered light and an unknown
+  host should keep today's behaviour rather than flip on a guess.
+- **The host theme is read by measuring its background**, not by an `isDark` flag — there is no
+  documented flag, and a custom Dynamics theme need not call itself dark. `fluentDesignLanguage` is
+  not in `@types/powerapps-component-framework` ^1.3.16, so it is read through a narrow shim, the
+  same treatment as `contextInfo`.
+- **The sender's body stays on a literal white card**, per the frozen decision. Verified in dark
+  theme: exactly **one** white surface remained in the whole control, and it was the body card.
+
+### Issue #4 — expandable conversations in the thread list — *(2026-09-22, v1.5.1)*
+
+Outlook-style: a conversation expands **in the list** into one row per message, and clicking a
+message row opens that message. Built and verified in the published app.
+
+The load-bearing change is not the UI, it is
+[`domain/listRows.ts`](../../pcf/CaseEmailClient/domain/listRows.ts): **the list is now one flat
+sequence of rows**, built once and read by both rendering and keyboard navigation. The order was
+already spelled out three times across three `.map()` calls and would have become six with child
+rows — two descriptions of the same order that drift apart. Group headers are rows too, but not
+focusable, so arrow keys step over them.
+
+| Decision | Choice, and why |
+|---|---|
+| Reading pane | **Keeps the stack** (option (b) in the issue) and scrolls to the chosen message. A strictly single-message pane would move the R6 dwell trigger, and R6 is the requirement most recently and expensively made to work |
+| Clicking a conversation row | **Toggles expansion.** `Enter` still selects without expanding; a single-message conversation selects, since there is nothing to expand |
+| Keyboard | `↑↓` walk into and out of children, `→` expands, `←` collapses (and from a child, moves focus to its header first), `Space` toggles, `Enter` selects |
+| First load | Expands the one conversation holding the message worth landing on, and opens it |
+| Persistence | Expansion and the selected message go through `setControlState` — session UI state, not durable |
+
+**One behaviour change worth flagging rather than burying.** First load now *opens* a message, so
+the dwell timer marks it read shortly after the case opens, without the agent clicking anything.
+That follows from landing on it — expanded and on screen is exactly what Gate 2 defined as read —
+but it did not happen before, when the pane started empty. If it proves too eager the fix is to
+land without selecting, **not** to weaken the dwell rule.
+
+Verified live on CAS-01021-T1P3C2 (5 messages): first load expanded the conversation and opened the
+incoming January message; clicking the last child row selected it (`Message 5 of 5. Sent to Care,
+11-06-2026 14:58. Has attachments.`) and the pane switched to it with the older two folded;
+clicking the header collapsed to 0 child rows while the pane kept the conversation; clicking again
+re-expanded with the selection intact.
+
+#### Follow-up: both panes select — *(v1.5.3)*
+
+Once conversations expanded in the list, selection was **one-way**. Clicking a message in the
+reading pane expanded it but told the list nothing, so the list kept highlighting whatever was
+picked last and the two panes disagreed about what was being read — and the list is where you look
+to answer *"where am I?"*. Selection is now one fact:
+
+- **Expanding a message in the pane selects it**; the matching list row highlights.
+- **Collapsing the selected message clears the selection**, handing the highlight back to the
+  conversation row.
+- It deliberately does **not** expand the conversation in the list. If you collapsed it there to
+  save room, having it spring open on every click in the pane is the client arguing with you.
+- The **whole header strip** is now the click target, not just the 14px "Email from: X" link — a
+  small link inside a 60px row is something you have to aim at. The handler skips clicks that
+  landed on a real control, so the sender link and the Reply/Forward buttons keep their own
+  meaning; verified in the app that the link fires exactly one toggle (`false → true`, not a
+  double-fire back to `false`).
+
+#### Follow-up: sort order, and the arrow that did nothing — *(v1.5.5)*
+
+| Reported | What was actually true |
+|---|---|
+| "Left pane is oldest to newest" | **True for the messages inside a conversation** — I had matched the reading pane's chronological order, and that was wrong for a list |
+| "Conversation with the newest mail should be on top" | **Already the case.** `buildThreads` sorts by most recent activity. What can look wrong is the *grouping*: Unread comes before Earlier, so an older unread conversation sits above a newer read one |
+| "Can't figure out if the 'Earlier' with an arrow is the sort order" | **Neither.** The chevron in `GroupHeader` had no click handler at all — not a sort control, not a collapse. It read as an affordance and had none |
+
+So: child rows now render **newest first**, `thread.messages` stays chronological (the reading pane
+stacks that same array, and reversing in place would have flipped it silently — there is a test for
+that), and `position` stays chronological so *"Message 5 of 5"* means the fifth message sent, not
+the fifth row down.
+
+The decorative chevron is **removed**. A group label is not an expander, and the first person to
+look at the list asked what it was for — which is the whole argument against it. If collapsible
+groups are wanted later, make the entire header a real button rather than putting the arrow back.
+
+**A latent keyboard bug fell out of looking at this.** `moveFocus` did
+`querySelectorAll('[data-list-row]')[next]`, indexing the DOM by the row's index in the flat array —
+but group headers *are* rows in that array and carry no `data-list-row`, so every index past the
+first header pointed at the wrong element and scrolled somewhere arbitrary. Rows are now addressed
+by `data-row-id`, which cannot drift out of step with the array the way two parallel orders can.
+
+Verified live once the case had two conversations (it had only one before, so conversation ordering
+had never actually been observable): *Test af ny mail tråd* (22-09 14:07) above *Forespørgsel på
+ordrestatus* (11-06 14:58), children 14:07 above 14:04, and the `Earlier | 2` header containing
+zero SVGs.
+
+Also matched the child rows' separator to the reading pane's: both were already using `T.stroke3`,
+but the new message rows had **no** `border-top` at all, so they ran together into a block while
+the pane's messages were cleanly divided. All three row types now compute to the identical
+`1px solid rgb(240, 240, 240)`.
+
+Two things the build caught on the way: the **"Unread" group header was silently dropped** when the
+three `.map()` calls were replaced (the tests I had just written encoded my mistake rather than the
+existing UI, and had to be corrected to match it); and `dotnet build -c Debug` **did not rebuild the
+PCF bundle** — it packaged the previous version while reporting success, so the first "deployment"
+shipped nothing. `npm run build` in `pcf/` then `dotnet build -t:Rebuild` is the reliable pair, and
+the packaged `ControlManifest.xml` version is worth checking before believing an import.
+
+**Dark theme found 13 bugs that light theme cannot show.** Thirteen hardcoded hex colours across
+five components — `#fffbe6`, `#faf9f8`, `#f2c811`, `#3b3a39`, `#c8c6c4`, `#fdf6f6`, `#eec7c8`,
+`#a4262c` — each of which looks perfect in light theme and cannot follow the variables. Three were
+caught by applying the dark palette in the browser and scanning computed backgrounds; the other ten
+were in elements that scan never rendered (the error notice, the empty states, the borrowed-thread
+edge) and needed a source grep. Two new tokens came out of it — `warnBg2` for large warn surfaces
+and `parentEdge` for the borrowed-thread edge — and there is now a **test that greps the components
+for hex literals**, because this class of bug is invisible in the theme you develop in.
+
 
 ### S9 — Template and signature instantiation
 

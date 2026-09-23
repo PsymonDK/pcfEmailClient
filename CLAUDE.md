@@ -9,10 +9,12 @@ Workspace (CSW)** app. It gives agents a native mail experience (threading, in-p
 attachments, templates, signatures, drafts) scoped to a single Case — where the OOB Timeline is an
 activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
-**Current state: Phase 0 complete and deployed.** The control (v1.0.1, unmanaged solution
-`JHRBCaseEmailClient`) is in the demo environment on a dedicated `Case - Email Client` form, verified
-in the published app. Design is signed off — see [`docs/design/`](docs/design/01-design-decisions.md).
-Phase 1 (the reading slice) is next. The
+**Current state: Phase 1 (the reading slice) is complete and deployed.** The control (v1.5.5,
+unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
+`Case - Email Client` form, verified in the published app. Design is signed off — see
+[`docs/design/`](docs/design/01-design-decisions.md). **Phase 2 (compose) is next, and it opens by
+measuring the editor bundle** — see 2.0 in the plan; the platform's own editor is not reusable and
+React 16 narrows the field to three framework-agnostic cores. The
 architecture decision is **spike-validated on both target placements** — S1 (Case form tab) and S11
 (session tab, via an `Entity record` app tab template) both confirmed live that `setControlState`
 survives a CSW two-session teardown. S2 confirmed the same inside a custom page, which S11 then made
@@ -22,7 +24,48 @@ depth formula are all verified on a real conversation. **No research gate remain
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **247 tests**, lint and typecheck clean.
+helpers — **337 tests**, lint and typecheck clean.
+
+**Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
+list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
+Dataverse search, a separate path. `domain/filter.ts` exports `SEARCHES` for the scope line the
+field renders; if what it searches changes, that sentence changes with it. An agent who searches a
+remembered phrase and gets nothing will conclude the mail is not on the case.
+
+**Selection is ONE fact, shared by both panes.** `selectedMessageId` lives in the shell; the list
+row and the reading-pane message both read it, and both set it. Expanding a message in the pane
+selects it, collapsing it clears it. Whichever pane a change comes from, it must go through the
+shell — a pane that tracks its own idea of "selected" is how the two ended up disagreeing.
+
+**The thread list is ONE flat sequence of rows** — [`domain/listRows.ts`](pcf/CaseEmailClient/domain/listRows.ts).
+Conversations expand in the list, Outlook-style (issue #4), so group headers, conversations and
+message rows all come from `buildListRows`, and rendering and keyboard navigation read the same
+array. Do not re-derive the order in the component: it was written out three times before this
+existed, and child rows would have made it six. Two rules that follow:
+
+- **The list is newest-first at both levels** — conversations by last activity (`buildThreads`),
+  messages within an expanded one by reversing a *copy*. `thread.messages` stays chronological
+  because the reading pane stacks that same array; reversing it in place flips the pane silently.
+  `position` stays chronological too: "Message 5 of 5" is the fifth message sent, not the fifth row.
+- **Address rows by `data-row-id`, never by index into `querySelectorAll`.** Group headers are rows
+  in the array but carry no row element, so index-based lookup pointed at the wrong element for
+  every row after the first header.
+
+**`dotnet build -c Debug` does not reliably rebuild the PCF bundle.** It will package the previous
+version and report success — the first issue-#4 deploy shipped nothing that way. Use
+`npm run build` in `pcf/` followed by `dotnet build -c Debug -t:Rebuild`, and check the version
+actually packaged before believing an import:
+
+```bash
+unzip -p solution/bin/Debug/solution.zip Controls/jhrb_JHRB.CaseEmailClient/ControlManifest.xml | grep -o 'version="[0-9.]*"'
+```
+
+**Never write a colour literal in a component (N7).** `T.*` resolves through CSS custom properties
+set on the root — see [`ui/theme.ts`](pcf/CaseEmailClient/ui/theme.ts). A hardcoded hex cannot follow
+them, looks perfect in the light theme you develop in, and breaks only in dark. Thirteen of them were
+found this way on 2026-09-22; a test now greps the components for hex literals. The two deliberate
+exceptions are `ui/theme.ts` itself and `BODY_SURFACE` — **a sender's HTML stays on a white card in
+dark theme too**, because inverting it would alter a business document.
 
 **"Unread" has one definition and it lives in [`domain/unread.ts`](pcf/CaseEmailClient/domain/unread.ts).**
 Only *incoming* mail can be unread — an agent's own sent mail never is. That rule was duplicated in
@@ -30,7 +73,8 @@ four places and two of them omitted the direction check, which is how the readin
 treat the agent's own replies as waiting to be read. Use `isUnread` / `messageToOpen` /
 `worthPersisting`; do not re-inline the predicate.
 
-**Phase 1 (the reading slice) is built and deployed as v1.2.2**, including R6's durable per-agent
+**Phase 1 (the reading slice) is COMPLETE and deployed as v1.5.5** — R1–R8, R21, N1–N4, N7, plus
+issue #4 (conversations expand in the list) — including R6's durable per-agent
 read state on the `jhrb_emailreadstate` table (see the Dataverse section below), **verified end to
 end in the published app on 2026-09-22** — read state now survives a full page reload, which
 `setControlState` never could. Run the suite from

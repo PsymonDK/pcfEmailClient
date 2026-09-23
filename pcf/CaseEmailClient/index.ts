@@ -74,6 +74,9 @@ export class CaseEmailClient
       caseIdSource: source,
       // `context.webAPI` rather than raw fetch, so Dataverse security trimming applies (N4).
       webApi: context.webAPI as unknown as ReadStateApiLike,
+      // N7. `fluentDesignLanguage` is not in @types/powerapps-component-framework ^1.3.16, so it
+      // is read through a narrow shim rather than by widening the platform types.
+      themeSignals: { tokenTheme: readTokenTheme(context) },
       // Arrives wrapped in braces — `{4F2D39F5-…}`. readState.ts strips them; an unstripped id
       // makes every read-state filter return nothing rather than fail, which looks like the
       // feature is broken rather than the id.
@@ -109,4 +112,25 @@ function acceptRestoredState(
   const current = resolveCaseId(context).id;
   if (!current || !candidate.caseId || candidate.caseId !== current) return undefined;
   return candidate;
+}
+
+/**
+ * Reads the host's Fluent theme, if it is offering one (N7).
+ *
+ * `fluentDesignLanguage` is **not** in `@types/powerapps-component-framework` ^1.3.16 — the same
+ * gap as `contextInfo`, handled the same way: a narrow local shim rather than widening the
+ * platform types, so exactly one place knows this is undocumented. Returns null when absent, and
+ * `resolveThemeMode` then falls back to the OS preference.
+ */
+function readTokenTheme(
+  context: ComponentFramework.Context<IInputs>,
+): { colorNeutralBackground1?: unknown } | null {
+  // `unknown` then narrowed, rather than a cast to a shape we are guessing at: the runtime object
+  // has more on it than the types admit, and asserting a shape would make every field below look
+  // guaranteed when none of them is.
+  const design: unknown = (context as unknown as Record<string, unknown>).fluentDesignLanguage;
+  if (typeof design !== 'object' || design === null) return null;
+  const theme: unknown = (design as Record<string, unknown>).tokenTheme;
+  if (typeof theme !== 'object' || theme === null) return null;
+  return { colorNeutralBackground1: (theme as Record<string, unknown>).colorNeutralBackground1 };
 }

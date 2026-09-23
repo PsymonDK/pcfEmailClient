@@ -2,7 +2,7 @@ import * as React from 'react';
 import { sanitiseEmailBody } from '../domain/sanitise';
 import { splitQuotedHistory } from '../domain/quoting';
 import { stripInjectedNotices, type Notice } from '../domain/noise';
-import { RADIUS, T } from './tokens';
+import { BODY_SURFACE, BODY_SURFACE_FG, RADIUS, T } from './tokens';
 
 /**
  * Renders one message body. The highest-risk component in the inventory, for two reasons.
@@ -99,7 +99,7 @@ export const BodyFrame: React.FC<BodyFrameProps> = (props) => {
                 borderTop: 'none',
                 borderRadius: `0 0 ${RADIUS.md} ${RADIUS.md}`,
                 padding: '8px 10px',
-                background: '#fffbe6',
+                background: T.warnBg2,
               }}
             >
               {foldable.map((notice, i) => (
@@ -200,7 +200,17 @@ const Contained: React.FC<{ html: string; muted?: boolean }> = ({ html, muted })
     style={{
       // Reset the sender's inherited context so their CSS starts from ours, not from Dynamics'.
       font: `400 14px/20px ${T.font}`,
-      color: muted ? T.fg3 : T.fg1,
+      // N7 — LITERAL white and near-black, never the themed tokens.
+      //
+      // Mail is written for a white background: black text, white-background logos, tables with
+      // light borders. In dark theme a themed surface here would make a real proportion of
+      // messages unreadable, and inverting would rewrite invoices and test reports. Frozen
+      // decision in docs/design/01-design-decisions.md; Outlook and Gmail both do this.
+      background: BODY_SURFACE,
+      color: muted ? 'rgba(36,36,36,0.72)' : BODY_SURFACE_FG,
+      // Keeps the white from sitting flush against the dark card edge.
+      padding: '2px 0',
+      colorScheme: 'light',
       contain: 'content',
       maxWidth: '100%',
       overflowX: 'auto',

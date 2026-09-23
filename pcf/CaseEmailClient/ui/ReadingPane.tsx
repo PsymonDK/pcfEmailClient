@@ -36,6 +36,8 @@ export interface ReadingPaneProps {
   onExpandOlder: () => void;
   onToggleMessage: (activityId: string) => void;
   onToggleQuote: (activityId: string) => void;
+  /** Issue #4 — the message the list asked us to show. Scrolled to, not exclusively rendered. */
+  focusMessageId?: string;
   onToggleNotices: (activityId: string) => void;
   onDownloadAttachment: (attachment: Attachment) => void;
   /** Fires when a message has been expanded and visible long enough to count as read (R6). */
@@ -52,6 +54,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
   const {
     thread, parties, states, collapsedOlderCount, onExpandOlder, onToggleMessage,
     onToggleQuote, onToggleNotices, onDownloadAttachment, onDwellRead, loading, error, onRetry,
+    focusMessageId,
   } = props;
 
   const stackRef = React.useRef<HTMLDivElement>(null);
@@ -59,6 +62,27 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
 
   const messages = thread?.messages ?? [];
   const visible = messages.slice(collapsedOlderCount);
+
+  /**
+   * Issue #4, option (b): the pane keeps the whole conversation and scrolls to the chosen message.
+   *
+   * The alternative — a strictly single-message pane — would have moved the R6 dwell trigger, and
+   * that is the requirement most recently and expensively made to work. This way the list owns the
+   * thread structure and the pane owns which message you are looking at, without either of them
+   * re-implementing the other.
+   *
+   * Keyed on the id, not on `states`, so expanding an *additional* message by hand does not yank
+   * the scroll back to the selected one.
+   */
+  React.useEffect(() => {
+    if (!focusMessageId) return;
+    const i = visible.findIndex((m) => m.activityid === focusMessageId);
+    if (i < 0) return;
+    stackRef.current?.querySelectorAll('[data-message]')[i]
+      ?.scrollIntoView({ block: 'nearest' });
+    setFocusIndex(i);
+    
+  }, [focusMessageId, thread?.key, collapsedOlderCount]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (visible.length === 0) return;
@@ -84,7 +108,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
             flexGrow: 1, gap: '8px', color: T.fg3, fontSize: '14px',
           }}
         >
-          <svg width="38" height="38" viewBox="0 0 20 20" fill="none" stroke="#c8c6c4" strokeWidth="1.1" aria-hidden="true">
+          <svg width="38" height="38" viewBox="0 0 20 20" fill="none" stroke={T.stroke1} strokeWidth="1.1" aria-hidden="true">
             <path d="M2.5 5.5h15v9h-15z" /><path d="m2.5 6 7.5 5 7.5-5" />
           </svg>
           <span>Select a thread to read it</span>
@@ -162,6 +186,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
             parties={parties.get(message.activityid)}
             state={states.get(message.activityid)}
             focused={i === focusIndex}
+            selected={message.activityid === focusMessageId}
             onToggle={() => { setFocusIndex(i); onToggleMessage(message.activityid); }}
             onToggleQuote={() => onToggleQuote(message.activityid)}
             onToggleNotices={() => onToggleNotices(message.activityid)}
@@ -179,6 +204,8 @@ const MessageView: React.FC<{
   parties?: MessageParties;
   state?: MessageState;
   focused: boolean;
+  /** The message the list and the pane agree is being read. */
+  selected: boolean;
   onToggle: () => void;
   onToggleQuote: () => void;
   onToggleNotices: () => void;
@@ -186,7 +213,7 @@ const MessageView: React.FC<{
   onDwellRead: () => void;
 }> = (props) => {
   const {
-    message, parties, state, focused, onToggle, onToggleQuote, onToggleNotices,
+    message, parties, state, focused, selected, onToggle, onToggleQuote, onToggleNotices,
     onDownloadAttachment, onDwellRead,
   } = props;
 
@@ -250,6 +277,9 @@ const MessageView: React.FC<{
         boxSizing: 'border-box',
         borderTop: `1px solid ${T.stroke3}`,
         borderLeft: `3px solid ${unread ? T.brandBg : 'transparent'}`,
+        // The same selected tint the list row uses, so both panes agree at a glance about which
+        // message is open.
+        background: selected ? T.brandBg2 : 'transparent',
         outline: focused ? `2px solid ${T.focus}` : 'none',
         outlineOffset: '-2px',
         minWidth: 0,
@@ -257,7 +287,25 @@ const MessageView: React.FC<{
     >
       <Avatar name={senderName} size={expanded ? 32 : 24} />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexGrow: 1, minWidth: 0 }}>
+      <div
+        style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexGrow: 1, minWidth: 0 }}
+      >
+        {/*
+          The whole header strip selects the message, not just the "Email from: X" link.
+          A 14px link inside a 60px row is a target you have to aim at, and every mail client
+          makes the row itself clickable.
+
+          `onMouseDown` rather than `onClick` so that selecting text in a collapsed header does
+          not also toggle it, and the guard skips clicks that landed on a real control — the
+          Reply/Forward buttons and the sender link live in here and must keep their own meaning.
+        */}
+        <div
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('button, a')) return;
+            onToggle();
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, cursor: 'pointer' }}
+        >
         {/* metadata line, the form's "Modified on:" idiom */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <span style={{ fontSize: '12px', color: unread ? T.fg1 : T.fg3, fontWeight: unread ? 600 : 400 }}>
@@ -311,6 +359,7 @@ const MessageView: React.FC<{
           )}
           {!expanded && (message.attachmentcount ?? 0) > 0 && <AttachmentIcon />}
         </button>
+        </div>
 
         {/* collapsed: a snippet is deliberately NOT shown — we have not fetched the body, and
             fetching it for every row is exactly the blob-storage performance trap. */}
@@ -426,7 +475,7 @@ const PaneError: React.FC<{
         <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{error.headline}</span>
       </div>
       {/* The agent's first question, answered before they ask it. */}
-      {error.reassurance && <span style={{ fontSize: '12px', color: '#3b3a39' }}>{error.reassurance}</span>}
+      {error.reassurance && <span style={{ fontSize: '12px', color: T.fg2 }}>{error.reassurance}</span>}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           type="button"

@@ -100,6 +100,78 @@ export function buildListQuery(caseId: string): string {
   );
 }
 
+/**
+ * The same list, across several cases at once (R8).
+ *
+ * One request rather than one per case: the ancestor chain is usually one deep but need not be,
+ * and a request per ancestor would put the N5 budget at the mercy of how someone structured their
+ * cases. `regardingCaseId` on each row says which case it came from.
+ */
+export function buildListQueryForCases(caseIds: readonly string[]): string {
+  if (caseIds.length === 0) throw new Error('buildListQueryForCases needs at least one case id');
+  caseIds.forEach((id) => assertGuid(id, 'caseId'));
+  const filter = caseIds
+    .map((id) => `regardingobjectid_incident/incidentid eq ${id}`)
+    .join(' or ');
+  return (
+    `?$select=${LIST_COLUMNS.join(',')}` +
+    `&$filter=${filter}` +
+    `&$orderby=createdon desc`
+  );
+}
+
+/** One case's parent link and number, for walking the ancestry. */
+export function buildCaseAncestryQuery(caseId: string): string {
+  assertGuid(caseId, 'caseId');
+  return `?$select=incidentid,ticketnumber,title,_parentcaseid_value`;
+}
+
+/** A case in the ancestor chain, nearest first. */
+export interface AncestorCase {
+  caseId: string;
+  ticketNumber: string;
+  title: string;
+}
+
+/**
+ * Walks up `parentcaseid` from the given case.
+ *
+ * **Capped, and the cap is not paranoia about Dataverse.** `parentcaseid` is an ordinary lookup;
+ * nothing stops a data import or a plugin from pointing two cases at each other, and an uncapped
+ * walk would then hang the control on load — the most expensive possible place to discover it.
+ * Also stops if a case reappears, which catches a cycle sooner than the cap does.
+ */
+export async function fetchAncestry(
+  webApi: WebApiLike,
+  caseId: string,
+  maxDepth = 8,
+): Promise<AncestorCase[]> {
+  assertGuid(caseId, 'caseId');
+  return wrap(async () => {
+    const chain: AncestorCase[] = [];
+    const seen = new Set<string>([caseId.toLowerCase()]);
+    let current = caseId;
+
+    for (let depth = 0; depth < maxDepth; depth += 1) {
+      const row = await webApi.retrieveRecord('incident', current, buildCaseAncestryQuery(current));
+      const parentId = row._parentcaseid_value ? asString(row._parentcaseid_value) : '';
+      if (!parentId || seen.has(parentId.toLowerCase())) break;
+      seen.add(parentId.toLowerCase());
+
+      const parent = await webApi.retrieveRecord(
+        'incident', parentId, buildCaseAncestryQuery(parentId),
+      );
+      chain.push({
+        caseId: parentId.toLowerCase(),
+        ticketNumber: asString(parent.ticketnumber, ''),
+        title: asString(parent.title, ''),
+      });
+      current = parentId;
+    }
+    return chain;
+  });
+}
+
 /** One message's body, fetched lazily on expand. */
 export function buildBodyQuery(): string {
   return '?$select=activityid,description';
@@ -260,6 +332,11 @@ export function toEmailRow(raw: Record<string, unknown>): EmailRow {
       : null,
     parentactivityid: raw._parentactivityid_value ? asString(raw._parentactivityid_value) : null,
     attachmentcount: typeof raw.attachmentcount === 'number' ? raw.attachmentcount : null,
+    // Which case this message hangs off. Needed by R8: once parent-case mail is mixed into the
+    // list, a thread has to know which case it came from in order to be marked as borrowed.
+    regardingCaseId: raw._regardingobjectid_value
+      ? asString(raw._regardingobjectid_value).toLowerCase()
+      : null,
   };
 }
 
@@ -292,15 +369,17 @@ const wrap = async <T>(work: () => Promise<T>): Promise<T> => {
   }
 };
 
-/** All emails on a case, paged. */
+/** All emails on a case, paged. Pass several ids to include ancestor cases (R8). */
 export async function fetchCaseEmails(
   webApi: WebApiLike,
-  caseId: string,
+  caseId: string | readonly string[],
   pageSize = 100,
 ): Promise<EmailRow[]> {
   return wrap(async () => {
     const rows: Record<string, unknown>[] = [];
-    let options: string | undefined = buildListQuery(caseId);
+    let options: string | undefined = typeof caseId === 'string'
+      ? buildListQuery(caseId)
+      : buildListQueryForCases(caseId);
 
     // Follow @odata.nextLink rather than truncating. A case-scoped view will rarely need it, but
     // silently showing the first 100 of 140 messages is a correctness bug, not a performance one.

@@ -138,10 +138,17 @@ export const GroupHeader: React.FC<{
         flex: '0 0 28px',
         padding: '0 12px',
         boxSizing: 'border-box',
-        background: warn ? '#faf9f8' : 'transparent',
+        background: warn ? T.bg2 : 'transparent',
       }}
     >
-      <Chevron direction="up" colour={warn ? T.warnFg : T.fg1} />
+      {/*
+        No chevron here, deliberately.
+
+        There used to be one, and it did nothing — not a sort control, not a collapse, no click
+        handler at all. It read as an affordance and had none, which is worse than plain text: the
+        first person to look at this list asked what it was for. If collapsing a group is wanted
+        later, make the whole header a real button; do not put back a decorative arrow.
+      */}
       <span style={{ fontSize: '14px', color: warn ? T.warnFg : T.fg1, fontWeight: warn ? 600 : 400 }}>
         {label}
       </span>
@@ -199,13 +206,17 @@ export const IconButton: React.FC<{
   onClick?: () => void;
   children: React.ReactNode;
   active?: boolean;
-}> = ({ label, onClick, children, active }) => (
+  /** Renders greyed and inert. Used for controls whose feature is not built yet: a button that
+   * looks live and does nothing teaches agents the client is broken. */
+  disabled?: boolean;
+}> = ({ label, onClick, children, active, disabled }) => (
   <button
     type="button"
     onClick={onClick}
     aria-label={label}
     title={label}
     aria-pressed={active}
+    disabled={disabled}
     style={{
       display: 'flex',
       alignItems: 'center',
@@ -217,8 +228,9 @@ export const IconButton: React.FC<{
       border: 'none',
       borderRadius: RADIUS.md,
       background: active ? T.brandBg2 : 'transparent',
-      cursor: 'pointer',
-      color: active ? T.link : T.fg2,
+      cursor: disabled ? 'default' : 'pointer',
+      color: disabled ? T.fg4 : (active ? T.link : T.fg2),
+      opacity: disabled ? 0.5 : 1,
     }}
   >
     {children}

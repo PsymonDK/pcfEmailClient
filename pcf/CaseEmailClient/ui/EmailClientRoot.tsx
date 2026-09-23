@@ -2,8 +2,8 @@ import * as React from 'react';
 import { buildThreads, type EmailRow, type Thread } from '../domain/threading';
 import { resolveLayout, LIST_WIDTH } from '../domain/layout';
 import {
-  DataverseError, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
-  type Attachment, type MessageParties, type WebApiLike,
+  DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
+  type AncestorCase, type Attachment, type MessageParties,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
 import { browserDownloadIo, downloadAttachment } from '../data/attachments';
@@ -11,9 +11,15 @@ import { fetchReadState, markRead as persistRead, type ReadStateApiLike, type Re
 import {
   collapsedOlderCount, isUnread, messageToOpen, worthPersisting,
 } from '../domain/unread';
+import { initialExpansion } from '../domain/listRows';
+import {
+  EMPTY_FILTER, filterThreads, isFilterActive, participantOptions,
+  type ParticipantIndex, type ThreadFilter,
+} from '../domain/filter';
 import { ThreadList, type ThreadSummary } from './ThreadList';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { T } from './tokens';
+import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
 
 /**
  * The shell. Owns data loading, selection, expansion and read state, and hands the two cards
@@ -28,6 +34,8 @@ export interface EmailClientRootProps {
   caseId?: string;
   caseIdSource: 'property' | 'contextInfo' | 'unresolved';
   webApi: ReadStateApiLike;
+  /** N7. What the host tells us about its theme; see `resolveThemeMode`. */
+  themeSignals?: ThemeSignals;
   /** `context.userSettings.userId`, braces and all — R6 read state is per agent. */
   userId?: string;
   allocatedHeight: number;
@@ -43,12 +51,28 @@ export interface RestorableState {
   expandedMessageIds?: string[];
   readMessageIds?: string[];
   scrollTop?: number;
+  /** R8. A standing choice about what the list is for, so it survives a teardown. */
+  includeParent?: boolean;
+  /** Issue #4. Conversations expanded in the list, and the single message being read. */
+  expandedThreadKeys?: string[];
+  selectedMessageId?: string;
 }
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const {
     caseId, caseIdSource, webApi, userId, allocatedHeight, allocatedWidth, restored, onStateChange,
+    themeSignals,
   } = props;
+
+  // N7. Recomputed per render rather than held in state: the host can change theme under us, and
+  // `updateView` is how we hear about it.
+  const themeMode = resolveThemeMode({
+    ...themeSignals,
+    prefersDark: themeSignals?.prefersDark
+      ?? (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : undefined),
+  });
 
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [rootTop, setRootTop] = React.useState(0);
@@ -66,6 +90,30 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const [states, setStates] = React.useState<Map<string, MessageState>>(new Map());
   const [collapsedOlder, setCollapsedOlder] = React.useState(0);
   const [readIds, setReadIds] = React.useState<Set<string>>(new Set(restored?.readMessageIds ?? []));
+  /**
+   * R8 — "include parent case", persisted through a teardown.
+   *
+   * Unlike a search term this is a deliberate standing choice about what the list is *for*, so
+   * losing it on a session switch would be the wrong kind of forgetting. It does cost a reload
+   * when toggled, which is why it is a toggle and not a filter.
+   */
+  const [includeParent, setIncludeParent] = React.useState(restored?.includeParent ?? false);
+  const [ancestorCases, setAncestorCases] = React.useState<AncestorCase[]>([]);
+
+  /**
+   * Issue #4 — which conversations are expanded IN THE LIST, and which single message is open.
+   *
+   * Session UI state, so it goes through `setControlState` alongside the selection: coming back to
+   * a session with the list collapsed and your place lost is exactly what that mechanism exists to
+   * prevent. Not durable, though — it is about this sitting, not about this case forever.
+   */
+  const [expandedThreadKeys, setExpandedThreadKeys] = React.useState<Set<string>>(
+    new Set(restored?.expandedThreadKeys ?? []),
+  );
+  const [selectedMessageId, setSelectedMessageId] = React.useState(restored?.selectedMessageId);
+  /** True once the first load has chosen what to open, so it never overrides the agent later. */
+  const landed = React.useRef(false);
+
   /**
    * The durable rows this agent already has (R6), keyed by message id.
    *
@@ -111,7 +159,24 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     setLoading(true);
     setListError(undefined);
     try {
-      const fetched = await fetchCaseEmails(webApi, caseId);
+      // R8 — ancestor cases, when the agent has asked for them.
+      //
+      // The ancestry walk happens BEFORE the list query so both can go in one request. It is two
+      // cheap retrieves per level and the chain is almost always empty, but when it fails the
+      // right answer is this case's own mail, not an error: a broken parent link must not cost
+      // the agent the case they are actually looking at.
+      let ancestors: AncestorCase[] = [];
+      if (includeParent) {
+        try {
+          ancestors = await fetchAncestry(webApi, caseId);
+        } catch {
+          ancestors = [];
+        }
+      }
+      setAncestorCases(ancestors);
+
+      const caseIds = [caseId, ...ancestors.map((a) => a.caseId)];
+      const fetched = await fetchCaseEmails(webApi, caseIds);
       setRows(fetched);
       setThreads(buildThreads(fetched));
       // Recipients are a second, batched query rather than an $expand on the list.
@@ -145,7 +210,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     } finally {
       setLoading(false);
     }
-  }, [caseId, userId]);
+  }, [caseId, userId, includeParent]);
 
   React.useEffect(() => { void load(); }, [load]);
 
@@ -166,40 +231,77 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       selectedThreadKey: selectedKey,
       expandedMessageIds: [...states.entries()].filter(([, s]) => s.expanded).map(([id]) => id),
       readMessageIds: [...readIds],
+      includeParent,
+      expandedThreadKeys: [...expandedThreadKeys],
+      selectedMessageId,
     });
-  }, [selectedKey, states, readIds]);
+  }, [selectedKey, states, readIds, includeParent, expandedThreadKeys, selectedMessageId]);
 
+  // Deliberately the UNFILTERED threads. A filter that hides the thread you are reading should
+  // not also close it — you would lose your place for having narrowed the list beside it. The
+  // reading pane keeps showing it; the list simply stops listing it, and the chips say why.
   const selected = threads.find((t) => t.key === selectedKey);
 
   // Open the newest UNREAD message on selection; if all are read, the newest. Older messages
   // collapse into one row rather than being listed individually.
-  const selectThread = React.useCallback((key: string) => {
+  /**
+   * Opens one message of a conversation in the reading pane.
+   *
+   * The pane still renders the whole conversation as a stack (option (b) in issue #4) and simply
+   * expands and scrolls to the chosen message. That keeps the dwell/read-state machinery and the
+   * quoted-history context exactly as they are — the alternative, a strictly single-message pane,
+   * would move the R6 dwell trigger, and R6 is the requirement most recently and expensively made
+   * to work.
+   */
+  const openMessage = React.useCallback((key: string, activityId: string) => {
     setSelectedKey(key);
+    setSelectedMessageId(activityId);
     const thread = threads.find((t) => t.key === key);
     if (!thread) return;
 
-    // Newest unread INCOMING message, or the newest message if nothing is waiting. Without the
-    // direction check this auto-opened the agent's own sent mail and treated it as unread.
-    const target = messageToOpen(thread.messages, readIds);
-    if (!target) return;
-
     setCollapsedOlder(collapsedOlderCount(
       thread.messages.length,
-      thread.messages.findIndex((m) => m.activityid === target.activityid),
+      thread.messages.findIndex((m) => m.activityid === activityId),
     ));
     setStates((prev) => {
       const next = new Map(prev);
       for (const m of thread.messages) {
         next.set(m.activityid, {
           ...(next.get(m.activityid) ?? blankState(!isUnread(m, readIds))),
-          expanded: m.activityid === target.activityid,
+          expanded: m.activityid === activityId,
           unread: isUnread(m, readIds),
         });
       }
       return next;
     });
-    void ensureBody(target.activityid);
+    void ensureBody(activityId);
   }, [threads, readIds]);
+
+  /** Selecting the conversation itself: lands on the message worth reading. */
+  const selectThread = React.useCallback((key: string) => {
+    const thread = threads.find((t) => t.key === key);
+    if (!thread) { setSelectedKey(key); return; }
+    // Newest unread INCOMING message, or the newest message if nothing is waiting. Without the
+    // direction check this auto-opened the agent's own sent mail and treated it as unread.
+    const target = messageToOpen(thread.messages, readIds);
+    if (!target) { setSelectedKey(key); return; }
+    openMessage(key, target.activityid);
+    // The conversation, not one message of it, is what the agent picked — so the header keeps the
+    // selected look rather than handing it to a child row.
+    setSelectedMessageId(undefined);
+  }, [threads, readIds, openMessage]);
+
+  /** Issue #4 — expand or collapse a conversation in the list. Does not change what is being read. */
+  const toggleExpand = React.useCallback((key: string) => {
+    setExpandedThreadKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+    // Expanding a conversation you are not reading should still show it, the way clicking its row
+    // always has. Collapsing changes nothing about the pane.
+    if (key !== selectedKey) selectThread(key);
+  }, [selectedKey, selectThread]);
 
   /** Lazy body fetch — on expand only, never in the list query. */
   const ensureBody = React.useCallback(async (activityId: string) => {
@@ -227,10 +329,27 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     }
   }, []);
 
+  /**
+   * A message clicked in the READING PANE.
+   *
+   * Selection has to be one fact, not one per pane. Before this, opening a message here left the
+   * list still highlighting whatever was picked last, so the two panes disagreed about what you
+   * were reading — and the list is where you look to answer "where am I?".
+   *
+   * Expanding selects; collapsing the selected message clears the selection and hands the
+   * highlight back to the conversation row. It deliberately does **not** expand the conversation
+   * in the list: if you collapsed it there to save room, having it spring open on every click in
+   * the pane is the client arguing with you.
+   */
   const toggleMessage = (activityId: string) => {
+    const wasExpanded = states.get(activityId)?.expanded ?? false;
     setStates((prev) => withState(prev, activityId, (s) => ({ ...s, expanded: !s.expanded })));
-    const current = states.get(activityId);
-    if (!current?.expanded) void ensureBody(activityId);
+    if (!wasExpanded) {
+      setSelectedMessageId(activityId);
+      void ensureBody(activityId);
+    } else {
+      setSelectedMessageId((current) => (current === activityId ? undefined : current));
+    }
   };
 
   /**
@@ -284,9 +403,94 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     })();
   };
 
+  // ── R7: filter and search ──────────────────────────────────────────────────
+  //
+  // The filter lives here because the data it filters does. It is NOT persisted through
+  // `setControlState`: coming back to a session to find the list mysteriously showing three of
+  // nine threads is worse than retyping a search, and the chips that would explain it are the
+  // first thing to scroll out of sight.
+  const [filter, setFilter] = React.useState<ThreadFilter>(EMPTY_FILTER);
+
+  const ancestorNumbers = React.useMemo(
+    () => new Map(ancestorCases.map((a) => [a.caseId, a.ticketNumber])),
+    [ancestorCases],
+  );
+
+  /**
+   * Name and address of everyone on each message, for the filter to match against.
+   *
+   * Built once per parties load rather than per keystroke — this is the only allocation in the
+   * filter path that is not O(threads), and rebuilding it on every character typed would make
+   * search feel slow on exactly the busy cases where it matters.
+   */
+  const participantIndex = React.useMemo<ParticipantIndex>(() => {
+    const searchable = new Map<string, string[]>();
+    const people = new Map<string, string[]>();
+    for (const [activityId, p] of parties) {
+      const strings: string[] = [];
+      const names: string[] = [];
+      for (const party of [p.sender, ...p.to, ...p.cc, ...p.bcc]) {
+        if (!party) continue;
+        // Free text matches names AND addresses, so searching a domain finds the thread.
+        if (party.name) strings.push(party.name);
+        if (party.address) strings.push(party.address);
+        // The panel lists PEOPLE: their name, or their address when they have no name. Listing
+        // both made one person two entries in the dropdown.
+        const display = party.name || party.address;
+        if (display) names.push(display);
+      }
+      searchable.set(activityId, strings);
+      people.set(activityId, names);
+    }
+    return {
+      searchable: (id) => searchable.get(id),
+      people: (id) => people.get(id),
+    };
+  }, [parties]);
+
+  const visibleThreads = React.useMemo(
+    () => filterThreads(threads, participantIndex, readIds, filter),
+    [threads, participantIndex, readIds, filter],
+  );
+
+  const participantChoices = React.useMemo(
+    () => participantOptions(threads, participantIndex),
+    [threads, participantIndex],
+  );
+
+  /**
+   * First load: open the conversation holding the message worth landing on, and select it.
+   *
+   * Outlook collapses everything by default and mostly that is right — but landing an agent on a
+   * list where nothing is open wastes the one thing the client knows: which message is waiting.
+   * Guarded by `landed` so it happens once and never argues with the agent afterwards, and skipped
+   * entirely when `setControlState` already restored a choice.
+   */
+  React.useEffect(() => {
+    if (landed.current || threads.length === 0) return;
+    landed.current = true;
+    if (restored?.selectedThreadKey || (restored?.expandedThreadKeys?.length ?? 0) > 0) return;
+    const first = threads.find((t) => messageToOpen(t.messages, readIds) !== undefined);
+    const target = first ? messageToOpen(first.messages, readIds) : undefined;
+    if (!first || !target) return;
+
+    setExpandedThreadKeys(initialExpansion(
+      threads.map((t) => ({ thread: t, unreadCount: 0 })),
+      target.activityid,
+    ));
+    // …and open it, so the pane is not empty next to a list that has already decided what matters.
+    //
+    // NOTE, because it is a real behaviour change: the dwell timer will now mark that message read
+    // shortly after the case opens, without the agent clicking anything. That follows from landing
+    // on it — it is expanded and on screen, which is exactly what Gate 2 defined as read. If that
+    // proves too eager, the fix is to land WITHOUT selecting rather than to weaken the dwell rule.
+    openMessage(first.key, target.activityid);
+    setSelectedMessageId(undefined);
+  }, [threads, readIds, restored, openMessage]);
+
   const summaries = React.useMemo<ThreadSummary[]>(
-    () => threads.map((thread) => toSummary(thread, parties, readIds)),
-    [threads, parties, readIds],
+    () => visibleThreads.map((thread) => toSummary(thread, parties, readIds, ancestorNumbers)),
+    [visibleThreads, parties, readIds, ancestorNumbers],
   );
 
   const unreadTotal = rows.filter((r) => isUnread(r, readIds)).length;
@@ -297,6 +501,11 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     <div
       ref={rootRef}
       style={{
+        // N7 — every themed token resolves from these. One place to set, everything follows.
+        ...cssVariables(themeMode),
+        // Tells the browser to theme its own furniture (scrollbars, date pickers, checkboxes) to
+        // match. Without it a dark card grows white scrollbars and a white date picker.
+        colorScheme: themeMode,
         height: layout.height,
         width: layout.width,
         boxSizing: 'border-box',
@@ -319,16 +528,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           style={{
             position: 'absolute', left: '8px', right: '8px', bottom: '8px', zIndex: 2,
             display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px',
-            boxSizing: 'border-box', background: '#fdf6f6', border: '1px solid #eec7c8',
+            boxSizing: 'border-box', background: T.dangerBg, border: `1px solid ${T.dangerStroke}`,
             borderRadius: '4px',
           }}
         >
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="#a4262c" strokeWidth="1.5" style={{ flex: '0 0 15px', marginTop: '2px' }} aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px', marginTop: '2px' }} aria-hidden="true">
             <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
           </svg>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#a4262c' }}>{notice.headline}</span>
-            <span style={{ fontSize: '12px', color: '#3b3a39' }}>{notice.detail}</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{notice.headline}</span>
+            <span style={{ fontSize: '12px', color: T.fg2 }}>{notice.detail}</span>
           </div>
           <span style={{ flexGrow: 1 }} />
           <button
@@ -352,11 +561,28 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           error={listError}
           onRetry={() => void load()}
           onSelect={selectThread}
+          expandedThreadKeys={expandedThreadKeys}
+          onToggleExpand={toggleExpand}
+          onSelectMessage={openMessage}
+          selectedMessageId={selectedMessageId}
+          readIds={readIds}
+          parties={parties}
           onRefresh={() => void load()}
+          // The REAL total, not the filtered one: "no results" and "this customer has never
+          // emailed" look identical unless the count says which.
           totalThreadCount={threads.length}
-          filterActive={false}
-          onClearFilters={() => undefined}
-          parentCaseThreadCount={0}
+          filterActive={isFilterActive(filter)}
+          onClearFilters={() => setFilter(EMPTY_FILTER)}
+          parentCaseThreadCount={summaries.filter((s) => s.parentCaseNumber).length}
+          filter={filter}
+          onFilterChange={setFilter}
+          participantOptions={participantChoices}
+          includeParent={includeParent}
+          onIncludeParentChange={setIncludeParent}
+          // Absent when this case has no parent, so the toggle is offered only where it means
+          // something. Known only after a load with the toggle on, so the control explains that
+          // rather than silently doing nothing.
+          ancestorCount={ancestorCases.length}
         />
       )}
 
@@ -367,6 +593,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           states={states}
           collapsedOlderCount={selected ? Math.min(collapsedOlder, selected.messages.length - 1) : 0}
           onExpandOlder={() => setCollapsedOlder(0)}
+          focusMessageId={selectedMessageId}
           onToggleMessage={toggleMessage}
           onToggleQuote={(id) => setStates((p) => withState(p, id, (s) => ({ ...s, quoteExpanded: !s.quoteExpanded })))}
           onToggleNotices={(id) => setStates((p) => withState(p, id, (s) => ({ ...s, noticesExpanded: !s.noticesExpanded })))}
@@ -425,6 +652,8 @@ function toSummary(
   thread: Thread,
   parties: Map<string, MessageParties>,
   readIds: Set<string>,
+  /** Ticket numbers of ancestor cases, keyed by case id — R8. */
+  ancestorNumbers?: Map<string, string>,
 ): ThreadSummary {
   const names = new Set<string>();
   for (const m of [...thread.messages].reverse()) {
@@ -434,6 +663,14 @@ function toSummary(
   const last = thread.messages[thread.messages.length - 1];
   return {
     thread,
+    // R8. A thread is "borrowed" when ANY of its messages hangs off an ancestor case — a chain
+    // can legitimately span both once someone re-parents an email, and in that case the borrowed
+    // marking is the safer of the two readings: it says "some of this is not from here".
+    parentCaseNumber: ancestorNumbers && ancestorNumbers.size > 0
+      ? thread.messages
+        .map((m) => (m.regardingCaseId ? ancestorNumbers.get(m.regardingCaseId) : undefined))
+        .find((n) => n !== undefined)
+      : undefined,
     // Only INBOUND messages can be unread: we do not mark our own sent mail unread.
     unreadCount: thread.messages.filter((m) => isUnread(m, readIds)).length,
     participants: [...names].slice(0, 3),

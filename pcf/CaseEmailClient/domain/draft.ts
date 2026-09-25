@@ -1,5 +1,6 @@
 import type { Recipient } from './compose';
 import type { SenderCandidate } from './sender';
+import { bareId, isPartyEntity, partyNavFor, type PartyEntity } from './recipients';
 
 /**
  * The shape of a draft email row (R16).
@@ -70,9 +71,40 @@ export function senderParty(sender: SenderCandidate): Record<string, unknown> {
   return { ...bind, participationtypemask: PARTY_SENDER };
 }
 
+/**
+ * One To/Cc party row.
+ *
+ * **Binds the record whenever one is known.** A party with only `addressused` is *unresolved*,
+ * and Dataverse delivers to those only when `allowunresolvedpartiesonemailsend` is true — false
+ * in the demo org, where this client nevertheless relied on it. The bare-address form is now
+ * genuinely a last resort rather than the normal path it used to be.
+ *
+ * `partyNav` comes from the platform's own
+ * `_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty`; `partyNavFor` only
+ * composes a name for records that arrive without one, such as a fresh pick from the lookup.
+ *
+ * `addressused` is sent **alongside** the bind, not instead of it: the message should go to the
+ * address the agent saw, even where a contact has several.
+ */
 export function recipientParty(r: Recipient, mask: number): Record<string, unknown> {
-  return { addressused: r.address, participationtypemask: mask };
+  const base = { addressused: r.address, participationtypemask: mask };
+  if (!r.partyId || !r.partyEntity || !isPartyEntity(r.partyEntity)) return base;
+
+  const nav = r.partyNav ?? partyNavFor(r.partyEntity);
+  return {
+    ...base,
+    [`${nav}@odata.bind`]: `/${PARTY_SET[r.partyEntity]}(${bareId(r.partyId)})`,
+  };
 }
+
+/** The OData entity set for each party table — the plural in the `@odata.bind` path. */
+const PARTY_SET: Record<PartyEntity, string> = {
+  contact: 'contacts',
+  account: 'accounts',
+  systemuser: 'systemusers',
+  lead: 'leads',
+  queue: 'queues',
+};
 
 /**
  * Every party row for a draft, sender first.

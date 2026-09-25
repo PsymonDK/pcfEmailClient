@@ -7,7 +7,7 @@ import {
 } from '../domain/compose';
 import {
   DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
-  type AncestorCase, type Attachment, type MessageParties,
+  type AncestorCase, type Attachment, type MessageParties, type Party,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
 import { browserDownloadIo, downloadAttachment } from '../data/attachments';
@@ -36,15 +36,21 @@ import {
 } from '../data/attachmentUpload';
 import { fetchCaseQueue, fetchQueueById } from '../data/caseQueue';
 import { fetchSettings } from '../data/settings';
-import { fetchAgentIdentity, fetchOrgApprovalPolicy, preflightCandidate } from '../data/preflight';
+import {
+  fetchAgentIdentity, fetchOrgApprovalPolicy, preflightCandidate, type OrgApprovalPolicy,
+} from '../data/preflight';
 import {
   pickSetting, resolveSender, selfAddresses, type SenderCandidate,
 } from '../domain/sender';
 import { sendBlockedBy, type PreflightVerdict } from '../domain/preflight';
+import { blockingReasonBeforeSend, reportFor, type SendReport } from '../domain/send';
 import {
-  blockingReasonBeforeSend, EMAIL_STATUS, isInFlight, reportFor, type SendReport,
-} from '../domain/send';
-import { issueSend, pollUntilSettled } from '../data/send';
+  recipientFromParty, unresolvedAddresses, withoutDuplicates, type ResolutionOutcome,
+} from '../domain/recipients';
+import {
+  enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity, resolveXrmUtility,
+} from '../data/recipients';
+import { issueSend, pollUntilSettled, readSendStatus } from '../data/send';
 import {
   fetchCaseTemplates, instantiateTemplate, resolveXrmExecute, type EmailTemplate,
 } from '../data/templates';
@@ -357,6 +363,9 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           ? { approvalState: queue.approvalState, mailboxId: queue.mailboxId }
           : user.facts;
         verdicts.set(c.id, await preflightCandidate(api, c, policyResult.policy, facts));
+        // Held for the send-time recipient check, which needs `allowUnresolved` before it has
+        // any reason to re-read the org row.
+        orgPolicyRef.current = policyResult.policy;
       }));
       if (cancelled) return;
 
@@ -705,11 +714,26 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
 
     // Bcc is deliberately not read: carrying a hidden recipient forward discloses them.
     const original = {
-      sender: p.sender ? { name: p.sender.name, address: p.sender.address } : undefined,
-      to: p.to.map((x) => ({ name: x.name, address: x.address })),
-      cc: p.cc.map((x) => ({ name: x.name, address: x.address })),
+      // The sender matters most of all: on a reply it becomes the To recipient, so its record
+      // identity is what makes the reply deliverable.
+      sender: p.sender ? toRecipient(p.sender) : undefined,
+      // Carry the record identity, do NOT flatten to name+address. This `.map()` used to drop
+      // `partyId` on the floor, which is why every reply wrote an unresolved recipient.
+      to: p.to.map(toRecipient),
+      cc: p.cc.map(toRecipient),
     };
-    const { to, cc } = resolveRecipients(mode, original, ourAddresses);
+    const { to: rawTo, cc: rawCc } = resolveRecipients(mode, original, ourAddresses);
+
+    // The message being answered often carries UNRESOLVED parties — the platform stores whatever
+    // the mail server reported. Resolving here means the reply binds a record even when the
+    // original did not, which is the difference between a deliverable reply and a refused one.
+    // One shared cache: the same address usually appears in both To and Cc.
+    const cache = new Map<string, ResolutionOutcome>();
+    const api = webApiRef.current;
+    const [to, cc] = await Promise.all([
+      enrichRecipients(api, rawTo, cache),
+      enrichRecipients(api, rawCc, cache),
+    ]);
 
     // The quote needs the original body, which is fetched lazily. Open compose either way — an
     // agent who clicked Reply should get a cursor, not a spinner — and fill the quote when it
@@ -910,6 +934,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   attachmentsRef.current = attachments;
   inlineBytesRef.current = inlineBytes;
   const inlineCeiling = React.useRef(DEFAULT_INLINE_CEILING);
+  /**
+   * The org's send policy, once read.
+   *
+   * Defaults to the STRICTER reading — approval required, unresolved recipients refused — so a
+   * send attempted before the policy has loaded errs toward blocking rather than toward a
+   * message that quietly never arrives.
+   */
+  const orgPolicyRef = React.useRef<OrgApprovalPolicy>({
+    requireForQueue: true, requireForUser: true, allowUnresolved: false,
+  });
 
   React.useEffect(() => {
     void (async () => {
@@ -990,6 +1024,51 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   }, [flushDraft, patchAttachment]);
 
   /**
+   * Add recipients through the platform's own lookup (R9).
+   *
+   * Every recipient added this way names a **real record**, which is the whole point: Dataverse
+   * only reliably delivers to a party bound to a contact, account, user, lead or queue.
+   *
+   * A pick whose record has no email address is refused with a reason rather than added as a
+   * chip that could never receive anything — the same class of quiet failure as the unresolved
+   * party this work exists to fix.
+   */
+  const addRecipients = React.useCallback(async (field: 'to' | 'cc'): Promise<void> => {
+    const picked = await openRecipientLookup();
+    // Cancelling resolves with an empty array rather than rejecting, so this is the normal
+    // "changed my mind" path, not an error.
+    if (picked.length === 0) return;
+
+    const accepted: Recipient[] = [];
+    const refused: string[] = [];
+    for (const p of picked) {
+      const entity = pickedEntity(p);
+      if (!entity) {
+        refused.push(`${p.name} cannot receive email.`);
+        continue;
+      }
+      const address = await fetchPartyAddress(webApiRef.current, entity, p.id);
+      const out = recipientFromParty(p, address);
+      if (out.ok) accepted.push(out.recipient);
+      else refused.push(out.reason);
+    }
+
+    setCompose((c) => {
+      if (!c) return c;
+      const fresh = withoutDuplicates(accepted, [...c.to, ...c.cc]);
+      if (fresh.length === 0) return c;
+      return { ...c, [field]: [...c[field], ...fresh] };
+    });
+    if (accepted.length > 0) {
+      partiesDirty.current = true;
+      scheduleDraftSave();
+    }
+    if (refused.length > 0) {
+      setNotice({ headline: 'Some records were not added', detail: refused.join(' ') });
+    }
+  }, []);
+
+  /**
    * Take a file back off the reply.
    *
    * The Dataverse row is deleted too when there is one. Leaving it would send a file the agent
@@ -1062,6 +1141,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         uploadsInFlight: attachmentsRef.current.some(
           (a) => a.status === 'uploading' || a.status === 'pending',
         ),
+        unresolvedAddresses: unresolvedAddresses(draft.to, draft.cc),
+        allowUnresolved: orgPolicyRef.current.allowUnresolved,
       });
       if (blocked) {
         setSendReport({ phase: 'failed', headline: 'Not sent', detail: blocked, confirmed: false });
@@ -1079,9 +1160,35 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         return;
       }
 
+      const api = webApiRef.current;
+
+      /*
+       * The double-send guard, read from the saved row rather than assumed.
+       *
+       * `blockingReasonBeforeSend` has always refused an already-sent message and has always
+       * been tested for it — but the shell was not passing `statusCode`, so the guard was inert.
+       * Exactly the shape of the `inReplyToId` defect: the rule existed, the caller omitted the
+       * input, and every test still passed. Re-reading the row also catches a message sent from
+       * another tab or by a colleague in the seconds since compose opened.
+       */
+      const currentStatus = await readSendStatus(api, emailId);
+      const alreadyGone = blockingReasonBeforeSend({
+        recipientCount: draft.to.length + draft.cc.length,
+        uploadsInFlight: false,
+        statusCode: currentStatus,
+        // Already checked above; re-checking here would report it twice.
+        unresolvedAddresses: [],
+        allowUnresolved: true,
+      });
+      if (alreadyGone) {
+        setSendReport({
+          phase: 'failed', headline: 'Not sent', detail: alreadyGone, confirmed: false,
+        });
+        return;
+      }
+
       // Approval is re-checked against the live platform, not the verdict cached when compose
       // opened. A mailbox can be disabled while an agent is typing.
-      const api = webApiRef.current;
       const policy = await fetchOrgApprovalPolicy(api);
       const facts = sender.kind === 'user'
         ? await fetchAgentIdentity(api, sender.id).then((r) => r.facts)
@@ -1112,21 +1219,40 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         return;
       }
 
-      // Accepted — NOT delivered. Watch it, and report what was actually observed.
-      setSendReport(reportFor(EMAIL_STATUS.pendingSend, false));
-      const polled = await pollUntilSettled(api, emailId, (status) => {
-        if (isInFlight(status)) setSendReport(reportFor(status, false));
+      /*
+       * Accepted — NOT delivered. Compose closes anyway, and here is why that is right.
+       *
+       * The first version held compose open until a confirmed `Sent`. Measured 2026-09-25 on a
+       * real send: a perfectly healthy message took **~2.5 minutes** to move from Pending Send
+       * to Sent, because that is the server-side sync cadence. No agent will watch a panel for
+       * two and a half minutes, so the old behaviour meant they essentially never saw success —
+       * which teaches them to ignore the status line, defeating the point of reporting it.
+       *
+       * Closing is safe because acceptance means the message is already a real row on the case:
+       * nothing the agent wrote can be lost by closing. The status keeps being reported where
+       * it belongs — a `Sending` badge on the thread-list row, which survives navigation,
+       * reload, and the agent going for coffee.
+       *
+       * What is NOT done here is claim delivery. The notice says accepted, and the badge says
+       * Sending until the platform says otherwise.
+       */
+      setCompose(undefined);
+      setAttachments([]);
+      composeHighWater.current = 0;
+      setSendReport(undefined);
+      setNotice({
+        headline: 'Message accepted — sending',
+        detail: 'It is on the case and will show as Sent once it leaves. This usually takes a '
+          + 'couple of minutes.',
       });
-      const report = reportFor(polled.statusCode, polled.exhausted);
-      setSendReport(report);
+      void load();
 
-      if (report.confirmed) {
-        // Only a confirmed hand-off closes compose. Leaving it open on "still sending" keeps
-        // the agent's text in front of them, which is the right place for it if it never goes.
-        setCompose(undefined);
-        setAttachments([]);
-        composeHighWater.current = 0;
-      }
+      // Keep watching in the background, and correct the notice to whatever actually happened.
+      const polled = await pollUntilSettled(api, emailId);
+      const report = reportFor(polled.statusCode, polled.exhausted);
+      setNotice(report.confirmed
+        ? { headline: 'Sent', detail: 'The message has left the queue.' }
+        : { headline: report.headline, detail: report.detail ?? '' });
       void load();
     } finally {
       setSending(false);
@@ -1391,6 +1517,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
               setCompose((c) => (c ? { ...c, subject: next } : c));
               scheduleDraftSave();
             }}
+            onAddRecipients={resolveXrmUtility() ? (field) => void addRecipients(field) : undefined}
+            flagUnresolved={!orgPolicyRef.current.allowUnresolved}
             onRemoveRecipient={(field, address) => {
               setCompose((c) => (c
                 ? { ...c, [field]: c[field].filter((r) => r.address !== address) }
@@ -1443,6 +1571,22 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
 };
 
 /** First value that is a non-empty string.  cannot express this: '' is not nullish. */
+/**
+ * A `data/` party becomes a compose `Recipient`, identity intact.
+ *
+ * One function so no call site can flatten the record away again — which is precisely how the
+ * unresolved-recipient bug got in, as a `.map()` that kept only name and address.
+ */
+function toRecipient(p: Party): Recipient {
+  return {
+    name: p.name,
+    address: p.address,
+    partyId: p.partyId,
+    partyEntity: p.partyEntity,
+    partyNav: p.partyNav,
+  };
+}
+
 function firstNonEmpty(...values: (string | undefined)[]): string {
   for (const v of values) if (v && v.trim().length > 0) return v;
   return '';

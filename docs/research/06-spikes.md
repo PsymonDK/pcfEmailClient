@@ -1900,3 +1900,112 @@ worse than one that cannot, so the flag stays a probe tool and the UI always iss
    that runs forever reads as "this is fine".
 4. **Only a confirmed `Sent` closes compose.** On "still sending" the agent's text stays in front
    of them, which is where it belongs if it never goes.
+
+#### Real send verified — 2026-09-25, v1.11.0, and it changed the design
+
+One real send through the UI, to `simon.jehrbo@example.com` from the **Care** queue on CAS-01020.
+
+| | |
+|---|---|
+| Recipients as sent | `from: caredemo@…`, `to: simon.jehrbo@example.com` — one, correct |
+| Accepted | 10:11:49, `statuscode` **6 Pending Send** |
+| Settled | ~10:14:27, `statuscode` **3 Sent** |
+| Assigned on a REAL send | `messageid`, `conversationindex` (44 chars), `trackingtoken` `CRM:0100014` |
+
+Confirms the whole path: save → live pre-flight → issue → poll → report. It also confirms the
+`IssueSend: false` difference recorded above: the safe mode assigns neither `messageid` nor
+`conversationindex`, and never passes through Pending Send.
+
+##### **The poll window was far too short, and the measurement said so**
+
+The client polled for ~30 seconds. The actual server-side sync latency was **~2.5 minutes**,
+matching the Care mailbox's `lastSuccessfulSyncCompletedOn`. So on a *perfectly healthy* send the
+UI ended at "Still sending" and never showed success.
+
+That is honest but self-defeating: an agent who never sees "Sent" learns to ignore the status
+line, which is the line R18 depends on. Lengthening the poll was the wrong fix — nobody watches a
+panel for two and a half minutes.
+
+**Compose now closes as soon as the platform ACCEPTS the message.** Safe, because acceptance means
+the message is already a real row on the case: nothing the agent wrote can be lost by closing. The
+status moved to where it can survive navigation and a reload — a **`Sending` badge on the
+thread-list row** (and `Failed` for status 8), with a shell notice that says accepted, not sent.
+Polling continues in the background and corrects the notice to whatever actually happened.
+
+The principle held: **nothing claims delivery the platform has not confirmed.** What changed is
+*where* the still-pending state is shown, not whether it is admitted to.
+
+##### A second inert guard, same shape as `inReplyToId`
+
+`blockingReasonBeforeSend` has always refused an already-sent message, and has always been tested
+for it — but the shell never passed `statusCode`, so the guard did nothing. The rule existed, the
+caller omitted the input, and every test passed. That is now the **second** defect of exactly this
+shape in this project; both were invisible to unit tests because the seam is between a tested pure
+function and a React caller.
+
+It now re-reads the row immediately before issuing, which also catches a message sent from another
+tab in the seconds since compose opened.
+
+### Recipients must name a record — 2026-09-25
+
+**The defect.** `recipientParty` wrote every To/Cc party as a bare `addressused` with no
+`partyid`. Dataverse calls that an **unresolved party** and only delivers to one when
+`Organization.allowunresolvedpartiesonemailsend` is true. **That setting is `false` here.**
+
+Confirmed on the message sent earlier that day: the sender party was bound to the Care queue,
+the To party had `partyid: NULL` — and a `contact` with exactly that `emailaddress1` already
+existed. The client sent unresolved to an address it could have resolved.
+
+**Two corrections to the R17 write-up above, both mine:**
+
+1. The mail arrived, but after **~17 minutes**, while Dataverse reported `statuscode` 3 (Sent)
+   after ~2.5 minutes. **"Sent" means handed to Exchange, not delivered.** I reported status 3 as
+   delivery; that was wrong, and no status available to the client proves arrival.
+2. Delivery succeeded *despite* `allowunresolvedpartiesonemailsend = false`, so that flag is not
+   a hard gate on this path. The fix still stands — depending on a tolerance we are not entitled
+   to is the defect — but this is a **portability problem, not a live outage here.**
+
+#### What the platform hands over for free
+
+The identity was already on the wire and was being discarded. With annotations enabled — which
+`context.webAPI` does by default, as `groupParties` reading `FormattedValue` already proved —
+each party carries:
+
+| Annotation | Value |
+|---|---|
+| `_partyid_value@Microsoft.Dynamics.CRM.lookuplogicalname` | `"queue"` |
+| `_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty` | `"partyid_queue"` |
+
+The second is the platform **stating the `@odata.bind` property outright**, so composing
+`partyid_${entity}` by hand is an unnecessary guess. An unresolved party has `_partyid_value:
+null` and no annotations — an unambiguous signal. `openCompose` was throwing all of this away in
+a `.map()` that kept only name and address.
+
+#### `Xrm.Utility.lookupObjects` — spiked before building on it
+
+Verified live inside the PCF in CSW: the native **Lookup Records** panel opens over the control,
+searches Contacts and Users together, shows each record's email address inline, and resolves with
+
+```json
+[{ "id": "{B5E30418-23F2-F011-8406-0022489CF5DD}", "entityType": "contact", "name": "Simon Jehrbo" }]
+```
+
+Three things that shape the code:
+
+- **`id` is braced AND upper-cased.** Passing it straight into an `@odata.bind` is the obvious
+  mistake; `bareId` exists for exactly this.
+- **Cancelling resolves with `[]`, it does not reject.** Treating "no rejection" as "something
+  was picked" would add an undefined recipient.
+- **No email address is returned**, and every table names its column differently —
+  `internalemailaddress` on `systemuser`, `emailaddress` on `queue`, `emailaddress1` on the
+  rest. One read per pick, and a record with no address is refused at the moment of picking.
+
+#### `npm run typecheck` covers far less than I previously recorded
+
+CLAUDE.md said it "does not cover `index.ts`". It is broader than that: `tsconfig.test.json`
+includes **only `CaseEmailClient/**/*.test.ts`**, so source files are type-checked only insofar as
+a test imports them. `ui/EmailClientRoot.tsx` is imported by no test and is therefore **never
+type-checked by `npm run typecheck` at all** — only by `npm run build`. Both call sites of the
+widened `blockingReasonBeforeSend` passed typecheck and failed the build.
+
+**`npm run build` is the type gate. `npm run typecheck` is a test-file gate.**

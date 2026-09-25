@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-24T07:29:17.555Z",
+  "createdAt": "2026-09-25T12:20:13.167Z",
   "org": "https://your-org.crm4.dynamics.com",
   "table": "jhrb_emailclientsetting",
   "solution": "JHRBCaseEmailClient",
@@ -7,7 +7,9 @@
   "flags": [
     "jhrb_isdefault",
     "jhrb_sendfromqueue",
-    "jhrb_allowsenderoverride"
+    "jhrb_allowsenderoverride",
+    "jhrb_recipiententity",
+    "jhrb_recipientlookup"
   ],
   "lookups": [
     "jhrb_queue",

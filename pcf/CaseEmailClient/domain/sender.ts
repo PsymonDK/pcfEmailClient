@@ -40,6 +40,15 @@ export interface SettingRow {
   allowSenderOverride: boolean;
   /** Send from this queue whatever the Case's is. Normally absent. */
   overrideQueueId?: string;
+  /**
+   * Where a NEW message's default recipient comes from — the table this control is hosted on
+   * and the lookup on it naming the recipient, e.g. `incident` / `customerid`.
+   *
+   * A pair rather than a bare field name so a row is self-describing, and so a future non-Case
+   * placement can carry its own row instead of the control assuming it is always on a Case.
+   */
+  recipientEntity?: string;
+  recipientLookup?: string;
 }
 
 const norm = (id: string | undefined): string | undefined =>

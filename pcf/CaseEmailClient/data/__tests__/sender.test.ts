@@ -224,3 +224,21 @@ describe('buildDraftLookupQuery — finding an agent’s existing draft', () => 
     expect(q).toContain('$top=1');
   });
 });
+
+describe('settings — the recipient source pair', () => {
+  it('reads both halves', () => {
+    expect(toSettingRow({
+      jhrb_recipiententity: 'incident', jhrb_recipientlookup: 'customerid',
+    })).toMatchObject({ recipientEntity: 'incident', recipientLookup: 'customerid' });
+  });
+
+  it('treats blank as unset, so a half-configured row does not look configured', () => {
+    expect(toSettingRow({ jhrb_recipiententity: '   ', jhrb_recipientlookup: '' }))
+      .toMatchObject({ recipientEntity: undefined, recipientLookup: undefined });
+  });
+
+  it('is selected by the query', () => {
+    expect(buildSettingsQuery()).toContain('jhrb_recipiententity');
+    expect(buildSettingsQuery()).toContain('jhrb_recipientlookup');
+  });
+});

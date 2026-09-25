@@ -240,6 +240,15 @@ export interface Party {
   name: string;
   address: string;
   partyId?: string;
+  /**
+   * Which table `partyId` points at, and the navigation property to bind it with.
+   *
+   * Both arrive as annotations on the EXISTING query — no extra column, no extra request. They
+   * were simply never read. Without them a reply cannot re-bind the recipient it is answering,
+   * and writes an unresolved party Dataverse may refuse to deliver to.
+   */
+  partyEntity?: string;
+  partyNav?: string;
 }
 
 export interface MessageParties {
@@ -287,6 +296,14 @@ export function groupParties(
         ) || '(unknown)',
       address: asString(row.addressused, ''),
       partyId: row._partyid_value ? asString(row._partyid_value) : undefined,
+      // The platform states the table and the bind property outright; prefer them over deriving
+      // either. Both are absent on an unresolved party — exactly the signal we want.
+      partyEntity: row['_partyid_value@Microsoft.Dynamics.CRM.lookuplogicalname']
+        ? asString(row['_partyid_value@Microsoft.Dynamics.CRM.lookuplogicalname'])
+        : undefined,
+      partyNav: row['_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty']
+        ? asString(row['_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty'])
+        : undefined,
     };
 
     switch (party.role) {

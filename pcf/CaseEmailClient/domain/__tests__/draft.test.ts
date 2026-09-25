@@ -9,6 +9,7 @@ import {
   PARTY_CC,
   PARTY_SENDER,
   PARTY_TO,
+  recipientParty,
   senderParty,
   worthSaving,
   type DraftArgs,
@@ -214,5 +215,76 @@ describe('parentactivityid — the link that stops duplicate drafts', () => {
     // Measured: IsValidForCreate true, IsValidForUpdate FALSE. Sending it on a PATCH fails.
     expect(Object.keys(buildDraftUpdate({ subject: 's', bodyHtml: 'b' })))
       .not.toContain('parentactivityid@odata.bind');
+  });
+});
+
+describe('recipientParty — resolved recipients are BOUND, not just addressed', () => {
+  const contact = {
+    name: 'Simon Jehrbo',
+    address: 'simon.jehrbo@example.com',
+    partyId: 'b5e30418-23f2-f011-8406-0022489cf5dd',
+    partyEntity: 'contact',
+    partyNav: 'partyid_contact',
+  };
+
+  it('binds the record when identity is known', () => {
+    // THE BUG. Dataverse calls an address-only party "unresolved" and only delivers to one when
+    // allowunresolvedpartiesonemailsend is true — false in the demo org. Every reply this client
+    // sent before now wrote an unresolved To party.
+    expect(recipientParty(contact, PARTY_TO)).toEqual({
+      addressused: 'simon.jehrbo@example.com',
+      participationtypemask: PARTY_TO,
+      'partyid_contact@odata.bind': '/contacts(b5e30418-23f2-f011-8406-0022489cf5dd)',
+    });
+  });
+
+  it('keeps addressused ALONGSIDE the bind', () => {
+    // A contact may hold several addresses; the mail should go to the one the agent saw.
+    const row = recipientParty(contact, PARTY_TO);
+    expect(row.addressused).toBe('simon.jehrbo@example.com');
+  });
+
+  it('uses the nav property the PLATFORM stated, not one composed by hand', () => {
+    const odd = { ...contact, partyNav: 'partyid_contact_custom' };
+    expect(Object.keys(recipientParty(odd, PARTY_TO)))
+      .toContain('partyid_contact_custom@odata.bind');
+  });
+
+  it('composes a nav property only when none was supplied', () => {
+    const { partyNav, ...noNav } = contact;
+    expect(Object.keys(recipientParty(noNav, PARTY_TO))).toContain('partyid_contact@odata.bind');
+  });
+
+  it('uses the right entity SET for each table', () => {
+    const forEntity = (partyEntity: string, set: string) => {
+      const row = recipientParty({ ...contact, partyEntity, partyNav: undefined }, PARTY_TO);
+      expect(row[`partyid_${partyEntity}@odata.bind`]).toBe(`/${set}(${contact.partyId})`);
+    };
+    forEntity('contact', 'contacts');
+    forEntity('account', 'accounts');
+    forEntity('systemuser', 'systemusers');
+    forEntity('queue', 'queues');
+    forEntity('lead', 'leads');
+  });
+
+  it('strips braces from an id that came straight off the lookup dialog', () => {
+    const braced = { ...contact, partyId: '{B5E30418-23F2-F011-8406-0022489CF5DD}' };
+    expect(recipientParty(braced, PARTY_TO)['partyid_contact@odata.bind'])
+      .toBe('/contacts(b5e30418-23f2-f011-8406-0022489cf5dd)');
+  });
+
+  it('falls back to a bare address when there is genuinely no record', () => {
+    // Still supported — some orgs enable unresolved parties — but now a last resort rather than
+    // the normal path it used to be.
+    expect(recipientParty({ name: 'X', address: 'x@y.com' }, PARTY_TO)).toEqual({
+      addressused: 'x@y.com', participationtypemask: PARTY_TO,
+    });
+  });
+
+  it('does not bind a table that cannot be a party', () => {
+    const wrong = { ...contact, partyEntity: 'incident', partyNav: undefined };
+    expect(Object.keys(recipientParty(wrong, PARTY_TO))).toEqual(
+      ['addressused', 'participationtypemask'],
+    );
   });
 });

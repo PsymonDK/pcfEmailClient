@@ -26,6 +26,10 @@ const DEFAULT_ROW = {
   // The agent can still send as themselves when that is genuinely the right thing — pre-flight
   // will tell them if their own mailbox cannot deliver.
   jhrb_allowsenderoverride: true,
+  // Where a NEW message's default recipient comes from. `customerid` because it is populated on
+  // virtually every Case and accepts either an account or a contact — both valid party targets.
+  jhrb_recipiententity: 'incident',
+  jhrb_recipientlookup: 'customerid',
 };
 
 const api = async (path, method = 'GET', body) => {
@@ -53,19 +57,49 @@ console.log(`Table:  ${TABLE}\n`);
 
 const existing = (await api(
   `${TABLE}s?$select=jhrb_emailclientsettingid,jhrb_name,jhrb_sendfromqueue,jhrb_allowsenderoverride`
+  + ',jhrb_recipiententity,jhrb_recipientlookup'
   + '&$filter=statecode eq 0 and jhrb_isdefault eq true',
 )).json.value;
 
 if (existing.length > 0) {
-  console.log(`A default row already exists — leaving it alone:`);
+  console.log('A default row already exists:');
   for (const r of existing) {
     console.log(`  "${r.jhrb_name}"  sendFromQueue=${r.jhrb_sendfromqueue}  `
-      + `allowOverride=${r.jhrb_allowsenderoverride}  ${r.jhrb_emailclientsettingid}`);
+      + `allowOverride=${r.jhrb_allowsenderoverride}  `
+      + `recipient=${r.jhrb_recipiententity ?? '(unset)'}/${r.jhrb_recipientlookup ?? '(unset)'}  `
+      + `${r.jhrb_emailclientsettingid}`);
   }
   if (existing.length > 1) {
     console.log('\nWARNING: more than one default row. `pickSetting` takes the first the platform');
     console.log('returns, which is not a stable choice. Deactivate all but one.');
   }
+
+  /*
+   * Backfill values a NEWER column added after this row was created.
+   *
+   * Only ever fills a field that is empty — an administrator's own choice is never overwritten.
+   * Without this, adding a column leaves every existing deployment with it unset and the
+   * feature silently inert, which is the same shape of failure as a guard nothing passes.
+   */
+  const row = existing[0];
+  const backfill = {};
+  for (const key of ['jhrb_recipiententity', 'jhrb_recipientlookup']) {
+    if (!row[key] && DEFAULT_ROW[key]) backfill[key] = DEFAULT_ROW[key];
+  }
+
+  if (Object.keys(backfill).length === 0) {
+    console.log('\nNothing to backfill.');
+    process.exit(0);
+  }
+  if (!CONFIRM) {
+    console.log('\nDRY RUN — would backfill the empty fields:');
+    for (const [k, v] of Object.entries(backfill)) console.log(`  ${k.padEnd(24)} ${v}`);
+    console.log('\nRe-run with --confirm.');
+    process.exit(0);
+  }
+  await api(`${TABLE}s(${row.jhrb_emailclientsettingid})`, 'PATCH', backfill);
+  console.log('\nBackfilled:');
+  for (const [k, v] of Object.entries(backfill)) console.log(`  ${k.padEnd(24)} ${v}`);
   process.exit(0);
 }
 

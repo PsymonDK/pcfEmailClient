@@ -34,6 +34,25 @@ export type ComposeMode = 'reply' | 'replyAll' | 'forward';
 export interface Recipient {
   name: string;
   address: string;
+  /**
+   * The record this recipient names, when it names one.
+   *
+   * Absent means **unresolved**, and Dataverse only delivers to an unresolved party when
+   * `Organization.allowunresolvedpartiesonemailsend` is true — false in the demo org. So this is
+   * not decoration: it is the difference between a message that is delivered and one that is
+   * quietly not. See `domain/recipients.ts`.
+   */
+  partyId?: string;
+  /** `contact` / `account` / `systemuser` / `lead` / `queue`. */
+  partyEntity?: string;
+  /**
+   * The `@odata.bind` navigation property, as **stated by the platform** in
+   * `_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty`.
+   *
+   * Preferred over composing `partyid_${entity}` by hand, which is a guess that merely happens
+   * to agree today.
+   */
+  partyNav?: string;
 }
 
 export interface ResolvedRecipients {

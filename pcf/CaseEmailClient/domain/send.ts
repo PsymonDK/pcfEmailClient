@@ -25,6 +25,8 @@
  * | 8 | **Failed** | **0 Open** |
  */
 
+import { describeUnresolved } from './recipients';
+
 export const EMAIL_STATUS = {
   draft: 1,
   completed: 2,
@@ -146,11 +148,26 @@ export function blockingReasonBeforeSend(args: {
   recipientCount: number;
   statusCode?: number;
   uploadsInFlight: boolean;
+  /**
+   * Addresses that match no record, and whether the org tolerates them.
+   *
+   * **Both are required, not optional.** This guard has already gone inert twice — once for
+   * `inReplyToId`, once for `statusCode` — each time because `domain/` held the rule and the
+   * caller silently omitted the input, with every test still passing. A required key forces
+   * each call site to decide, which is the only thing that has actually prevented a recurrence.
+   */
+  unresolvedAddresses: readonly string[];
+  allowUnresolved: boolean;
 }): string | undefined {
   if (args.recipientCount === 0) return 'Add at least one recipient first.';
   if (args.uploadsInFlight) return 'Wait for the attachments to finish uploading.';
   if (args.statusCode !== undefined && args.statusCode !== EMAIL_STATUS.draft) {
     return 'This message has already been sent.';
+  }
+  // Checked last: it is the most specific complaint, and the least useful to show while
+  // something more basic is also wrong.
+  if (!args.allowUnresolved && args.unresolvedAddresses.length > 0) {
+    return describeUnresolved(args.unresolvedAddresses);
   }
   return undefined;
 }

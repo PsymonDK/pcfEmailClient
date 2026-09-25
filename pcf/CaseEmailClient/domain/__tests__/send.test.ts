@@ -123,7 +123,13 @@ describe('POLL_DELAYS', () => {
 });
 
 describe('blockingReasonBeforeSend', () => {
-  const ok = { recipientCount: 1, statusCode: EMAIL_STATUS.draft, uploadsInFlight: false };
+  const ok = {
+    recipientCount: 1,
+    statusCode: EMAIL_STATUS.draft,
+    uploadsInFlight: false,
+    unresolvedAddresses: [] as string[],
+    allowUnresolved: false,
+  };
 
   it('allows a well-formed draft', () => {
     expect(blockingReasonBeforeSend(ok)).toBeUndefined();
@@ -151,7 +157,37 @@ describe('blockingReasonBeforeSend', () => {
   });
 
   it('reports the missing recipient before anything else', () => {
-    expect(blockingReasonBeforeSend({ recipientCount: 0, uploadsInFlight: true }))
-      .toContain('recipient');
+    expect(blockingReasonBeforeSend({
+      recipientCount: 0, uploadsInFlight: true, unresolvedAddresses: [], allowUnresolved: false,
+    })).toContain('recipient');
+  });
+
+  describe('unresolved recipients', () => {
+    it('BLOCKS an address that matches no record, and names it', () => {
+      // Dataverse only delivers to an unresolved party when allowunresolvedpartiesonemailsend
+      // is true — false in the demo org. Sending anyway is the silent non-delivery this whole
+      // feature exists to prevent.
+      const reason = blockingReasonBeforeSend({
+        ...ok, unresolvedAddresses: ['kunde@example.com'], allowUnresolved: false,
+      });
+      expect(reason).toContain('kunde@example.com');
+    });
+
+    it('allows it where the ORG has enabled unknown recipients', () => {
+      expect(blockingReasonBeforeSend({
+        ...ok, unresolvedAddresses: ['kunde@example.com'], allowUnresolved: true,
+      })).toBeUndefined();
+    });
+
+    it('says nothing when every recipient resolves', () => {
+      expect(blockingReasonBeforeSend({ ...ok, unresolvedAddresses: [] })).toBeUndefined();
+    });
+
+    it('reports a more basic problem first', () => {
+      // "Add a recipient" is more useful than "that recipient is unknown" when there are none.
+      expect(blockingReasonBeforeSend({
+        ...ok, recipientCount: 0, unresolvedAddresses: ['x@y.com'],
+      })).toContain('recipient first');
+    });
   });
 });

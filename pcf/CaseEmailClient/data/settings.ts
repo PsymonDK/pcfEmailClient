@@ -28,6 +28,8 @@ const SETTINGS_COLUMNS = [
   'jhrb_allowsenderoverride',
   '_jhrb_queue_value',
   '_jhrb_overridequeue_value',
+  'jhrb_recipiententity',
+  'jhrb_recipientlookup',
 ] as const;
 
 export function buildSettingsQuery(): string {
@@ -40,6 +42,8 @@ export function buildSettingsQuery(): string {
 }
 
 const bool = (v: unknown): boolean => v === true;
+const str = (v: unknown): string | undefined =>
+  (typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined);
 const guid = (v: unknown): string | undefined =>
   typeof v === 'string' && v.length > 0 ? v : undefined;
 
@@ -74,5 +78,7 @@ export function toSettingRow(row: Record<string, unknown>): SettingRow {
     sendFromQueue: bool(row.jhrb_sendfromqueue),
     allowSenderOverride: bool(row.jhrb_allowsenderoverride),
     overrideQueueId: guid(row._jhrb_overridequeue_value),
+    recipientEntity: str(row.jhrb_recipiententity),
+    recipientLookup: str(row.jhrb_recipientlookup),
   };
 }

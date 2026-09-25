@@ -99,6 +99,23 @@ const bool = ({ schema, logical, display, description }) => ({
   },
 });
 
+/**
+ * A plain text column.
+ *
+ * The third column shape this table needs, alongside `bool()` and `lookup()`. Kept short
+ * deliberately — these hold a table or column *name*, not prose.
+ */
+const text = ({ schema, logical, display, description, maxLength = 100 }) => ({
+  '@odata.type': 'Microsoft.Dynamics.CRM.StringAttributeMetadata',
+  SchemaName: schema,
+  LogicalName: logical,
+  DisplayName: label(display),
+  Description: label(description),
+  RequiredLevel: { Value: 'None', CanBeChanged: true, ManagedPropertyLogicalName: 'canmodifyrequirementlevelsettings' },
+  MaxLength: maxLength,
+  FormatName: { Value: 'Text' },
+});
+
 const entity = {
   '@odata.type': 'Microsoft.Dynamics.CRM.EntityMetadata',
   SchemaName: SCHEMA,
@@ -150,6 +167,35 @@ const flags = [
     display: 'Allow sender override',
     description:
       'Let the agent switch the From line between the queue and themselves while composing.',
+  }),
+  /*
+   * Where a NEW message's default recipient comes from, as an entity + field pair.
+   *
+   * Dataverse only reliably delivers to a recipient that matches a record — an address alone is
+   * an "unresolved party", refused unless `allowunresolvedpartiesonemailsend` is on. So the
+   * client needs to know which lookup on the hosting record names the person to write to.
+   *
+   * The ENTITY is named as well as the field so a row is self-describing and a future non-Case
+   * placement can carry its own row, rather than the control assuming it is always on a Case.
+   */
+  text({
+    schema: `${PREFIX}_RecipientEntity`,
+    logical: `${PREFIX}_recipiententity`,
+    display: 'Recipient entity',
+    description:
+      'Logical name of the table this control is hosted on, e.g. "incident". Paired with '
+      + 'Recipient lookup.',
+    maxLength: 64,
+  }),
+  text({
+    schema: `${PREFIX}_RecipientLookup`,
+    logical: `${PREFIX}_recipientlookup`,
+    display: 'Recipient lookup',
+    description:
+      'Logical name of the lookup on that table naming the default recipient, e.g. '
+      + '"customerid" or "primarycontactid". Must point at a contact, account, user, lead or '
+      + 'queue.',
+    maxLength: 64,
   }),
 ];
 
@@ -212,7 +258,10 @@ if (!CONFIRM) {
   console.log('DRY RUN — nothing created. Re-run with --confirm.\n');
   console.log(`Would create table ${TABLE} (OrganizationOwned) with:`);
   console.log(`  ${PREFIX}_name                 primary name, text(100), required`);
-  for (const f of flags) console.log(`  ${f.LogicalName.padEnd(21)} boolean, default No`);
+  for (const f of flags) {
+    const kind = f['@odata.type'].includes('String') ? 'text' : 'boolean, default No';
+    console.log(`  ${f.LogicalName.padEnd(24)} ${kind}`);
+  }
   for (const l of lookups) console.log(`  ${l.Lookup.LogicalName.padEnd(21)} lookup -> queue (delete: RemoveLink)`);
   console.log('\nThen publish, and write ids to settings-ids.json.');
   console.log('\nAfterwards, and both are required for agents to see any of it:');

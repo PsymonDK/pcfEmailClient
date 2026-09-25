@@ -136,6 +136,10 @@ export async function instantiateTemplate(
  * failure for a convenience feature.
  */
 export function resolveXrmExecute(): XrmExecute | undefined {
+  // `window` always exists in a PCF, but this function's whole contract is "returns undefined
+  // when the escape hatch is unreachable" — and throwing a ReferenceError is not that. Being
+  // total also lets the no-execute branch of its callers be tested outside a DOM.
+  if (typeof window === 'undefined') return undefined;
   const xrm = (window as unknown as Record<string, unknown>).Xrm as
     | { WebApi?: { online?: { execute?: unknown } } }
     | undefined;

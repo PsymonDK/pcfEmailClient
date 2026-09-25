@@ -670,6 +670,15 @@ const MessageRow: React.FC<{
         {sender}
       </span>
       {message.statuscode === 1 && <StatusBadge label="Draft" tone="warn" />}
+      {/*
+        R17. Compose closes as soon as the platform ACCEPTS a message, so this badge is where
+        the agent watches it land. Measured 2026-09-25: server-side sync took ~2.5 minutes to
+        move a healthy send from Pending Send to Sent, far longer than compose can reasonably
+        stay open — so the status has to live somewhere durable, not in a transient panel.
+      */}
+      {(message.statuscode === 6 || message.statuscode === 7)
+        && <StatusBadge label="Sending" tone="warn" />}
+      {message.statuscode === 8 && <StatusBadge label="Failed" tone="danger" />}
       <span style={{ flexGrow: 1 }} />
       {(message.attachmentcount ?? 0) > 0 && <AttachmentIcon />}
       <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto' }}>

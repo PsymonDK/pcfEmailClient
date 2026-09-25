@@ -1,6 +1,8 @@
 import * as React from 'react';
 import type { ComposeMode, Recipient } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
+import { isResolved } from '../domain/recipients';
+import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
 import { BODY_SURFACE, BODY_SURFACE_FG, formatSize, RADIUS, T } from './tokens';
@@ -36,6 +38,15 @@ export interface ComposeProps {
   onClose: () => void;
   onSubjectChange: (next: string) => void;
   onRemoveRecipient: (field: 'to' | 'cc', address: string) => void;
+  /**
+   * Opens the platform's lookup so the agent can add a recipient that names a real record.
+   *
+   * Absent when `Xrm.Utility` is unreachable, in which case the Add button is simply not
+   * rendered rather than offered and broken.
+   */
+  onAddRecipients?: (field: 'to' | 'cc') => void | Promise<void>;
+  /** Mark recipients that match no record — i.e. this org refuses unresolved parties. */
+  flagUnresolved?: boolean;
   /** Who the message goes out as (R17). On a Case this is normally the Case's queue. */
   sender: SenderCandidate;
   /** Everyone the agent may send as, `sender` first. One entry renders as text, not a picker. */
@@ -63,6 +74,14 @@ export interface ComposeProps {
   sendBlockedReason?: string;
   onSend: () => void;
   sending?: boolean;
+  /**
+   * R17 — what the platform ACTUALLY did, once Send was pressed.
+   *
+   * Outranks every other message on the Send row, and is deliberately not a success toast: an
+   * HTTP 200 from `SendEmail` means "accepted", and an unapproved sender parks at Pending Send
+   * forever with no error recorded anywhere. Only `confirmed` gets the success colour.
+   */
+  sendReport?: SendReport;
   /** R14 — templates that apply to a Case. Empty hides the picker rather than showing an empty one. */
   templates: readonly EmailTemplate[];
   /** Resolves one server-side. Returns the prepared content, or an agent-facing reason. */
@@ -81,15 +100,17 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     mode, answeringLabel, to, cc, subject, quotedBlock, initialHtml, height,
     onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
+    onAddRecipients, flagUnresolved,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
-    sendBlockedReason, onSend, sending, templates, onUseTemplate,
+    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
   const [editingSubject, setEditingSubject] = React.useState(false);
   const [empty, setEmpty] = React.useState(true);
   const [dragging, setDragging] = React.useState(false);
+  const [ccOpen, setCcOpen] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   /**
    * Drag enter/leave fire for every child element the pointer crosses, so a naive boolean
@@ -182,6 +203,20 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           to {answeringLabel}
         </span>
         <span style={{ flexGrow: 1 }} />
+        {/* Cc is hidden until asked for. An always-visible empty Cc row would spend 30 of the
+            471 measured vertical pixels saying nothing. */}
+        {cc.length === 0 && !ccOpen && (
+          <button
+            type="button"
+            onClick={() => setCcOpen(true)}
+            style={{
+              border: 'none', background: 'transparent', color: T.link, cursor: 'pointer',
+              font: 'inherit', fontSize: '12px', padding: '0 4px', flex: '0 0 auto',
+            }}
+          >
+            Cc
+          </button>
+        )}
         <IconButton label="Close compose" onClick={onClose}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M5 5l10 10M15 5L5 15" />
@@ -201,9 +236,25 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
 
       {/* Recipients. Fixed height and horizontally scrolling: a wrapping recipient row is the
           classic way compose silently eats the reading pane. */}
-      <RecipientRow label="To" people={to} onRemove={(a) => onRemoveRecipient('to', a)} />
-      {cc.length > 0 && (
-        <RecipientRow label="Cc" people={cc} onRemove={(a) => onRemoveRecipient('cc', a)} />
+      <RecipientRow
+        label="To"
+        people={to}
+        onRemove={(a) => onRemoveRecipient('to', a)}
+        onAdd={onAddRecipients ? () => void onAddRecipients('to') : undefined}
+        disabled={sending}
+        flagUnresolved={flagUnresolved}
+      />
+      {/* Cc appears once it has someone in it, or once the agent asks for it. Rendering it
+          unconditionally would spend 30 of the 471 measured vertical pixels on an empty row. */}
+      {(cc.length > 0 || ccOpen) && (
+        <RecipientRow
+          label="Cc"
+          people={cc}
+          onRemove={(a) => onRemoveRecipient('cc', a)}
+          onAdd={onAddRecipients ? () => void onAddRecipients('cc') : undefined}
+          disabled={sending}
+          flagUnresolved={flagUnresolved}
+        />
       )}
 
       {/* Subject is inherited and HIDDEN behind a link — editing it breaks threading, so it is
@@ -379,7 +430,23 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           unapproved sender returns HTTP 200 and the mail never leaves, with no error anywhere — so
           this is the only place the problem can surface.
         */}
-        {sendBlockedReason && (
+        {sendReport && (
+          <span
+            role="status"
+            title={sendReport.detail}
+            style={{
+              fontSize: '12px', minWidth: 0, lineHeight: 1.25, maxHeight: '32px',
+              overflow: 'hidden',
+              color: sendReport.confirmed
+                ? T.okFg
+                : sendReport.phase === 'failed' ? T.dangerFg : T.warnFg,
+            }}
+          >
+            <strong>{sendReport.headline}</strong>
+            {sendReport.detail ? ` — ${sendReport.detail}` : ''}
+          </span>
+        )}
+        {!sendReport && sendBlockedReason && (
           <span
             role="alert"
             // These reasons name the failure AND the fix, so they run long — and the Send row is
@@ -398,18 +465,18 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         {/* R16. A FAILED save outranks everything else on this row, including why Send is
             blocked: Send being unavailable costs the agent a minute, an unsaved draft costs
             them the reply. Silence here is the exact failure this feature exists to prevent. */}
-        {saveError && (
+        {!sendReport && saveError && (
           <span role="alert" style={{ fontSize: '12px', color: T.dangerFg, minWidth: 0 }}>
             Draft not saved — {saveError}
           </span>
         )}
-        {!saveError && !sendBlockedReason && savedLabel && (
+        {!sendReport && !saveError && !sendBlockedReason && savedLabel && (
           <span style={{ fontSize: '12px', color: T.fg3, minWidth: 0 }}>{savedLabel}</span>
         )}
         {/* The sender changed after the agent had started typing, so the signature was left
             alone. Silently rewriting a half-written reply is worse than a stale sign-off — but
             saying nothing is worse than both. */}
-        {!saveError && !sendBlockedReason && signatureStale && (
+        {!sendReport && !saveError && !sendBlockedReason && signatureStale && (
           <span role="status" style={{ fontSize: '12px', color: T.warnFg, minWidth: 0 }}>
             Signature still belongs to the previous sender — check it before sending.
           </span>
@@ -495,11 +562,23 @@ const SenderRow: React.FC<{
 };
 
 /** One recipient field. Fixed height, scrolls horizontally rather than wrapping. */
+/**
+ * One recipient field.
+ *
+ * **An unresolved chip is marked, not hidden.** A recipient that matches no record is one this
+ * organisation may refuse to deliver to, and the agent can only act on that if they can see
+ * which chip is the problem — so it carries a warning border and says why on hover. The Add
+ * button beside it is how they fix it.
+ */
 const RecipientRow: React.FC<{
   label: string;
   people: Recipient[];
   onRemove: (address: string) => void;
-}> = ({ label, people, onRemove }) => (
+  onAdd?: () => void;
+  disabled?: boolean;
+  /** When false, an unresolved chip is just informational rather than a blocker. */
+  flagUnresolved?: boolean;
+}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved }) => (
   <div
     style={{
       display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 30px', height: '30px',
@@ -511,33 +590,58 @@ const RecipientRow: React.FC<{
     {people.length === 0 && (
       <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
     )}
-    {people.map((r) => (
-      <span
-        key={r.address}
-        title={r.address}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
-          height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
-          background: T.bg3, border: `1px solid ${T.stroke2}`, borderRadius: RADIUS.pill,
-          fontSize: '12px', color: T.fg1, maxWidth: '200px',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {r.name || r.address}
-        </span>
-        <button
-          type="button"
-          onClick={() => onRemove(r.address)}
-          aria-label={`Remove ${r.name || r.address}`}
+    {people.map((r) => {
+      const unknown = flagUnresolved && !isResolved(r);
+      return (
+        <span
+          key={r.address}
+          title={unknown
+            ? `${r.address} — not a known contact, account, user or queue`
+            : r.address}
           style={{
-            border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
-            font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
+            display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
+            height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
+            background: unknown ? T.warnBg : T.bg3,
+            border: `1px solid ${unknown ? T.warnFg : T.stroke2}`,
+            borderRadius: RADIUS.pill,
+            fontSize: '12px', color: T.fg1, maxWidth: '200px',
           }}
         >
-          ✕
-        </button>
-      </span>
-    ))}
+          {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {r.name || r.address}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRemove(r.address)}
+            aria-label={`Remove ${r.name || r.address}`}
+            style={{
+              border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
+              font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
+            }}
+          >
+            ✕
+          </button>
+        </span>
+      );
+    })}
+    {onAdd && (
+      <button
+        type="button"
+        onClick={onAdd}
+        disabled={disabled}
+        aria-label={`Add ${label} recipient`}
+        title="Look up a contact, account, user or queue"
+        style={{
+          flex: '0 0 auto', height: '22px', padding: '0 8px', boxSizing: 'border-box',
+          border: `1px dashed ${T.stroke1}`, borderRadius: RADIUS.pill, background: 'transparent',
+          font: 'inherit', fontSize: '12px', color: disabled ? T.fg4 : T.link,
+          cursor: disabled ? 'default' : 'pointer',
+        }}
+      >
+        + Add
+      </button>
+    )}
   </div>
 );
 

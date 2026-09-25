@@ -25,7 +25,7 @@ depth formula are all verified on a real conversation. **No research gate remain
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **515 tests**, lint and typecheck clean.
+helpers — **550 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -321,6 +321,60 @@ bite if forgotten:
   data, unlike `jhrb_emailreadstate`). Its Read privilege is added to the **same** role as read
   state, so there is still only one role to assign per environment.
 
+**Recipients must name a RECORD — 2026-09-25**
+- **A To/Cc party written with only `addressused` is an "unresolved party"**, and Dataverse
+  delivers to one only when `Organization.allowunresolvedpartiesonemailsend` is true — **false**
+  here. Bind `partyid_<entity>@odata.bind` whenever the record is known; a bare address is a last
+  resort, not the normal path it used to be.
+- **The party query already carries the identity.** With annotations on (which `context.webAPI`
+  sets), `_partyid_value` arrives with `@…lookuplogicalname` **and**
+  `@…associatednavigationproperty` — the platform naming the bind property outright. Prefer it
+  over composing `partyid_${entity}`. An unresolved party has `_partyid_value: null` and no
+  annotations.
+- **`Xrm.Utility.lookupObjects` works inside the PCF in CSW** and is the recipient picker. It
+  returns `id` **braced and upper-cased** (strip it), resolves with **`[]` on cancel rather than
+  rejecting**, and does **not** return an email address.
+- **Every party table names its email column differently**: `internalemailaddress` on
+  `systemuser`, `emailaddress` on `queue`, `emailaddress1` on contact/account/lead. See
+  [`domain/recipients.ts`](pcf/CaseEmailClient/domain/recipients.ts).
+- Never resolve an address *to a queue* — that addresses our own service mailbox. The lookup does
+  offer queues, because picking one deliberately is different from matching one by accident.
+- Two matches for one address is **ambiguous, never a guess**: mailing whichever duplicate sorted
+  first is worse than refusing.
+- Configured by `jhrb_recipiententity` + `jhrb_recipientlookup` on `jhrb_emailclientsetting`
+  (`incident` / `customerid` by default).
+
+**Send (R17) — built 2026-09-25**
+- **`SendEmail` is a BOUND action**, unlike every other action here. Through
+  `Xrm.WebApi.online.execute` that is `boundParameter: 'entity'` (not `null`), the instance under
+  that same key with `entityType`/`id`/`@odata.type`, and
+  `entity: { typeName: 'mscrm.email', structuralProperty: 5 }`. Verified live.
+- **Status codes** (live metadata): 1 Draft, 2 Completed, 3 Sent, 4 Received, 5 Canceled,
+  6 Pending Send, 7 Sending, **8 Failed — `statecode` 0, the same Open state as a Draft.** Decide
+  "settled" from the STATUS, never the state, or a failed send polls forever.
+- **`IssueSend: false` is not a rehearsal.** It appends the tracking token to the subject and
+  assigns `trackingtoken`, but goes **straight to Sent** without passing through Pending Send, and
+  assigns neither `messageid` nor `conversationindex`. So the safe mode cannot exercise the
+  polling path — only a real send can.
+- **There is deliberately no "don't really send" switch in the product.** `IssueSend: false` marks
+  mail sent without sending it, which is the silent non-delivery the feature exists to prevent.
+  Probe tool only.
+- Send order: save → **double-send guard (re-read the row's `statuscode`)** → **re-run pre-flight
+  live** → issue → close compose → poll in the background.
+- **`statuscode` 3 (Sent) means handed to Exchange, NOT delivered.** Measured 2026-09-25: status 3
+  after ~2.5 minutes, actual arrival after **~17**. No status available to the client proves
+  receipt — do not report one as if it did.
+- **Compose closes on ACCEPTANCE, not on confirmed Sent.** Measured 2026-09-25: a healthy send took
+  **~2.5 minutes** to move Pending Send → Sent (server-side sync cadence), so waiting for `Sent`
+  meant agents never saw success and learned to ignore the status line. Acceptance means the
+  message is already a row on the case, so nothing is lost by closing. The pending state lives on
+  as a **`Sending` badge on the thread-list row**, which survives reload. Still nothing claims
+  delivery the platform has not confirmed.
+- **Watch for inert guards.** `blockingReasonBeforeSend` refused an already-sent message and was
+  tested for it, but the shell never passed `statusCode` — the second defect of this exact shape
+  after `inReplyToId`. A rule in `domain/` proves nothing until a caller passes its input; unit
+  tests cannot see that seam.
+
 **Attachments (R13) — built 2026-09-25**
 - **Slice the BYTES into blocks and base64 each one; never slice the encoded string.** Cutting
   base64 anywhere but a multiple of 4 characters shifts every following byte, AND sizing blocks
@@ -377,11 +431,13 @@ bite if forgotten:
 - Resuming a draft splits the stored body back apart with `splitQuotedHistory`, which is exactly
   what R12's round-trip invariant guarantees: **what we emitted, we can re-split.**
 
-**`npm run typecheck` does NOT cover `index.ts`.** `tsconfig.test.json` excludes it, so a type
-error in the entry point passes the local gate and fails only at `npm run build` (pcf-1033, "an
-error occurred compiling or bundling the control"). Widening a prop type in `ui/` without updating
-the cast in `index.ts` is the way to hit this. **Run `npm run build`, not just typecheck, before
-believing a type change is clean.**
+**`npm run typecheck` is a TEST-FILE gate, not a type gate.** `tsconfig.test.json` includes only
+`CaseEmailClient/**/*.test.ts`, so source files are checked only insofar as a test imports them —
+and `ui/EmailClientRoot.tsx` is imported by no test, so it is **never type-checked by
+`npm run typecheck` at all**. Corrected 2026-09-25: this file previously said, too narrowly, that
+only `index.ts` was uncovered. Two widened call sites in `EmailClientRoot.tsx` passed typecheck and
+failed the build. **`npm run build` is the type gate — always run it before believing a type change
+is clean.**
 
 **Read state (R6) — `jhrb_emailreadstate`, created 2026-09-11**
 - **UserOwned**, so Dataverse's own security trims each agent to their own rows. `jhrb_emailid` →

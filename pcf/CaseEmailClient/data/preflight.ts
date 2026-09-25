@@ -16,6 +16,14 @@ import { describeSender, type SenderCandidate } from '../domain/sender';
 export interface OrgApprovalPolicy {
   requireForQueue: boolean;
   requireForUser: boolean;
+  /**
+   * `allowunresolvedpartiesonemailsend` — whether the org delivers to a recipient that matches
+   * no record.
+   *
+   * **false** in the demo org (measured 2026-09-25), which is what made writing bare-address
+   * recipients a latent defect rather than a working shortcut.
+   */
+  allowUnresolved: boolean;
 }
 
 export async function fetchOrgApprovalPolicy(
@@ -24,7 +32,9 @@ export async function fetchOrgApprovalPolicy(
   try {
     const page = await webApi.retrieveMultipleRecords(
       'organization',
-      '?$select=requireapprovalforqueueemail,requireapprovalforuseremail',
+      // One more column on a query that already runs — no extra round trip.
+      '?$select=requireapprovalforqueueemail,requireapprovalforuseremail'
+      + ',allowunresolvedpartiesonemailsend',
       1,
     );
     const o = page.entities[0] ?? {};
@@ -32,13 +42,16 @@ export async function fetchOrgApprovalPolicy(
       policy: {
         requireForQueue: o.requireapprovalforqueueemail === true,
         requireForUser: o.requireapprovalforuseremail === true,
+        allowUnresolved: o.allowunresolvedpartiesonemailsend === true,
       },
     };
   } catch (rejection) {
     // Assume approval IS required when we cannot tell. Assuming it is not would let the client
     // offer Send on a sender it has no evidence about — which is the silent-failure path.
     return {
-      policy: { requireForQueue: true, requireForUser: true },
+      // Same direction as the approval flags: assume the STRICTER setting when we cannot tell,
+      // so an unreadable org row never quietly permits an undeliverable recipient.
+      policy: { requireForQueue: true, requireForUser: true, allowUnresolved: false },
       error: normaliseWebApiError(rejection),
     };
   }

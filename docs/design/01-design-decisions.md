@@ -141,6 +141,24 @@ One counter-intuitive detail to keep: a queue with **no** address fails loudly a
 queue with an **unapproved** address fails silently and forever. The loud case is not evidence the
 quiet one is covered.
 
+### 3b. Who the mail comes from — decided 2026-09-24
+
+Three answers, taken together, and they interact with decision 3 above.
+
+| Question | Chosen | Why, and what it costs |
+|---|---|---|
+| How is it configured? | **One org-wide default row, plus optional per-queue override rows** (`jhrb_emailclientsetting`) | Works out of the box from a single row and only grows when a queue genuinely differs. Per-queue-only rows would mean a configuration step per queue and a silent no-op when one is forgotten; manifest properties could not vary per queue and would have to be set identically on *both* form placements |
+| Can the agent change it? | **Yes — a From picker** | The From line is shown either way, because an agent who cannot tell whether a reply goes out as Care or as themselves cannot predict what the customer sees. The picker costs a pre-flight verdict per candidate, and a blocked candidate stays visible **with its reason** rather than disappearing |
+| No queue on the Case? | **Fall back to the agent** | Mail still goes out; pre-flight says so if it cannot. Blocking would leave an agent on a queue-less Case unable to reply at all, and a configured fallback queue could send a Case's mail from a queue unrelated to it |
+
+**The signature follows the sender, and there is deliberately no switch for it.** A separate
+"which signature" setting would let the From line and the sign-off disagree — which is exactly the
+defect this work was written to fix (see `06-spikes.md`, 2026-09-24).
+
+**Where decision 3 bites:** in this environment the agent's own mailbox has
+`outgoingemailstatus = 0`, so choosing "send as me" is genuinely blocked. That is the block-Send
+decision working as intended, not a bug — and it is the first time it has been observable.
+
 ### 4. Compose: **docked**
 
 Docked to the bottom of the reading pane at **222px**, growing as the agent types to a ceiling of about

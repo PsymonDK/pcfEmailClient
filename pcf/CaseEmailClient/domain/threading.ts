@@ -50,6 +50,17 @@ const RE_PREFIX =
  */
 const RE_TRACKING_TOKEN = /\s*\b[A-Za-z]{2,8}:\d{4,12}\b\s*/g;
 
+/**
+ * Strips the platform's tracking token ONLY, preserving case and any reply prefix.
+ *
+ * `normaliseSubject` also lower-cases and strips prefixes, which makes it right for grouping and
+ * wrong for anything an agent reads. Composing a reply needs this one: the platform appends a
+ * *fresh* token on send, so carrying the old one forward produces `… CRM:0100012 CRM:0100019`.
+ */
+export function stripTrackingToken(subject: string): string {
+  return subject.replace(RE_TRACKING_TOKEN, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Strips localised reply/forward prefixes and tracking tokens, and collapses whitespace. */
 export function normaliseSubject(subject: string | null | undefined): string {
   if (!subject) return '(no subject)';

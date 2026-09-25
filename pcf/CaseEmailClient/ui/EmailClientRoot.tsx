@@ -1,6 +1,10 @@
 import * as React from 'react';
 import { buildThreads, type EmailRow, type Thread } from '../domain/threading';
-import { resolveLayout, LIST_WIDTH } from '../domain/layout';
+import { resolveLayout, composeHeight, LIST_WIDTH } from '../domain/layout';
+import {
+  buildOutgoingBody, buildQuotedBlock, composeSubject, headerFor, resolveRecipients,
+  type ComposeMode, type Recipient,
+} from '../domain/compose';
 import {
   DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
   type AncestorCase, type Attachment, type MessageParties,
@@ -18,7 +22,33 @@ import {
 } from '../domain/filter';
 import { ThreadList, type ThreadSummary } from './ThreadList';
 import { ReadingPane, type MessageState } from './ReadingPane';
-import { T } from './tokens';
+import { Compose, type TemplateOutcome } from './Compose';
+import { fetchSignatureFor } from '../data/signature';
+import { discardDraft, findExistingDraft, saveDraft, type DraftApiLike } from '../data/draft';
+import { describeSaved, worthSaving } from '../domain/draft';
+import {
+  admitFiles, blockProgress, DEFAULT_INLINE_CEILING, sizeWarning,
+  type PendingAttachment, type Rejection,
+} from '../domain/attachments';
+import {
+  fetchInlineCeiling, fileToBytes, removeAttachment as removeAttachmentRow, reuseAttachment,
+  uploadAttachment,
+} from '../data/attachmentUpload';
+import { fetchCaseQueue, fetchQueueById } from '../data/caseQueue';
+import { fetchSettings } from '../data/settings';
+import { fetchAgentIdentity, fetchOrgApprovalPolicy, preflightCandidate } from '../data/preflight';
+import {
+  pickSetting, resolveSender, selfAddresses, type SenderCandidate,
+} from '../domain/sender';
+import { sendBlockedBy, type PreflightVerdict } from '../domain/preflight';
+import {
+  fetchCaseTemplates, instantiateTemplate, resolveXrmExecute, type EmailTemplate,
+} from '../data/templates';
+import { initialBodyWithSignature } from '../domain/signature';
+import { sanitiseEmailBody } from '../domain/sanitise';
+import { splitQuotedHistory } from '../domain/quoting';
+import type { EditorHandle } from './Editor';
+import { formatWhen, T } from './tokens';
 import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
 
 /**
@@ -33,7 +63,7 @@ import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
 export interface EmailClientRootProps {
   caseId?: string;
   caseIdSource: 'property' | 'contextInfo' | 'unresolved';
-  webApi: ReadStateApiLike;
+  webApi: DraftApiLike;
   /** N7. What the host tells us about its theme; see `resolveThemeMode`. */
   themeSignals?: ThemeSignals;
   /** `context.userSettings.userId`, braces and all — R6 read state is per agent. */
@@ -113,6 +143,55 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const [selectedMessageId, setSelectedMessageId] = React.useState(restored?.selectedMessageId);
   /** True once the first load has chosen what to open, so it never overrides the agent later. */
   const landed = React.useRef(false);
+
+  /** R9/R10 — the open compose surface, or nothing. One at a time, docked in the reading pane. */
+  const [compose, setCompose] = React.useState<ComposeDraft>();
+  const [composeContentHeight, setComposeContentHeight] = React.useState(0);
+  /** R10: compose never shrinks back while open. Reset when it closes. */
+  const composeHighWater = React.useRef(0);
+  const editorRef = React.useRef<EditorHandle>(null);
+  /** True once the AGENT has changed the body. Not set by our own seeding — see `seeding`. */
+  const bodyTouched = React.useRef(false);
+  /** Guards `bodyTouched` while we write the signature in ourselves. */
+  const seeding = React.useRef(false);
+
+  /**
+   * Live mirrors of state the autosave reads.
+   *
+   * `flushDraft` is called from a debounce, an interval and an unmount, and must not be rebuilt
+   * on every keystroke — a new identity would restart the interval each time and the periodic
+   * save would never fire. So it depends only on `caseId` and reads everything else through
+   * these, which are updated on every render.
+   */
+  const composeRef = React.useRef<ComposeDraft>();
+  /** Live mirror of the attachment list, for callbacks that must not depend on it. */
+  const attachmentsRef = React.useRef<PendingAttachment[]>([]);
+  const inlineBytesRef = React.useRef(0);
+  const signatureRef = React.useRef('');
+  const senderRef = React.useRef<SenderCandidate>();
+
+  /**
+   * R15 signature and R14 templates — fetched once per case, not per compose-open.
+   *
+   * Both are conveniences: each resolves its own failure to "empty" rather than throwing, so a
+   * missing signature or an unreachable template list costs a nicety and never the reply.
+   */
+  const [signatureHtml, setSignatureHtml] = React.useState('');
+  const [templates, setTemplates] = React.useState<EmailTemplate[]>([]);
+
+  /**
+   * Who outgoing mail goes out as (R17), and whether it can actually leave (R18).
+   *
+   * Resolved once per case, in one batched state object so the compose surface never renders
+   * against a half-resolved sender. Until it resolves there is one candidate — the agent — with
+   * no verdict, which `sendBlockedBy` reports as "checking": Send stays disabled, which is the
+   * only safe state to be in before pre-flight has answered.
+   */
+  const [senderState, setSenderState] = React.useState<SenderState>(() => ({
+    candidates: [FALLBACK_SENDER],
+    chosenId: FALLBACK_SENDER.id,
+    verdicts: new Map<string, PreflightVerdict>(),
+  }));
 
   /**
    * The durable rows this agent already has (R6), keyed by message id.
@@ -213,6 +292,99 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   }, [caseId, userId, includeParent]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  // Templates. Per-org, not per-case, and a failure here must not touch the mail list's own
+  // error handling.
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const tpl = await fetchCaseTemplates(webApiRef.current);
+      if (!cancelled) setTemplates(tpl.templates);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  /**
+   * Resolve the sender, then pre-flight every candidate (R17/R18).
+   *
+   * Per case, because the queue is a property of the case. One `setSenderState` at the end: a
+   * partially-applied sender would let compose open against a From line that is about to change.
+   */
+  React.useEffect(() => {
+    if (!caseId || !userId) return undefined;
+    let cancelled = false;
+
+    void (async () => {
+      const api = webApiRef.current;
+      const bareUser = userId.replace(/^\{|\}$/g, '');
+
+      const [queueResult, settingsResult, policyResult, user] = await Promise.all([
+        fetchCaseQueue(api, caseId),
+        fetchSettings(api),
+        fetchOrgApprovalPolicy(api),
+        fetchAgentIdentity(api, bareUser),
+      ]);
+      if (cancelled) return;
+
+      // The settings table is the likeliest thing to be missing in a fresh environment — the
+      // read privilege has to be granted explicitly — and its failure mode is silent (zero rows,
+      // not an error). Log it so a support call has something to go on.
+      if (settingsResult.error) {
+        console.warn('Email client settings unreadable; sending as the agent.', settingsResult.error);
+      }
+
+      const setting = pickSetting(
+        settingsResult.rows,
+        // An explicit override queue is configuration about THIS case's sender, so the row that
+        // names it is still chosen by the case's own queue.
+        queueResult.queue?.candidate.id,
+      );
+      const queue = setting?.overrideQueueId
+        && setting.overrideQueueId !== queueResult.queue?.candidate.id
+        ? ((await fetchQueueById(api, setting.overrideQueueId)) ?? queueResult.queue)
+        : queueResult.queue;
+      if (cancelled) return;
+
+      const { chosen, candidates } = resolveSender(setting, queue?.candidate, user.candidate);
+
+      const verdicts = new Map<string, PreflightVerdict>();
+      await Promise.all(candidates.map(async (c) => {
+        const facts = c.kind === 'queue' && queue
+          ? { approvalState: queue.approvalState, mailboxId: queue.mailboxId }
+          : user.facts;
+        verdicts.set(c.id, await preflightCandidate(api, c, policyResult.policy, facts));
+      }));
+      if (cancelled) return;
+
+      setSenderState({ candidates, chosenId: chosen.id, verdicts });
+    })();
+
+    return () => { cancelled = true; };
+  }, [caseId, userId]);
+
+  const chosenSender = React.useMemo(
+    () => senderState.candidates.find((c) => c.id === senderState.chosenId)
+      ?? senderState.candidates[0] ?? FALLBACK_SENDER,
+    [senderState],
+  );
+
+  /**
+   * The signature belongs to the SENDER, not to the agent (R15).
+   *
+   * Keyed on the chosen sender, which is the whole fix: the previous version keyed on `userId`
+   * and so signed queue mail with the agent's own signature. It only ever looked right because
+   * this environment has exactly one signature record, owned by the agent AND pointed at by the
+   * queue.
+   */
+  React.useEffect(() => {
+    if (!userId) return undefined;
+    let cancelled = false;
+    void (async () => {
+      const sig = await fetchSignatureFor(webApiRef.current, chosenSender, userId);
+      if (!cancelled) setSignatureHtml(sig.html);
+    })();
+    return () => { cancelled = true; };
+  }, [chosenSender, userId]);
 
   // ── persist what survives a teardown ───────────────────────────────────────
   //
@@ -488,6 +660,450 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     setSelectedMessageId(undefined);
   }, [threads, readIds, restored, openMessage]);
 
+  /**
+   * Every address that is *us*.
+   *
+   * This used to be inferred from the senders of outgoing mail already on the case, which was
+   * empty on a case nobody had replied to yet and wrong on one where an earlier reply went out
+   * from a different queue. It is now the resolved sending identities themselves — the
+   * authoritative answer, and the one pre-flight is already fetching.
+   */
+  const ourAddresses = React.useMemo(() => {
+    // The resolved sending identities — authoritative, and what pre-flight already fetched.
+    const out = new Set(selfAddresses(senderState.candidates));
+
+    /*
+     * PLUS the senders of outgoing mail already on this case.
+     *
+     * An earlier version REPLACED the derived set with the resolved one and called the
+     * derivation interim. That lost information, and the loss was visible: measured 2026-09-25
+     * on CAS-01020, whose queue could not be resolved, so Care was not a candidate, so replying
+     * put **the service queue itself in To** — the mail loop this exclusion exists to prevent.
+     *
+     * The two disagree in both directions, so neither alone is enough. The resolved set knows
+     * who we are about to send *as*, including on a case that has never been replied to. The
+     * derived set knows every address this case has actually sent *from*, including a queue we
+     * cannot resolve today and one that has since been reconfigured. Union.
+     */
+    for (const row of rows) {
+      if (row.directioncode !== true) continue;
+      const sender = parties.get(row.activityid)?.sender?.address;
+      if (sender) out.add(sender.toLowerCase());
+    }
+    return out;
+  }, [senderState.candidates, rows, parties]);
+
+  /** R9 — open compose against one message. */
+  const openCompose = React.useCallback(async (mode: ComposeMode, activityId: string) => {
+    const message = rows.find((r) => r.activityid === activityId);
+    if (!message) return;
+    const p = parties.get(activityId) ?? { to: [], cc: [], bcc: [] };
+
+    // Bcc is deliberately not read: carrying a hidden recipient forward discloses them.
+    const original = {
+      sender: p.sender ? { name: p.sender.name, address: p.sender.address } : undefined,
+      to: p.to.map((x) => ({ name: x.name, address: x.address })),
+      cc: p.cc.map((x) => ({ name: x.name, address: x.address })),
+    };
+    const { to, cc } = resolveRecipients(mode, original, ourAddresses);
+
+    // The quote needs the original body, which is fetched lazily. Open compose either way — an
+    // agent who clicked Reply should get a cursor, not a spinner — and fill the quote when it
+    // arrives.
+    await ensureBody(activityId);
+    const body = bodyCache.current.get(activityId) ?? '';
+    const quotedBlock = buildQuotedBlock(
+      headerFor(message, original, formatWhen),
+      body,
+    );
+
+    // R16 — resume rather than start again. Without this, closing compose and reopening Reply
+    // creates a SECOND draft row, then a third; the Case fills with duplicates of one unsent
+    // reply. Only a reply resumes: a forward is a new message to new people each time.
+    const existing = caseId && mode !== 'forward'
+      ? await findExistingDraft(webApiRef.current, caseId, activityId)
+      : undefined;
+
+    // Splitting our own stored body back apart is exactly R12's round-trip invariant, which
+    // `roundTrips` tests: what we emitted, we can re-split. The new text goes back in the
+    // editor; the quote stays the opaque string it always was.
+    const resumedNewText = existing
+      ? splitQuotedHistory(existing.bodyHtml).newHtml
+      : undefined;
+
+    composeHighWater.current = 0;
+    bodyTouched.current = existing !== undefined;
+    setRejections([]);
+    /*
+     * Rehydrate the resumed draft's attachments.
+     *
+     * Not cosmetic: the files are already rows on that email, so they WILL be sent. Showing an
+     * empty tray would mean the agent sees no attachments while the customer receives them —
+     * and they could not remove one they cannot see.
+     */
+    if (existing) {
+      const rows = await fetchAttachments(webApiRef.current, existing.emailId);
+      /*
+       * Inline images are NOT attachments, and must not be offered as ones.
+       *
+       * Measured 2026-09-25: saving a draft whose quoted history contains `<img src="cid:…">`
+       * makes the platform create an `activitymimeattachment` for it, reusing the original's
+       * blob. Listing it in the tray would invite an agent to "remove" a file that is actually
+       * part of the quoted message — breaking the image for the customer. It is still on the
+       * wire, so its bytes are tracked separately and counted toward the size limit.
+       */
+      setAttachments(rows.filter((r) => !r.contentId).map((r) => ({
+        key: r.id,
+        filename: r.filename,
+        mimeType: r.mimeType,
+        size: r.fileSize,
+        status: 'done' as const,
+        progress: 100,
+        attachmentId: r.id,
+      })));
+      setInlineBytes(rows
+        .filter((r) => r.contentId)
+        .reduce((sum, r) => sum + r.fileSize, 0));
+    } else if (mode === 'forward') {
+      /*
+       * Forward carries the original's attachments (R13).
+       *
+       * Held as `reusedAttachmentId` and NOT uploaded: `attachmentid` points at the same stored
+       * blob, so the row is created for free at the moment the draft first saves. Re-uploading
+       * would duplicate the bytes and make the agent wait for something the platform already
+       * has. Forwarding a message and silently dropping its attachments is the alternative, and
+       * it is the whole reason people forward mail.
+       */
+      const rows = await fetchAttachments(webApiRef.current, activityId);
+      setInlineBytes(rows.filter((r) => r.contentId).reduce((sum, r) => sum + r.fileSize, 0));
+      setAttachments(rows.filter((r) => !r.contentId)
+        .filter((r) => r.attachmentId)
+        .map((r) => ({
+          key: `fwd-${r.id}`,
+          filename: r.filename,
+          mimeType: r.mimeType,
+          size: r.fileSize,
+          status: 'done' as const,
+          progress: 100,
+          reusedAttachmentId: r.attachmentId,
+        })));
+    } else {
+      setAttachments([]);
+      setInlineBytes(0);
+    }
+    setComposeContentHeight(0);
+    setCompose({
+      mode,
+      activityId,
+      to,
+      cc,
+      emailId: existing?.emailId,
+      resumedHtml: resumedNewText,
+      // `firstNonEmpty`, not `??`: a draft row saved with an empty subject must fall through
+      // to the derived one, and `??` only catches null/undefined.
+      subject: firstNonEmpty(existing?.subject, composeSubject(mode, message.subject)),
+      quotedBlock,
+      // `??` is wrong here: a party with an empty-string name must fall through to the address,
+      // and `??` only catches null/undefined. Written as an explicit chain so the intent is not
+      // mistaken for a missed nullish-coalescing.
+      answeringLabel: firstNonEmpty(
+        original.sender?.name, original.sender?.address, '(unknown sender)',
+      ),
+      senderId: chosenSender.id,
+    });
+  }, [rows, parties, ourAddresses, chosenSender, caseId]);
+
+  /**
+   * Autosave the open draft to Dataverse (R16).
+   *
+   * Debounced while typing, on an interval, and on close — `setControlState` already survives a
+   * session teardown, so this exists for the cases it does not cover: a reload, a crash, a closed
+   * browser. Defence in depth, and the difference between losing a draft and losing one silently.
+   *
+   * `savingRef` serialises the writes. Without it a debounce firing next to the interval sends
+   * two creates and the Case grows a duplicate draft — the characteristic failure of this feature,
+   * and one that looks like data corruption rather than a race.
+   */
+  composeRef.current = compose;
+  signatureRef.current = signatureHtml;
+  senderRef.current = chosenSender;
+
+  const savingRef = React.useRef(false);
+  const draftTimer = React.useRef<ReturnType<typeof setTimeout>>();
+  /** Recipients changed, so the next save must rewrite the party rows as well as the body. */
+  const partiesDirty = React.useRef(false);
+
+  const flushDraft = React.useCallback(async (force = false): Promise<string | undefined> => {
+    const draft = composeRef.current;
+    if (!draft || !caseId || savingRef.current) return draft?.emailId;
+
+    const newHtml = editorRef.current?.getHTML() ?? '';
+    // The quote is always present, so judging by the whole body would save every opened reply.
+    // Only the agent's own text counts.
+    //
+    // `force` overrides that for attachments: an `activitymimeattachment` hangs off an email
+    // row, so a file dropped into an otherwise-empty reply still needs the draft to exist. An
+    // attachment IS content, even when nothing has been typed.
+    if (!force && !worthSaving(newHtml, signatureRef.current)) return draft.emailId;
+
+    const sender = senderRef.current;
+    if (!sender) return draft.emailId;
+
+    savingRef.current = true;
+    const includeParties = partiesDirty.current || draft.emailId === undefined;
+    const outcome = await saveDraft(
+      webApiRef.current,
+      draft.emailId,
+      {
+        caseId,
+        subject: draft.subject,
+        bodyHtml: buildOutgoingBody(newHtml, draft.quotedBlock),
+        sender,
+        to: draft.to,
+        cc: draft.cc,
+        // The link `findExistingDraft` searches on. Omitting it was a real defect, caught only
+        // in the published app: the payload builder supported it, every unit test asserted it,
+        // and the shell simply never passed it — so drafts saved with a null parent and resume
+        // could never find them. A forward has nothing to link to, and nothing to resume.
+        inReplyToId: draft.mode === 'forward' ? undefined : draft.activityId,
+      },
+      includeParties,
+    );
+    savingRef.current = false;
+    if (outcome.ok) partiesDirty.current = false;
+
+    setCompose((c) => {
+      // Compose may have closed, or moved to a different message, while the save was in flight.
+      if (!c || c.activityId !== draft.activityId) return c;
+      return outcome.ok
+        ? {
+          ...c,
+          emailId: outcome.emailId,
+          savedAt: outcome.savedAt?.getTime(),
+          saveError: undefined,
+          draftCreatedHere: (c.draftCreatedHere ?? false) || draft.emailId === undefined,
+        }
+        : { ...c, saveError: outcome.error?.message ?? 'The draft could not be saved.' };
+    });
+
+    return outcome.ok ? outcome.emailId : undefined;
+  }, [caseId]);
+
+  /**
+   * R13 — files on the reply, and the ones that were turned away.
+   *
+   * Held beside the compose draft rather than inside it because uploads finish out of order and
+   * each needs its own progress updates; folding them into `ComposeDraft` would make every
+   * percentage tick rewrite the whole draft object.
+   */
+  const [attachments, setAttachments] = React.useState<PendingAttachment[]>([]);
+  const [rejections, setRejections] = React.useState<Rejection[]>([]);
+  /**
+   * Bytes on the message the tray does not show — inline images the platform materialised from
+   * `cid:` references in the quoted history. Real on the wire, so they count toward the limit.
+   */
+  const [inlineBytes, setInlineBytes] = React.useState(0);
+  attachmentsRef.current = attachments;
+  inlineBytesRef.current = inlineBytes;
+  const inlineCeiling = React.useRef(DEFAULT_INLINE_CEILING);
+
+  React.useEffect(() => {
+    void (async () => {
+      inlineCeiling.current = await fetchInlineCeiling(webApiRef.current);
+    })();
+  }, []);
+
+  const patchAttachment = React.useCallback(
+    (key: string, patch: Partial<PendingAttachment>) => {
+      setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+    },
+    [],
+  );
+
+  /**
+   * Attach dropped or picked files (R13).
+   *
+   * **Uploaded one at a time, deliberately.** Parallel uploads of several large files compete
+   * for the same connection and make every progress bar crawl; sequential means the first file
+   * is attached and safe while the second is still going.
+   */
+  const addFiles = React.useCallback(async (files: File[]): Promise<void> => {
+    const { accepted, rejected } = admitFiles(
+      files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+      attachmentsRef.current,
+      inlineBytesRef.current,
+    );
+    setRejections(rejected);
+    if (accepted.length === 0) return;
+
+    const queued: PendingAttachment[] = accepted.map((f, i) => ({
+      key: `${Date.now()}-${i}-${f.name}`,
+      filename: f.name,
+      mimeType: f.type,
+      size: f.size,
+      status: 'pending',
+      progress: 0,
+    }));
+    setAttachments((list) => [...list, ...queued]);
+
+    // An attachment row needs an email row to hang off, so the draft has to exist first — even
+    // if the agent has typed nothing at all. `force` is what makes that happen.
+    const emailId = await flushDraft(true);
+    if (!emailId) {
+      for (const q of queued) {
+        patchAttachment(q.key, {
+          status: 'failed',
+          error: 'The draft could not be saved, so there is nothing to attach to.',
+        });
+      }
+      return;
+    }
+
+    for (const q of queued) {
+      const file = files.find((f) => f.name === q.filename && f.size === q.size);
+      if (!file) continue;
+      patchAttachment(q.key, { status: 'uploading', progress: 0 });
+      try {
+        const bytes = await fileToBytes(file);
+        const outcome = await uploadAttachment(
+          webApiRef.current,
+          { emailId, filename: q.filename, mimeType: q.mimeType, bytes },
+          inlineCeiling.current,
+          (sent, total) => patchAttachment(q.key, { progress: blockProgress(sent, total) }),
+        );
+        patchAttachment(q.key, outcome.ok
+          ? { status: 'done', progress: 100, attachmentId: outcome.attachmentId }
+          : { status: 'failed', error: outcome.error?.message ?? 'The upload failed.' });
+      } catch (e) {
+        // Reading the file can fail on its own — a file removed from disk mid-drag, or one the
+        // browser will not read. That is not an upload failure and must not read as one.
+        patchAttachment(q.key, {
+          status: 'failed',
+          error: e instanceof Error ? e.message : 'The file could not be read.',
+        });
+      }
+    }
+  }, [flushDraft, patchAttachment]);
+
+  /**
+   * Take a file back off the reply.
+   *
+   * The Dataverse row is deleted too when there is one. Leaving it would send a file the agent
+   * had visibly removed — the worst possible direction for this to fail in.
+   */
+  const removeAttachment = React.useCallback((key: string) => {
+    const item = attachmentsRef.current.find((a) => a.key === key);
+    setAttachments((list) => list.filter((a) => a.key !== key));
+    setRejections([]);
+    if (item?.attachmentId) void removeAttachmentRow(webApiRef.current, item.attachmentId);
+  }, []);
+
+  /**
+   * Turn carried-over forward attachments into real rows, once there is a draft to hang them on.
+   *
+   * They are shown in the tray the moment Forward is clicked, because the agent needs to see
+   * what will go — but `activitymimeattachment` needs an `objectid`, and on Forward the draft
+   * does not exist yet. So the row is created the first time the draft saves. Guarded by
+   * `attachmentId` so a second save does not attach the same file twice.
+   */
+  React.useEffect(() => {
+    const emailId = compose?.emailId;
+    if (!emailId) return;
+    const pendingReuse = attachmentsRef.current.filter(
+      (a) => a.reusedAttachmentId && !a.attachmentId,
+    );
+    if (pendingReuse.length === 0) return;
+
+    void (async () => {
+      for (const item of pendingReuse) {
+        const outcome = await reuseAttachment(
+          webApiRef.current, emailId, item.reusedAttachmentId!,
+        );
+        patchAttachment(item.key, outcome.ok
+          ? { attachmentId: outcome.attachmentId }
+          : { status: 'failed', error: outcome.error?.message ?? 'Could not carry this file over.' });
+      }
+    })();
+  }, [compose?.emailId, patchAttachment]);
+
+  /** Typing restarts the clock; a pause of ~2s commits. */
+  const scheduleDraftSave = React.useCallback(() => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => { void flushDraft(); }, 2000);
+  }, [flushDraft]);
+
+  // A periodic save, so a long uninterrupted spell of typing is still protected, and a final one
+  // when compose closes for any reason.
+  React.useEffect(() => {
+    if (!compose) return undefined;
+    const id = setInterval(() => { void flushDraft(); }, 30000);
+    return () => {
+      clearInterval(id);
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, [compose?.activityId, flushDraft]);
+
+  /**
+   * The agent picked a different From while composing.
+   *
+   * The signature is swapped only while the editor is still untouched. Once they have typed,
+   * rewriting the body to move a signature block risks eating their words — so the signature is
+   * left alone and `signatureStale` puts a note next to Send instead. A stale sign-off the agent
+   * can see beats a silent edit they cannot.
+   */
+  const changeSender = React.useCallback((id: string) => {
+    if (!senderState.candidates.some((c) => c.id === id)) return;
+    setSenderState((s) => ({ ...s, chosenId: id }));
+    setCompose((c) => (c ? { ...c, senderId: id, signatureStale: bodyTouched.current } : c));
+  }, [senderState.candidates]);
+
+  /**
+   * Put the new sender's signature in the editor — but only if the agent has not typed.
+   *
+   * `initialHtml` seeds the editor at construction and nothing re-reads it, so a signature that
+   * arrives later (or changes with the sender) has to be written in. `bodyTouched` is set by the
+   * editor's own change event and suppressed around this write, so a reseed does not mark the
+   * body as edited and then block the next one.
+   */
+  React.useEffect(() => {
+    if (!compose || bodyTouched.current) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+    seeding.current = true;
+    editor.setHTML(initialBodyWithSignature(signatureHtml));
+    seeding.current = false;
+  }, [signatureHtml, compose?.activityId]);
+
+  /**
+   * R14 — resolve a template against this case, server-side.
+   *
+   * `InstantiateTemplate` is an unbound action, so it goes through `Xrm.WebApi.online.execute`;
+   * `context.webAPI` has no `execute`. The result is **sanitised before it is previewed**: it is
+   * HTML heading for the DOM, and the fact that it came from our own org is a reason to trust the
+   * author, not a reason to skip the sanitiser.
+   */
+  const resolveTemplate = React.useCallback(async (templateId: string): Promise<TemplateOutcome> => {
+    const execute = resolveXrmExecute();
+    if (!execute || !caseId) {
+      return {
+        html: '', subject: '', unresolved: [],
+        error: 'Templates are unavailable here — the platform action could not be reached.',
+      };
+    }
+    const { template, error } = await instantiateTemplate(execute, templateId, caseId);
+    if (error || !template) {
+      return {
+        html: '', subject: '', unresolved: [],
+        error: error?.message ?? 'That template could not be resolved.',
+      };
+    }
+    return {
+      html: sanitiseEmailBody(template.html).html,
+      subject: template.subject,
+      unresolved: template.unresolved,
+    };
+  }, [caseId]);
+
   const summaries = React.useMemo<ThreadSummary[]>(
     () => visibleThreads.map((thread) => toSummary(thread, parties, readIds, ancestorNumbers)),
     [visibleThreads, parties, readIds, ancestorNumbers],
@@ -586,7 +1202,15 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         />
       )}
 
+      {/* The reading pane and compose share one column: compose is DOCKED, so its height comes
+          out of the pane rather than out of the page. Gate 2. */}
       {(layout.layout === 'two-pane' || selected) && (
+        <div
+          style={{
+            display: 'flex', flexDirection: 'column', flexGrow: 1,
+            minWidth: 0, minHeight: 0, gap: '8px',
+          }}
+        >
         <ReadingPane
           thread={selected}
           parties={parties}
@@ -621,14 +1245,159 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             });
           }}
           onDwellRead={markRead}
+          onCompose={(mode: ComposeMode, id: string) => { void openCompose(mode, id); }}
           loading={loading && !!selectedKey}
           error={listError}
           onRetry={() => void load()}
         />
+
+        {compose && (
+          <Compose
+            ref={editorRef}
+            mode={compose.mode}
+            answeringLabel={compose.answeringLabel}
+            to={compose.to}
+            cc={compose.cc}
+            subject={compose.subject}
+            quotedBlock={compose.quotedBlock}
+            height={composeHeight(composeContentHeight, composeHighWater.current)}
+            onHeightChange={(h) => {
+              composeHighWater.current = Math.max(composeHighWater.current, composeHeight(h));
+              setComposeContentHeight(h);
+            }}
+            onClose={() => {
+              // Save on the way out, or clean up after an agent who opened Reply and changed
+              // their mind. A blank draft row left behind clutters the Case with mail nobody
+              // wrote — and the row only exists at all if something was once worth saving.
+              const closing = compose;
+              const newHtml = editorRef.current?.getHTML() ?? '';
+              if (worthSaving(newHtml, signatureHtml)) {
+                void flushDraft();
+              } else if (closing.emailId && closing.draftCreatedHere) {
+                // Only ever a row WE created. An adopted draft stays put — see draftCreatedHere.
+                void discardDraft(webApiRef.current, closing.emailId);
+              }
+              composeHighWater.current = 0;
+              setCompose(undefined);
+            }}
+            onSubjectChange={(next) => {
+              setCompose((c) => (c ? { ...c, subject: next } : c));
+              scheduleDraftSave();
+            }}
+            onRemoveRecipient={(field, address) => {
+              setCompose((c) => (c
+                ? { ...c, [field]: c[field].filter((r) => r.address !== address) }
+                : c));
+              // The next save must rewrite the party rows, not just the body.
+              partiesDirty.current = true;
+              scheduleDraftSave();
+            }}
+            // R18 — Send stays blocked until the sender's mailbox has been pre-flighted, which is
+            // 2.5. Blocked WITH a reason, never a mystery grey button: an agent who cannot send
+            // and is not told why will send it some other way.
+            // R15 — the signature is the body's starting content, with blank lines above it so
+            // the cursor does not land inside the agent's own sign-off.
+            initialHtml={compose.resumedHtml ?? initialBodyWithSignature(signatureHtml)}
+            templates={templates}
+            onUseTemplate={resolveTemplate}
+            sender={chosenSender}
+            candidates={senderState.candidates}
+            senderVerdicts={senderState.verdicts}
+            onSenderChange={changeSender}
+            onBodyChange={() => {
+              if (seeding.current) return;
+              bodyTouched.current = true;
+              scheduleDraftSave();
+            }}
+            attachments={attachments}
+            onAddFiles={(files) => void addFiles(files)}
+            onRemoveAttachment={removeAttachment}
+            attachmentRejections={rejections}
+            attachmentWarning={sizeWarning(attachments, inlineBytes)}
+            savedLabel={describeSaved(compose.savedAt ? new Date(compose.savedAt) : undefined)}
+            saveError={compose.saveError}
+            signatureStale={compose.signatureStale}
+            // Pre-flight decides this now (R18). Until it has answered, `sendBlockedBy` reports
+            // "checking" and Send stays disabled — the only safe state before the check lands.
+            // The remaining "not built yet" is the write path itself (2.5).
+            sendBlockedReason={
+              sendBlockedBy(senderState.verdicts.get(chosenSender.id))
+              ?? 'Sending is not built yet — the write path lands with 2.5.'
+            }
+            onSend={() => undefined}
+          />
+        )}
+        </div>
       )}
     </div>
   );
 };
+
+/** First value that is a non-empty string.  cannot express this: '' is not nullish. */
+function firstNonEmpty(...values: (string | undefined)[]): string {
+  for (const v of values) if (v && v.trim().length > 0) return v;
+  return '';
+}
+
+/** The resolved sending identities, and what pre-flight said about each (R17/R18). */
+interface SenderState {
+  /** Everyone the agent may send as, the default first. */
+  candidates: SenderCandidate[];
+  chosenId: string;
+  /** Keyed by candidate id. A missing entry means "not checked yet", which blocks Send. */
+  verdicts: Map<string, PreflightVerdict>;
+}
+
+/**
+ * The sender before anything has resolved.
+ *
+ * Has no address on purpose, so pre-flight blocks Send until the real identities arrive. An
+ * optimistic placeholder here would let an agent hit Send against an unverified sender, which is
+ * the exact failure R18 exists to prevent.
+ */
+const FALLBACK_SENDER: SenderCandidate = {
+  kind: 'user',
+  id: 'pending',
+  displayName: 'Resolving sender…',
+  address: '',
+};
+
+/** An open compose surface. One at a time — a second would have nowhere to dock. */
+interface ComposeDraft {
+  mode: ComposeMode;
+  /** The message being answered, named in the context bar. */
+  activityId: string;
+  to: Recipient[];
+  cc: Recipient[];
+  subject: string;
+  quotedBlock: string;
+  answeringLabel: string;
+  /** Who this goes out as. Chosen when compose opens; changeable while it is open. */
+  senderId: string;
+  /** The editor's signature no longer matches `senderId`, because the agent had already typed. */
+  signatureStale?: boolean;
+  /**
+   * The durable draft row's `activityid`, once one exists (R16).
+   *
+   * **Losing this creates a second draft on the next autosave**, so it is the one field here
+   * whose absence is worse than a stale value. It is deliberately part of the compose state
+   * rather than a ref, so `setControlState` carries it through a session teardown.
+   */
+  emailId?: string;
+  savedAt?: number;
+  /** Set when a save failed. R16's whole point is that a lost draft must not be lost silently. */
+  saveError?: string;
+  /** New text recovered from an existing draft row, seeded into the editor instead of a signature. */
+  resumedHtml?: string;
+  /**
+   * THIS client created the draft row in this sitting.
+   *
+   * Gates the discard-on-close cleanup. A draft we ADOPTED — one the standard email form left
+   * behind, say — is somebody else's unsent work, and emptying the editor before closing must
+   * not delete it. The demo environment already contains such drafts.
+   */
+  draftCreatedHere?: boolean;
+}
 
 const blankState = (read: boolean): MessageState => ({
   loadingBody: false,

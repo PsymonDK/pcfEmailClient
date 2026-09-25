@@ -1,0 +1,10 @@
+{
+  "createdAt": "2026-09-24T11:09:20.388Z",
+  "org": "https://your-org.crm4.dynamics.com",
+  "roleId": "bf5009cc-46b6-f111-aaae-000d3ab16615",
+  "roleName": "Case Email Client — Read State",
+  "table": "jhrb_emailclientsetting",
+  "privilege": "prvReadjhrb_EmailClientSetting",
+  "depth": "Global",
+  "note": "Extends the role created by C:\\Code\\modeldriven-emailclient\\scripts\\deploy/readstate-role-ids.json. One role to assign, not two."
+}

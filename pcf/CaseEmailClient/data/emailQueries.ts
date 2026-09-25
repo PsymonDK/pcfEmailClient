@@ -78,6 +78,9 @@ const ATTACHMENT_COLUMNS = [
   'filename',
   'mimetype',
   'filesize',
+  // Set only on an INLINE image the platform materialised from a `cid:` reference in the body.
+  // It is what distinguishes body content from a file the agent attached — see `contentId`.
+  'attachmentcontentid',
 ] as const;
 
 // ── query builders (pure) ────────────────────────────────────────────────────
@@ -349,6 +352,17 @@ export interface Attachment {
   filename: string;
   mimeType: string;
   fileSize: number;
+  /**
+   * The Content-ID, when this row is an INLINE image rather than a file the agent attached.
+   *
+   * Measured 2026-09-25: saving a draft whose body quotes a message containing
+   * `<img src="cid:…">` makes the platform create an `activitymimeattachment` for it, **reusing
+   * the original's blob**. That is desirable — without it the quoted image arrives broken — but
+   * such a row is body content, not an attachment. It must not appear in the attachment tray,
+   * and removing it would break the quote. It still weighs on the wire, so it must be counted
+   * toward the message size.
+   */
+  contentId?: string;
 }
 
 export class DataverseError extends Error {
@@ -439,6 +453,7 @@ export async function fetchAttachments(
       filename: asString(row.filename, '(unnamed)'),
       mimeType: asString(row.mimetype, 'application/octet-stream'),
       fileSize: typeof row.filesize === 'number' ? row.filesize : 0,
+      contentId: row.attachmentcontentid ? asString(row.attachmentcontentid) : undefined,
     }));
   });
 }

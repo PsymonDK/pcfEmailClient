@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { budgetFor, LIST_WIDTH, MIN_HEIGHT, resolveLayout, TWO_PANE_MIN_WIDTH } from '../layout';
+import {
+  budgetFor, COMPOSE, composeHeight, LIST_WIDTH, MIN_HEIGHT, resolveLayout, TWO_PANE_MIN_WIDTH,
+} from '../layout';
 
 // Every number here came from the published app, not from documentation. The three readings below
 // are the actual measurements taken on 2026-09-11 with different chrome on screen.
@@ -107,5 +109,44 @@ describe('budgetFor', () => {
     expect(b.listScroll).toBeGreaterThanOrEqual(0);
     expect(b.readingScroll).toBeGreaterThanOrEqual(0);
     expect(b.readingScrollWithCompose).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('composeHeight — R10 growth', () => {
+  it('opens at 222 however little has been typed', () => {
+    expect(composeHeight(0)).toBe(COMPOSE.opensAt);
+    expect(composeHeight(20)).toBe(COMPOSE.opensAt);
+  });
+
+  it('grows once the content outgrows the opening size', () => {
+    const grown = composeHeight(200);
+    expect(grown).toBeGreaterThan(COMPOSE.opensAt);
+    expect(grown).toBe(COMPOSE.chrome + 200);
+  });
+
+  it('stops at the ceiling — compose never takes more than about half the pane', () => {
+    expect(composeHeight(10_000)).toBe(COMPOSE.ceiling);
+  });
+
+  it('NEVER shrinks back below the high-water mark', () => {
+    // Layout that jumps under the cursor — because a line was deleted, or an image finished
+    // loading — is worse than layout that is slightly too small.
+    const tall = composeHeight(300);
+    expect(composeHeight(0, tall)).toBe(tall);
+    expect(composeHeight(50, tall)).toBe(tall);
+  });
+
+  it('still honours the ceiling even if the high-water mark exceeds it', () => {
+    expect(composeHeight(0, 9999)).toBe(COMPOSE.ceiling);
+  });
+
+  it('treats a negative content height as zero rather than collapsing', () => {
+    expect(composeHeight(-50)).toBe(COMPOSE.opensAt);
+  });
+
+  it('leaves the reading pane visible at the measured floor', () => {
+    // The point of docking rather than overlaying: you can still see what you are answering.
+    const atFloor = budgetFor(471);
+    expect(atFloor.readingScrollWithCompose).toBeGreaterThan(150);
   });
 });

@@ -1847,3 +1847,56 @@ over the body HTML.
 General point worth keeping: *the set of attachments on a saved email is not the set the client
 uploaded.* Anything that reasons about attachment count or total size has to read them back rather
 than trust its own tally.
+
+### R17 send — built 2026-09-25
+
+**`SendEmail` is a BOUND action**, unlike every other action in this project. Through
+`Xrm.WebApi.online.execute` that means `boundParameter: 'entity'` (not `null`), with the instance
+passed under that same key carrying `entityType`, `id` and `@odata.type`. Verified live:
+
+```
+boundParameter: 'entity'
+parameterTypes: {
+  entity:    { typeName: 'mscrm.email',  structuralProperty: 5 },  // EntityType
+  IssueSend: { typeName: 'Edm.Boolean',  structuralProperty: 1 },
+}
+```
+
+Probe returned **HTTP 200** and the row moved to `statuscode` 3 (Sent), `statecode` 1.
+
+**Status codes, read from live metadata** (not from memory — worth re-reading before trusting):
+1 Draft (state 0), 2 Completed, 3 Sent, 4 Received, 5 Canceled, 6 Pending Send, 7 Sending,
+**8 Failed — `statecode` 0, the same Open state as a Draft.** Inferring "still in progress" from
+the state rather than the status would poll a dead send forever.
+
+#### `IssueSend: false` is NOT a rehearsal of a real send
+
+Measured on the probe. With `IssueSend: false` the platform:
+
+- appended the tracking token **to the subject** (`… CRM:0100013`) — confirming why
+  `composeSubject` must strip inherited tokens, or a reply carries two;
+- assigned `trackingtoken`;
+- went **straight to `Sent` (3)** — it never passed through `Pending Send`;
+- did **not** assign `messageid`, and did **not** assign `conversationindex`.
+
+Two consequences. First, the safe mode validates the action shape and the subject rewrite but
+**does not exercise the `Pending Send` → `Sent` transition the polling code exists for** — only a
+real send reaches that state. Second, anything depending on `conversationindex` nesting still
+cannot be tested without a genuine send, which is the same limitation seeded data has.
+
+#### Why there is no "don't really send" switch in the product
+
+`IssueSend: false` marks a message sent without sending it — precisely the silent non-delivery
+this feature exists to prevent. A product that could be *configured* into that state would be
+worse than one that cannot, so the flag stays a probe tool and the UI always issues a real send.
+
+#### The send path, and why each step is there
+
+1. **Save first** — the editor holds the message; sending a stale draft row sends yesterday's text.
+2. **Re-run pre-flight against the live platform** — approval can change while an agent types, and
+   Gate 2 decided a pre-flight that cannot answer counts as *not safe*.
+3. **Issue, then poll** — the 200 means accepted. Polling backs off over ~30s and then **gives up
+   and says so**, because a message stranded by an unapproved sender never settles and a spinner
+   that runs forever reads as "this is fine".
+4. **Only a confirmed `Sent` closes compose.** On "still sending" the agent's text stays in front
+   of them, which is where it belongs if it never goes.

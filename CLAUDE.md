@@ -25,7 +25,7 @@ depth formula are all verified on a real conversation. **No research gate remain
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **515 tests**, lint and typecheck clean.
+helpers — **550 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -320,6 +320,24 @@ bite if forgotten:
 - Configuration is `jhrb_emailclientsetting` (**Organization**-owned — configuration, not per-agent
   data, unlike `jhrb_emailreadstate`). Its Read privilege is added to the **same** role as read
   state, so there is still only one role to assign per environment.
+
+**Send (R17) — built 2026-09-25**
+- **`SendEmail` is a BOUND action**, unlike every other action here. Through
+  `Xrm.WebApi.online.execute` that is `boundParameter: 'entity'` (not `null`), the instance under
+  that same key with `entityType`/`id`/`@odata.type`, and
+  `entity: { typeName: 'mscrm.email', structuralProperty: 5 }`. Verified live.
+- **Status codes** (live metadata): 1 Draft, 2 Completed, 3 Sent, 4 Received, 5 Canceled,
+  6 Pending Send, 7 Sending, **8 Failed — `statecode` 0, the same Open state as a Draft.** Decide
+  "settled" from the STATUS, never the state, or a failed send polls forever.
+- **`IssueSend: false` is not a rehearsal.** It appends the tracking token to the subject and
+  assigns `trackingtoken`, but goes **straight to Sent** without passing through Pending Send, and
+  assigns neither `messageid` nor `conversationindex`. So the safe mode cannot exercise the
+  polling path — only a real send can.
+- **There is deliberately no "don't really send" switch in the product.** `IssueSend: false` marks
+  mail sent without sending it, which is the silent non-delivery the feature exists to prevent.
+  Probe tool only.
+- Send order: save → **re-run pre-flight live** → issue → poll with backoff → **give up and say so**
+  after ~30s. Only a confirmed `Sent` closes compose.
 
 **Attachments (R13) — built 2026-09-25**
 - **Slice the BYTES into blocks and base64 each one; never slice the encoded string.** Cutting

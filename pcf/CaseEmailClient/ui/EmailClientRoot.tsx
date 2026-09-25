@@ -42,6 +42,10 @@ import {
 } from '../domain/sender';
 import { sendBlockedBy, type PreflightVerdict } from '../domain/preflight';
 import {
+  blockingReasonBeforeSend, EMAIL_STATUS, isInFlight, reportFor, type SendReport,
+} from '../domain/send';
+import { issueSend, pollUntilSettled } from '../data/send';
+import {
   fetchCaseTemplates, instantiateTemplate, resolveXrmExecute, type EmailTemplate,
 } from '../data/templates';
 import { initialBodyWithSignature } from '../domain/signature';
@@ -1026,6 +1030,109 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     })();
   }, [compose?.emailId, patchAttachment]);
 
+  /**
+   * Send (R17).
+   *
+   * **There is deliberately no "don't really send" switch here.** `IssueSend: false` marks a
+   * message sent without sending it, which is precisely the silent non-delivery this whole
+   * feature exists to prevent — a product that could be configured into it would be worse than
+   * one that cannot. It stays a development tool, used from a probe, never from the UI.
+   *
+   * The order matters, and each step exists because of a measured failure:
+   *
+   * 1. **Save first.** The body in the editor is the message; sending a stale draft row would
+   *    send yesterday's text.
+   * 2. **Re-run pre-flight.** Approval can change between opening compose and pressing Send,
+   *    and Gate 2 decided that a pre-flight which cannot answer counts as *not safe*.
+   * 3. **Issue, then poll.** The 200 means accepted, not delivered.
+   */
+  const [sendReport, setSendReport] = React.useState<SendReport>();
+  const [sending, setSending] = React.useState(false);
+
+  const sendDraft = React.useCallback(async (): Promise<void> => {
+    const draft = composeRef.current;
+    const sender = senderRef.current;
+    if (!draft || !sender || sending) return;
+
+    setSending(true);
+    setSendReport(undefined);
+    try {
+      const blocked = blockingReasonBeforeSend({
+        recipientCount: draft.to.length + draft.cc.length,
+        uploadsInFlight: attachmentsRef.current.some(
+          (a) => a.status === 'uploading' || a.status === 'pending',
+        ),
+      });
+      if (blocked) {
+        setSendReport({ phase: 'failed', headline: 'Not sent', detail: blocked, confirmed: false });
+        return;
+      }
+
+      const emailId = await flushDraft(true);
+      if (!emailId) {
+        setSendReport({
+          phase: 'failed',
+          headline: 'Not sent',
+          detail: 'The message could not be saved, so it was not sent. Your text is still here.',
+          confirmed: false,
+        });
+        return;
+      }
+
+      // Approval is re-checked against the live platform, not the verdict cached when compose
+      // opened. A mailbox can be disabled while an agent is typing.
+      const api = webApiRef.current;
+      const policy = await fetchOrgApprovalPolicy(api);
+      const facts = sender.kind === 'user'
+        ? await fetchAgentIdentity(api, sender.id).then((r) => r.facts)
+        : await fetchQueueById(api, sender.id).then((q) => (
+          q ? { approvalState: q.approvalState, mailboxId: q.mailboxId } : { approvalState: 0 }
+        ));
+      const verdict = await preflightCandidate(api, sender, policy.policy, facts);
+      if (!verdict.ok) {
+        setSendReport({
+          phase: 'failed', headline: 'Not sent', detail: verdict.reason, confirmed: false,
+        });
+        setSenderState((s) => {
+          const next = new Map(s.verdicts);
+          next.set(sender.id, verdict);
+          return { ...s, verdicts: next };
+        });
+        return;
+      }
+
+      const issued = await issueSend(emailId, true);
+      if (!issued.accepted) {
+        setSendReport({
+          phase: 'failed',
+          headline: 'Not sent',
+          detail: issued.error?.message ?? 'The platform refused the message.',
+          confirmed: false,
+        });
+        return;
+      }
+
+      // Accepted — NOT delivered. Watch it, and report what was actually observed.
+      setSendReport(reportFor(EMAIL_STATUS.pendingSend, false));
+      const polled = await pollUntilSettled(api, emailId, (status) => {
+        if (isInFlight(status)) setSendReport(reportFor(status, false));
+      });
+      const report = reportFor(polled.statusCode, polled.exhausted);
+      setSendReport(report);
+
+      if (report.confirmed) {
+        // Only a confirmed hand-off closes compose. Leaving it open on "still sending" keeps
+        // the agent's text in front of them, which is the right place for it if it never goes.
+        setCompose(undefined);
+        setAttachments([]);
+        composeHighWater.current = 0;
+      }
+      void load();
+    } finally {
+      setSending(false);
+    }
+  }, [flushDraft, sending, load]);
+
   /** Typing restarts the clock; a pause of ~2s commits. */
   const scheduleDraftSave = React.useCallback(() => {
     if (draftTimer.current) clearTimeout(draftTimer.current);
@@ -1320,11 +1427,13 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             // Pre-flight decides this now (R18). Until it has answered, `sendBlockedBy` reports
             // "checking" and Send stays disabled — the only safe state before the check lands.
             // The remaining "not built yet" is the write path itself (2.5).
-            sendBlockedReason={
-              sendBlockedBy(senderState.verdicts.get(chosenSender.id))
-              ?? 'Sending is not built yet — the write path lands with 2.5.'
-            }
-            onSend={() => undefined}
+            // R18. Undefined only when pre-flight has answered AND passed; until then it
+            // reports "checking", which keeps Send disabled — the only safe state before the
+            // check lands. Re-checked again at the moment of sending.
+            sendBlockedReason={sendBlockedBy(senderState.verdicts.get(chosenSender.id))}
+            onSend={() => void sendDraft()}
+            sending={sending}
+            sendReport={sendReport}
           />
         )}
         </div>

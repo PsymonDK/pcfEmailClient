@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { ComposeMode, Recipient } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
+import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
 import { BODY_SURFACE, BODY_SURFACE_FG, formatSize, RADIUS, T } from './tokens';
@@ -63,6 +64,14 @@ export interface ComposeProps {
   sendBlockedReason?: string;
   onSend: () => void;
   sending?: boolean;
+  /**
+   * R17 — what the platform ACTUALLY did, once Send was pressed.
+   *
+   * Outranks every other message on the Send row, and is deliberately not a success toast: an
+   * HTTP 200 from `SendEmail` means "accepted", and an unapproved sender parks at Pending Send
+   * forever with no error recorded anywhere. Only `confirmed` gets the success colour.
+   */
+  sendReport?: SendReport;
   /** R14 — templates that apply to a Case. Empty hides the picker rather than showing an empty one. */
   templates: readonly EmailTemplate[];
   /** Resolves one server-side. Returns the prepared content, or an agent-facing reason. */
@@ -83,7 +92,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
-    sendBlockedReason, onSend, sending, templates, onUseTemplate,
+    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
@@ -379,7 +388,23 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           unapproved sender returns HTTP 200 and the mail never leaves, with no error anywhere — so
           this is the only place the problem can surface.
         */}
-        {sendBlockedReason && (
+        {sendReport && (
+          <span
+            role="status"
+            title={sendReport.detail}
+            style={{
+              fontSize: '12px', minWidth: 0, lineHeight: 1.25, maxHeight: '32px',
+              overflow: 'hidden',
+              color: sendReport.confirmed
+                ? T.okFg
+                : sendReport.phase === 'failed' ? T.dangerFg : T.warnFg,
+            }}
+          >
+            <strong>{sendReport.headline}</strong>
+            {sendReport.detail ? ` — ${sendReport.detail}` : ''}
+          </span>
+        )}
+        {!sendReport && sendBlockedReason && (
           <span
             role="alert"
             // These reasons name the failure AND the fix, so they run long — and the Send row is
@@ -398,18 +423,18 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         {/* R16. A FAILED save outranks everything else on this row, including why Send is
             blocked: Send being unavailable costs the agent a minute, an unsaved draft costs
             them the reply. Silence here is the exact failure this feature exists to prevent. */}
-        {saveError && (
+        {!sendReport && saveError && (
           <span role="alert" style={{ fontSize: '12px', color: T.dangerFg, minWidth: 0 }}>
             Draft not saved — {saveError}
           </span>
         )}
-        {!saveError && !sendBlockedReason && savedLabel && (
+        {!sendReport && !saveError && !sendBlockedReason && savedLabel && (
           <span style={{ fontSize: '12px', color: T.fg3, minWidth: 0 }}>{savedLabel}</span>
         )}
         {/* The sender changed after the agent had started typing, so the signature was left
             alone. Silently rewriting a half-written reply is worse than a stale sign-off — but
             saying nothing is worse than both. */}
-        {!saveError && !sendBlockedReason && signatureStale && (
+        {!sendReport && !saveError && !sendBlockedReason && signatureStale && (
           <span role="status" style={{ fontSize: '12px', color: T.warnFg, minWidth: 0 }}>
             Signature still belongs to the previous sender — check it before sending.
           </span>

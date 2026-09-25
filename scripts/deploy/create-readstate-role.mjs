@@ -119,8 +119,13 @@ if (roleId) {
   console.log(`\n1. created role -> ${roleId}`);
 }
 
-// AddPrivilegesRole replaces the role's privilege set in one call, which is also what makes this
-// script safe to re-run.
+// AddPrivilegesRole ADDS to the role's privilege set — it does not replace it. (`Contains the
+// data that is needed to add a set of existing privileges to an existing role.`
+// https://learn.microsoft.com/en-us/dotnet/api/microsoft.crm.sdk.messages.addprivilegesrolerequest
+// — `ReplacePrivilegesRoleRequest` is the one that replaces.) Re-running is safe because adding a
+// privilege the role already has is a no-op, NOT because the call resets the set. This comment
+// previously said the opposite, which matters: `grant-settings-read.mjs` extends this same role,
+// and on the "replaces" reading it would look as though it wiped these six privileges.
 await api(`roles(${roleId})/Microsoft.Dynamics.CRM.AddPrivilegesRole`, 'POST', {
   Privileges: privileges.map((p) => ({
     PrivilegeId: p.privilegeid,

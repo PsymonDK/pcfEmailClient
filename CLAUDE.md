@@ -12,9 +12,10 @@ activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 **Current state: Phase 1 (the reading slice) is complete and deployed.** The control (v1.5.5,
 unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
 `Case - Email Client` form, verified in the published app. Design is signed off — see
-[`docs/design/`](docs/design/01-design-decisions.md). **Phase 2 (compose) is next, and it opens by
-measuring the editor bundle** — see 2.0 in the plan; the platform's own editor is not reusable and
-React 16 narrows the field to three framework-agnostic cores. The
+[`docs/design/`](docs/design/01-design-decisions.md). **Phase 2 (compose) is under way** — the compose surface, templates, signature, queue sender with R18 pre-flight, R16 autosaved drafts and R13 attachments are built and verified in the published app (v1.10.1). **Still to come: the send write path (R17).** The 2.0
+gate is closed — the editor is **TipTap 2** (S13, 2026-09-23) — and R12's invariant is written and
+tested in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts) before any compose UI
+exists, which is the order the plan demands. The
 architecture decision is **spike-validated on both target placements** — S1 (Case form tab) and S11
 (session tab, via an `Entity record` app tab template) both confirmed live that `setControlState`
 survives a CSW two-session teardown. S2 confirmed the same inside a custom page, which S11 then made
@@ -24,7 +25,7 @@ depth formula are all verified on a real conversation. **No research gate remain
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **337 tests**, lint and typecheck clean.
+helpers — **515 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -50,6 +51,11 @@ existed, and child rows would have made it six. Two rules that follow:
 - **Address rows by `data-row-id`, never by index into `querySelectorAll`.** Group headers are rows
   in the array but carry no row element, so index-based lookup pointed at the wrong element for
   every row after the first header.
+
+**`dotnet build -c Debug` ships a DEVELOPMENT bundle** — eval devtool, unminified, ~102 KiB
+gzipped against the production build's **32.8 KiB**. That is what every deploy to the demo
+environment has carried, which is fine for a dev environment but means any size or performance
+claim must come from `pcf-scripts build --buildMode production`, not from what is deployed.
 
 **`dotnet build -c Debug` does not reliably rebuild the PCF bundle.** It will package the previous
 version and report success — the first issue-#4 deploy shipped nothing that way. Use
@@ -211,7 +217,11 @@ its components stay in the environment and must be deleted explicitly (see
 [`scripts/seed/revert-s1.mjs`](scripts/seed/revert-s1.mjs)).
 - This is a shared demo environment. Assume other people's work is in it. Do not publish
   customisations app-wide, do not change System Settings (including
-  `Organization.MaxUploadFileSize`) without asking, and do not send test email to real addresses.
+  `Organization.MaxUploadFileSize`) without asking, and do not send test email to real addresses
+  — **with one approved exception: `simon.jehrbo@example.com`.** Test sends may go there, and only
+  there, and **you must say so before sending, not after**. Granted 2026-09-25 so R17 can be
+  verified against a real delivery instead of a 200 that means nothing. Every other address in
+  this shared demo environment belongs to someone who did not agree to receive test mail.
 - Confirm before sending any email from the environment — `SendEmail` with `IssueSend: true` sends for
   real. Use `IssueSend: false` for logging-only tests and be explicit about which you are using.
 
@@ -272,6 +282,106 @@ bite if forgotten:
   `outgoingemailstatus` (want *Success*) and `mailboxstatus`.
   Counter-intuitive companion finding: a queue with **no** address fails **loudly** (synchronous 400);
   a queue with an **unapproved** address fails **silently**. Don't infer one from the other.
+
+**Sender and signature (R17/R15) — measured 2026-09-24**
+- **Send as the Case's queue, and the signature follows the sender.** Resolution lives in
+  [`domain/sender.ts`](pcf/CaseEmailClient/domain/sender.ts); the rule is queue-specific settings
+  row → default row → no configuration, and **no configuration means send as the agent** (stock
+  behaviour). Never invert that fail-safe: a settings table that cannot be read must not silently
+  change who mail appears to come from.
+- **`queue.emailsignature` is a real Lookup** (SchemaName `EmailSignature`, target
+  `emailsignature`). That is how a queue signature is stored — we do not store signature HTML.
+  **`systemuser` has no equivalent lookup**: a user's signature is an `emailsignature` row they
+  own, ordered `isdefault desc,modifiedon desc` (and *not* filtered to `isdefault eq true`, because
+  the only signature here has `isdefault = false`). Two different shapes; `fetchSignatureFor`
+  picks.
+- **This environment has EXACTLY ONE `emailsignature` row**, and it is simultaneously the row the
+  agent owns *and* the row the Care queue points at. Both code paths return the same HTML, so **a
+  passing signature test proves nothing about which path ran.** Create a second signature before
+  believing any change here. A defect hid behind this for a full release.
+- Even a **queue** signature personalises with the acting agent: the real stylesheet selects
+  `systemuser/firstname`. Substitution values stay `systemuser/*` for both sender kinds.
+- **Do NOT filter `queueitem` to `statecode eq 0`.** A queue item goes Inactive when the item is
+  *worked*, not when the Case leaves the queue. Measured 2026-09-25: CAS-01020 sits in Care with an
+  Inactive queue item, and an active-only filter resolved no queue, so the client fell back to the
+  agent — whose mailbox cannot send. Order `statecode asc,createdon desc` instead.
+- **`ourAddresses` is the UNION of the resolved senders and the senders of outgoing mail on the
+  case**, never one or the other. Replacing the derived set with the "authoritative" resolved one
+  looked like a cleanup and silently removed a safeguard: on a case whose queue does not resolve,
+  the service queue ended up in To. See `06-spikes.md`.
+- **`queueitem.objecttypecode` is `Edm.Int32` over the Web API.** `objecttypecode eq 'incident'`
+  fails with *"A binary operator with incompatible types was detected. Found operand types
+  'Edm.Int32' and 'Edm.String'"*, which names neither the column nor the fix. Use `112`.
+- **`AddPrivilegesRole` ADDS to a role's privilege set; it does not replace it.**
+  `ReplacePrivilegesRoleRequest` is the replacing one
+  ([docs](https://learn.microsoft.com/en-us/dotnet/api/microsoft.crm.sdk.messages.addprivilegesrolerequest)).
+  A comment in `create-readstate-role.mjs` claimed the opposite until 2026-09-24. Re-running is
+  safe because re-adding is a no-op, not because the call resets anything.
+- Configuration is `jhrb_emailclientsetting` (**Organization**-owned — configuration, not per-agent
+  data, unlike `jhrb_emailreadstate`). Its Read privilege is added to the **same** role as read
+  state, so there is still only one role to assign per environment.
+
+**Attachments (R13) — built 2026-09-25**
+- **Slice the BYTES into blocks and base64 each one; never slice the encoded string.** Cutting
+  base64 anywhere but a multiple of 4 characters shifts every following byte, AND sizing blocks
+  from the byte count while slicing by characters leaves the tail unsent — the commit still
+  succeeds and the customer gets a **silently truncated file**. Byte-slicing is also what S6
+  measured, which is why 40 MB is 10 blocks; string-slicing gives 11. See
+  [`domain/attachments.ts`](pcf/CaseEmailClient/domain/attachments.ts).
+- **`String.fromCharCode(...bytes)` throws `RangeError: Maximum call stack size exceeded`** past
+  ~100 KB. Encode in 32 KB windows; on a 4 MB block the naive spread always fails, and the error
+  reads like a browser bug rather than an encoding mistake.
+- **The client limit is about DELIVERY, not storage.** Dataverse stores 40 MB happily; most mail
+  systems reject messages over 25 MB. Cap the MESSAGE total, not the file, and warn from 18 MB
+  because base64 inflates by about a third in transit. Never use `Organization.MaxUploadFileSize`
+  as the rule — it governs only the inline path and says nothing about deliverability.
+- Inline under the org cap (plain `context.webAPI.createRecord`), chunked above it (needs
+  `window.Xrm.WebApi.online.execute`). Inline is the path almost every real attachment takes.
+- **An attachment needs the draft row to exist first**, so dropping a file into an empty reply
+  forces a draft save — `flushDraft(force)` bypasses the "worth saving?" rule, because an
+  attachment IS content even when nothing has been typed.
+- **The tray must never lie:** resuming a draft rehydrates its attachments (they are already rows
+  on that email and WILL be sent), and forward carries the original's over as reused
+  `attachmentid`s rather than re-uploading the bytes.
+- **THE PLATFORM ADDS ATTACHMENTS YOU DID NOT UPLOAD.** Saving a description that quotes a message
+  containing `<img src="cid:…">` makes Dataverse create an `activitymimeattachment` for that
+  inline image, **sharing the original's blob** (measured 2026-09-25: a reply picked up a
+  3,988,820-byte `image001.png` by itself). Desirable — otherwise the quoted image arrives broken
+  — but it means **the attachments on a saved email are not the set the client uploaded**.
+  Anything reasoning about count or total size must read them back, not trust its own tally.
+  **`attachmentcontentid` is the discriminator**: null on a real attachment, the Content-ID on an
+  inline image. Keep inline ones OUT of the tray (removing one breaks the quote) and IN the size
+  total (they are real bytes on the wire).
+- **Verified end to end 2026-09-25 (v1.10.0)**: 50 KB inline and 7 MB chunked both round-tripped
+  **SHA-256 identical**. The 7 MB case is the one that matters — it crosses the org cap, so it
+  exercises Initialize/UploadBlock/Commit, where a block-arithmetic error truncates silently.
+
+**Drafts (R16) — measured 2026-09-25 by creating a real draft and reading it back**
+- Create payload shape is in [`domain/draft.ts`](pcf/CaseEmailClient/domain/draft.ts), verified
+  live: `statecode` 0 + `statuscode` 1 + `directioncode: true`,
+  `regardingobjectid_incident@odata.bind`, and an `email_activity_parties` array.
+- **`email_activity_parties` works on create AND on PATCH.** On PATCH it **replaces** the
+  sender/To/Cc set and leaves the platform's own owner (mask 9) and regarding (mask 8) rows
+  alone — so a recipient change is one request, not delete-then-recreate.
+- **A recipient can be a bare `addressused` string with no `partyid`.** That is the *normal* case
+  on a Case: customers are frequently not Contacts. A queue sender binds as
+  `partyid_queue@odata.bind`, and **the platform then fills that party's `addressused` itself**
+  from the queue's address.
+- **The platform derives `torecipients` from the To parties.** Further confirmation it is output,
+  never input.
+- **`parentactivityid` is `IsValidForCreate: true` but `IsValidForUpdate: false`.** Set it once at
+  create to link a draft to the message it answers. Without that link, closing compose and
+  reopening Reply creates a *second* draft row, then a third. Navigation property is the lowercase
+  **`parentactivityid`** — read off `ReferencingEntityNavigationPropertyName`, not guessed from the
+  SchemaName `ParentActivityId`.
+- Resuming a draft splits the stored body back apart with `splitQuotedHistory`, which is exactly
+  what R12's round-trip invariant guarantees: **what we emitted, we can re-split.**
+
+**`npm run typecheck` does NOT cover `index.ts`.** `tsconfig.test.json` excludes it, so a type
+error in the entry point passes the local gate and fails only at `npm run build` (pcf-1033, "an
+error occurred compiling or bundling the control"). Widening a prop type in `ui/` without updating
+the cast in `index.ts` is the way to hit this. **Run `npm run build`, not just typecheck, before
+believing a type change is clean.**
 
 **Read state (R6) — `jhrb_emailreadstate`, created 2026-09-11**
 - **UserOwned**, so Dataverse's own security trims each agent to their own rows. `jhrb_emailid` →
@@ -385,8 +495,55 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
   are fine** — `@tiptap/core`+`@tiptap/pm`, `lexical`, and `quill` declare no React peer. **Mount the
   editor core imperatively into a ref'd div**, don't reach for its React wrapper. Prefer a
   headless/schema editor for *controlled HTML output*, which R12 depends on. A standard (non-virtual)
-  control bundling its own React 18 is the fallback, but forfeits the shared-React bundle win
-  (39.2 KiB today). Verified 2026-09-10.
+  control bundling its own React 18 is the fallback, but forfeits the shared-React bundle win.
+  Verified 2026-09-10. **Measured 2026-09-23 (S13)** — gzipped delta on the production bundle,
+  whose baseline is 32.8 KiB:
+  - **Quill 2.0.3 — +58.3 KiB** plus 3.7 KiB of required theme CSS. Builds on the stock config.
+    Delta-based, so `root.innerHTML` is whatever the DOM holds — the **weakest** for R12's
+    controlled output.
+  - **Lexical 0.50.0 — +67.8 KiB.** Bundles fine, but its types sit behind an `exports` map that
+    the build tsconfig's inherited `moduleResolution: "node"` cannot read, so lint fails with 16
+    `no-unsafe-*` errors until the control build moves to `"bundler"`.
+  - **TipTap 2.27.3 — +88.5 KiB.** Builds on the stock config and is the **best** for R12.
+    **TipTap 3 does not build at all**: its extensions carry an `@jsxImportSource` pragma and
+    pcf-scripts' Babel uses `runtime: 'classic'`, so v3 pins you to v2.
+
+  No option is cheap — the cheapest nearly triples the control. **CHOSEN 2026-09-23: TipTap 2**
+  (`@tiptap/core` + `@tiptap/pm` + `@tiptap/starter-kit`, all pinned `^2`). The extra ~30 KiB over
+  Quill buys the requirement most likely to generate bugs (R12's controlled output), and it is the
+  only schema-based option that builds on the stock config. **Do not upgrade to TipTap 3** — it
+  does not build here; see the pragma note above.
+
+**R12's invariant, written before any compose UI existed and now enforced by tests:
+THE INHERITED QUOTE NEVER ENTERS THE EDITOR.** The editor edits only the new text; the quote is an
+opaque string shown read-only beneath it and concatenated **verbatim** at send time. That reduces
+the editor's job from "round-trip arbitrary Outlook HTML" to "handle what the agent types". It
+lives in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts):
+
+- `buildQuotedBlock` wraps the original body in `divRplyFwdMsg` — deliberately the same id
+  `quoting.ts` matches first, so **what we emit is what we can re-split**. Changing one without
+  the other breaks the round trip silently.
+- `buildOutgoingBody` concatenates and adds **no** wrapper of its own; the quote already carries
+  one, which is what makes the round trip byte-exact.
+- `stripQuoteMarkers` renames the marker in pasted content, because the splitter cuts at the
+  **first** match and pasting a previous reply would otherwise move half the new text into the
+  fold. The replacement must **not contain** the marker: `divRplyFwdMsg-quoted` was the first
+  attempt and still matched on substring.
+- `composeSubject` strips the inherited tracking token via `stripTrackingToken` — the platform
+  appends a **fresh** one on send, so carrying the old one forward sends two. Use that helper, not
+  `normaliseSubject`, for anything an agent reads: `normaliseSubject` also lower-cases and strips
+  reply prefixes because it exists for grouping.
+
+**The editor is mounted imperatively and destroyed on unmount** —
+[`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). Verified live in the published app on
+2026-09-23: TipTap 2 mounts inside the PCF, `.ProseMirror` is `contenteditable`, and typed text
+round-trips. Two things measured while wiring it:
+
+- **`@tiptap/extension-link` costs 17 KiB gzipped** (it pulls `linkifyjs`), and `autolink: false`
+  saves nothing — linkifyjs is imported at module scope, so it bundles regardless of config. Link
+  is kept because a dead URL in a support reply looks broken to the customer, but it is half the
+  size of the whole reading slice and is the first thing to drop if size becomes a gate.
+- Production bundle is now **145 KiB gzipped** against the reading slice's 33 KiB.
 - Declare `<external-service-usage>` in the manifest **only** if calling external services. Our
   Dataverse-only scope should not need it — adding it makes the component premium.
 - Quoted-history splitting (R4/R12) is a **client-side heuristic**, not an API: `blockquote`,

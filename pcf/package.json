@@ -18,6 +18,10 @@
   },
   "dependencies": {
     "@fluentui/react-components": "9.46.2",
+    "@tiptap/core": "^2.27.3",
+    "@tiptap/extension-link": "^2.27.3",
+    "@tiptap/pm": "^2.27.3",
+    "@tiptap/starter-kit": "^2.27.3",
     "dompurify": "^3.4.15",
     "react": "16.14.0",
     "react-dom": "16.14.0"

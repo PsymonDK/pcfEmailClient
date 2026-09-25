@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { EmailRow, Thread } from '../domain/threading';
 import type { Attachment, MessageParties } from '../data/emailQueries';
+import type { ComposeMode } from '../domain/compose';
 import { BodyFrame } from './BodyFrame';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
@@ -42,6 +43,8 @@ export interface ReadingPaneProps {
   onDownloadAttachment: (attachment: Attachment) => void;
   /** Fires when a message has been expanded and visible long enough to count as read (R6). */
   onDwellRead: (activityId: string) => void;
+  /** R9 entry points. The pane knows which message; the shell knows how to compose against it. */
+  onCompose: (mode: ComposeMode, activityId: string) => void;
   loading: boolean;
   error?: { headline: string; reassurance?: string; detail: string };
   onRetry: () => void;
@@ -54,7 +57,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
   const {
     thread, parties, states, collapsedOlderCount, onExpandOlder, onToggleMessage,
     onToggleQuote, onToggleNotices, onDownloadAttachment, onDwellRead, loading, error, onRetry,
-    focusMessageId,
+    focusMessageId, onCompose,
   } = props;
 
   const stackRef = React.useRef<HTMLDivElement>(null);
@@ -192,6 +195,9 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
             onToggleNotices={() => onToggleNotices(message.activityid)}
             onDownloadAttachment={onDownloadAttachment}
             onDwellRead={() => onDwellRead(message.activityid)}
+            onReply={() => onCompose('reply', message.activityid)}
+            onReplyAll={() => onCompose('replyAll', message.activityid)}
+            onForward={() => onCompose('forward', message.activityid)}
           />
         ))}
       </div>
@@ -211,9 +217,14 @@ const MessageView: React.FC<{
   onToggleNotices: () => void;
   onDownloadAttachment: (a: Attachment) => void;
   onDwellRead: () => void;
+  /** R9 entry points, per message — the pane knows which one is being answered. */
+  onReply: () => void;
+  onReplyAll: () => void;
+  onForward: () => void;
 }> = (props) => {
   const {
     message, parties, state, focused, selected, onToggle, onToggleQuote, onToggleNotices,
+    onReply, onReplyAll, onForward,
     onDownloadAttachment, onDwellRead,
   } = props;
 
@@ -315,10 +326,13 @@ const MessageView: React.FC<{
           <span style={{ flexGrow: 1 }} />
           {expanded && (
             <>
-              <IconButton label="Reply">
+              <IconButton label="Reply" onClick={onReply}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 5 3 10l5 5" /><path d="M3 10h7a6 6 0 0 1 6 6" /></svg>
               </IconButton>
-              <IconButton label="Forward">
+              <IconButton label="Reply all" onClick={onReplyAll}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M7 4 2 9l5 5" /><path d="M11 4 6 9l5 5" /><path d="M6 9h6a6 6 0 0 1 6 6" /></svg>
+              </IconButton>
+              <IconButton label="Forward" onClick={onForward}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M12 5l5 5-5 5" /><path d="M17 10h-7a6 6 0 0 0-6 6" /></svg>
               </IconButton>
             </>

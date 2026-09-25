@@ -167,7 +167,10 @@ describe('no component paints a hardcoded surface', () => {
     //
     // `ui/theme.ts` is the exception: it is where the literals belong. `BODY_SURFACE` in
     // tokens.ts is the other, and it is deliberate — a sender's HTML stays on white.
-    const files = ['BodyFrame.tsx', 'ThreadList.tsx', 'ReadingPane.tsx', 'parts.tsx', 'EmailClientRoot.tsx'];
+    const files = [
+      'BodyFrame.tsx', 'ThreadList.tsx', 'ReadingPane.tsx', 'parts.tsx', 'EmailClientRoot.tsx',
+      'Compose.tsx', 'Editor.tsx',
+    ];
     const offenders: string[] = [];
     for (const file of files) {
       const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');

@@ -2,7 +2,7 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { resolveCaseId } from './host/caseId';
 import { EmailClientRoot, type RestorableState } from './ui/EmailClientRoot';
-import type { ReadStateApiLike } from './data/readState';
+import type { DraftApiLike } from './data/draft';
 
 /**
  * Case Email Client — PCF entry point.
@@ -73,7 +73,7 @@ export class CaseEmailClient
       caseId: id,
       caseIdSource: source,
       // `context.webAPI` rather than raw fetch, so Dataverse security trimming applies (N4).
-      webApi: context.webAPI as unknown as ReadStateApiLike,
+      webApi: context.webAPI as unknown as DraftApiLike,
       // N7. `fluentDesignLanguage` is not in @types/powerapps-component-framework ^1.3.16, so it
       // is read through a narrow shim rather than by widening the platform types.
       themeSignals: { tokenTheme: readTokenTheme(context) },

@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-09-24T07:29:17.555Z",
+  "org": "https://your-org.crm4.dynamics.com",
+  "table": "jhrb_emailclientsetting",
+  "solution": "JHRBCaseEmailClient",
+  "metadataId": "f38119eb-f843-492f-a087-8233b7cc2aa1",
+  "flags": [
+    "jhrb_isdefault",
+    "jhrb_sendfromqueue",
+    "jhrb_allowsenderoverride"
+  ],
+  "lookups": [
+    "jhrb_queue",
+    "jhrb_overridequeue"
+  ]
+}

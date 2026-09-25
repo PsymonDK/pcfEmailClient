@@ -100,6 +100,37 @@ export const CHROME = {
   composeDocked: 222,
 } as const;
 
+/**
+ * How tall the docked compose surface is, given how much the agent has written (R10).
+ *
+ * From the frozen spec: opens at 222, grows past three lines to ~300, ceiling ~380 — about half
+ * the pane. Beyond that the editor scrolls inside itself.
+ *
+ * **It never shrinks back while compose is open.** `highWaterMark` is the tallest it has been this
+ * session, and the result never goes below it. Layout that jumps *under the cursor* — because a
+ * line was deleted, or an image finished loading — is worse than layout that is slightly too
+ * small, and it is the kind of thing that makes an editor feel cheap.
+ */
+export const COMPOSE = {
+  opensAt: 222,
+  ceiling: 380,
+  /**
+   * Chrome inside the compose surface: context bar, From row, recipients, toolbar, quote fold,
+   * Send row.
+   *
+   * 176, not 150: the From row (R17) added 26px. It is not optional furniture — an agent who
+   * cannot see whether a reply goes out as the queue or as themselves cannot tell what the
+   * customer will see.
+   */
+  chrome: 176,
+} as const;
+
+export function composeHeight(contentHeight: number, highWaterMark = 0): number {
+  const wanted = COMPOSE.chrome + Math.max(0, contentHeight);
+  const clamped = Math.min(COMPOSE.ceiling, Math.max(COMPOSE.opensAt, wanted));
+  return Math.max(clamped, Math.min(highWaterMark, COMPOSE.ceiling));
+}
+
 export interface Budget {
   /** Scrollable pixels in the thread list. */
   listScroll: number;

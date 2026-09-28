@@ -6,5 +6,5 @@
   "table": "jhrb_emailclientsetting",
   "privilege": "prvReadjhrb_EmailClientSetting",
   "depth": "Global",
-  "note": "Extends the role created by C:\\Code\\modeldriven-emailclient\\scripts\\deploy/readstate-role-ids.json. One role to assign, not two."
+  "note": "Extends the role recorded in readstate-role-ids.json. One role to assign, not two."
 }

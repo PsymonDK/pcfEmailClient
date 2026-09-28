@@ -1,8 +1,8 @@
 // S12 — Does Dataverse sanitise an email body for us?
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/spikes/s12-sanitise-probe.mjs [--confirm]
+//   node scripts/spikes/s12-sanitise-probe.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
 //
 // The question, raised during design review 2026-09-11: we do not handle raw MIME, we handle a
 // Dataverse `email` row. Does the platform already strip hostile markup from `description`, making
@@ -15,29 +15,12 @@
 //
 // Creates ONE draft email (never sent, IssueSend is not called) and deletes it again. Dry run
 // unless --confirm, because it writes to a shared environment.
-import fs from 'node:fs';
+import { CONFIRM, apiRaw, getEnv } from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
-const api = async (path, method = 'GET', body, extraHeaders = {}) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      ...extraHeaders,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  return { ok: r.ok, status: r.status, txt, json };
-};
+// Non-throwing on purpose: the probe reports each response rather than stopping at the first.
+const api = (path, method = 'GET', body, headers = {}) => apiRaw(path, { method, body, headers });
 
 // ── The payload. Every item is something a sanitiser must remove or neutralise. ──────────────
 const PROBES = [

@@ -1,43 +1,46 @@
 // S6 - attachment round-trip against the real environment.
 // Read-only on System Settings: MaxUploadFileSize is NOT changed.
-import fs from 'node:fs';
+//
+//   DV_CASE=<case guid> node scripts/spikes/s6-attachments.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
+// Dry run unless --confirm: it creates a draft email and about 21 MB of attachments on the case.
+// Created ids are written to s6-created.json as they are made, so a run that fails halfway still
+// says what to clean up.
 import crypto from 'node:crypto';
+import {
+  CONFIRM, apiRaw, errorOf, getEnv, readCaseId, writeIds,
+} from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${SP}/.tok`, 'utf8').trim();
-const CASE = process.env.DV_CASE || fs.readFileSync(`${SP}/.caseid`, 'utf8').trim();
+const { org: ORG } = getEnv();
+const CASE = readCaseId(SP);
+const CREATED_FILE = `${SP}/s6-created.json`;
 
-const api = async (path, method, body, extraHeaders = {}) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      ...extraHeaders,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let parsed = null;
-  try { parsed = txt ? JSON.parse(txt) : null; } catch { /* non-JSON */ }
-  return { ok: r.ok, status: r.status, txt, json: parsed, headers: r.headers };
-};
+// Non-throwing on purpose: the over-cap probe is EXPECTED to fail, and that failure is the finding.
+const api = (path, method, body, headers = {}) => apiRaw(path, { method, body, headers });
 
-const errOf = (res) => {
-  const m = res.json?.error?.message ?? res.txt ?? '';
-  return String(m).replace(/\s+/g, ' ').slice(0, 220);
-};
+const errOf = (res) => errorOf(res).slice(0, 220);
 
 const MB = 1048576;
 const created = { emails: [], attachments: [] };
+const saveCreated = () => writeIds(CREATED_FILE, { caseId: CASE, ...created });
+
+console.log(`Target: ${ORG}`);
 
 // --- 0. read the ceiling (no writes) ---------------------------------------
 const org = await api('organizations?$select=name,maxuploadfilesize', 'GET');
+if (!org.ok) { console.error('could not read the organization:', errOf(org)); process.exit(1); }
 const MAX = org.json.value[0].maxuploadfilesize;
 console.log(`MaxUploadFileSize = ${MAX} bytes (${(MAX / MB).toFixed(2)} MB)\n`);
+
+if (!CONFIRM) {
+  console.log('DRY RUN — nothing created. Re-run with --confirm.');
+  console.log(`Would create one draft email on case ${CASE}, attach 5 probes (1 KB to 6 MB, inline and`);
+  console.log('chunked), download each back to compare SHA-256, and record the ids in s6-created.json.');
+  process.exit(0);
+}
 
 // --- 1. a draft email to hang attachments on -------------------------------
 const draft = await api('emails?$select=activityid', 'POST', {
@@ -49,6 +52,7 @@ const draft = await api('emails?$select=activityid', 'POST', {
 if (!draft.ok) { console.error('could not create draft:', errOf(draft)); process.exit(1); }
 const EMAIL = draft.json.activityid;
 created.emails.push(EMAIL);
+saveCreated();
 console.log(`draft email ${EMAIL}  (statecode/statuscode left at platform default = Open/Draft)\n`);
 
 // --- helpers ---------------------------------------------------------------
@@ -74,6 +78,7 @@ async function uploadInline(label, bytes) {
   const ms = Date.now() - t0;
   if (res.ok) {
     created.attachments.push(res.json.activitymimeattachmentid);
+    saveCreated();
     return { ok: true, id: res.json.activitymimeattachmentid, sha, ms, bytes };
   }
   return { ok: false, status: res.status, err: errOf(res), ms, bytes };
@@ -122,7 +127,7 @@ async function uploadChunked(label, bytes, blockSize = 4 * MB) {
   const ms = Date.now() - t0;
   if (!commit.ok) return { ok: false, stage: 'Commit', status: commit.status, err: errOf(commit), ms, bytes };
   const id = commit.json?.ActivityMimeAttachmentId ?? commit.json?.activitymimeattachmentid ?? null;
-  if (id) created.attachments.push(id);
+  if (id) { created.attachments.push(id); saveCreated(); }
   return { ok: true, id, sha, ms, bytes, blocks: blockIds.length };
 }
 
@@ -165,5 +170,5 @@ for (const r of results.filter((x) => x.ok && x.id)) {
     : `  ${r.label.padEnd(18)} DOWNLOAD FAILED: ${d.err}`);
 }
 
-fs.writeFileSync(`${SP}/s6-created.json`, JSON.stringify(created, null, 2));
+saveCreated();
 console.log(`\nCreated ids written to s6-created.json for cleanup.`);

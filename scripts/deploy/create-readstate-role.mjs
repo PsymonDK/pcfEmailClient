@@ -16,11 +16,13 @@
 // Scope is USER-level on every privilege, which is the whole point: an agent may create, read,
 // write and delete THEIR OWN read state and no one else's. The table is UserOwned, so Dataverse
 // enforces that without the client filtering for it.
-import fs from 'node:fs';
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+import {
+  CONFIRM, api as dvApi, getEnv, odataString, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const SOLUTION = 'JHRBCaseEmailClient';
 const TABLE = 'jhrb_emailreadstate';
@@ -53,27 +55,8 @@ const USER_DEPTH = 'Basic';
 const PRIV_TABLE = 'jhrb_EmailReadState';
 const eqName = (a, b) => a.toLowerCase() === b.toLowerCase();
 
-const api = async (path, method = 'GET', body, extraHeaders = {}) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      'MSCRM.SolutionUniqueName': SOLUTION,
-      ...extraHeaders,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) {
-    throw new Error(`${method} ${path} -> ${r.status}: ${String(json?.error?.message ?? txt).replace(/\s+/g, ' ').slice(0, 280)}`);
-  }
-  return { json, id: r.headers.get('OData-EntityId')?.match(/\(([^)]+)\)/)?.[1] };
-};
+// Every request carries the solution header, so the new role lands in our unmanaged solution.
+const api = (path, method = 'GET', body) => dvApi(path, { method, body, solution: SOLUTION });
 
 // Fetch every privilege on the table and pick from what the platform actually named, rather than
 // composing names and hoping. `endswith` covers both the schema and logical spellings.
@@ -106,7 +89,7 @@ if (!CONFIRM) {
   process.exit(0);
 }
 
-const existing = (await api(`roles?$select=roleid,name&$filter=name eq '${ROLE_NAME.replace(/'/g, "''")}'`)).json.value[0];
+const existing = (await api(`roles?$select=roleid,name&$filter=name eq ${odataString(ROLE_NAME)}`)).json.value[0];
 let roleId = existing?.roleid;
 if (roleId) {
   console.log(`\n1. role already exists -> ${roleId}`);
@@ -157,12 +140,12 @@ console.log(wrongDepth.length === 0
   ? `4. verified: all at ${USER_DEPTH} depth — own rows only`
   : `4. WARNING: ${wrongDepth.length} privilege(s) are not ${USER_DEPTH} depth`);
 
-fs.writeFileSync(IDS_FILE, JSON.stringify({
+writeIds(IDS_FILE, {
   createdAt: new Date().toISOString(), org: ORG, roleId, roleName: ROLE_NAME, table: TABLE,
   privileges: privileges.map((p) => p.name), depth: USER_DEPTH,
-}, null, 2) + '\n');
+});
 
-console.log(`\nWrote ${IDS_FILE}`);
+console.log('\nWrote readstate-role-ids.json');
 console.log('\nREMAINING MANUAL STEP: assign this role to the agents who use the email client.');
 console.log('Assigning it is intentionally NOT automated — who gets it is a decision about people,');
 console.log('not a deployment detail, and this is a shared environment.');

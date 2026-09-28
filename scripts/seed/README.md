@@ -39,13 +39,20 @@ genuinely round-tripped through a synced mailbox.
 ## Running it
 
 ```bash
-export DV_ORG=https://your-org.crm4.dynamics.com
-export DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv)
+az login                              # once; the token is fetched in-process, never stored
 export DV_CASE=<existing case guid>   # or create one first; see git history
-node scripts/seed/seed.mjs
+node scripts/seed/seed.mjs            # dry run: prints the plan
+node scripts/seed/seed.mjs --confirm  # creates the rows
 ```
 
-`seed.mjs` writes `seeded-ids.json`, the manifest used for cleanup.
+The environment guard and token handling are shared with every other script — see
+[`../deploy/README.md`](../deploy/README.md). `DV_ORG`, if set, must name the demo org or the
+script refuses to start.
+
+`seed.mjs` writes `seeded-ids.json`, the manifest used for cleanup, after **every** row, so a run
+that fails halfway still records what it created. It **refuses to run** while that manifest still
+lists ids from an earlier run — overwriting it would orphan those rows. Run `cleanup.mjs --confirm`
+first; a fully successful cleanup empties the manifest.
 
 ## Cleaning up
 
@@ -61,17 +68,27 @@ Actually delete the 12 emails and the Case:
 node scripts/seed/cleanup.mjs --confirm
 ```
 
+It checks that the manifest was recorded against the same org before deleting anything, and
+empties the manifest only when every delete succeeded (or found the row already gone).
+
 This is a **shared demo environment**. Clean up when the spikes are done rather than leaving test
 Cases lying around.
 
-**`revert-s1.mjs` order matters** (10 steps, dry-run by default). Removing a custom page from an app
-needs three of them: `RemoveAppComponents`, then deleting the `appelement` rows that link page → app
-(component type 10088), then a republish — only then will the `canvasapp` delete. The custom control
-can only go after the page. Chain: **app → appelement → page → control**.
+**Neither spike revert touches the product.** Until 2026-09-28 both also deleted solution
+`JHRBCaseEmailClient` and control `jhrb_JHRB.CaseEmailClient` as "leftovers" — but since Phase 0
+those are the live product's names, so a spike cleanup would have uninstalled the shipped email
+client (review finding H6). They now remove only spike-only artefacts, plus the old spike-named
+solution `JHRBCaseEmailClientSpike`. Removing the product is
+[`../deploy/revert-deploy.mjs`](../deploy/revert-deploy.mjs)'s job, done deliberately.
 
-**`revert-s11.mjs`** unwinds the S11 artefacts instead (7 steps, dry-run by default): the two
-application tab templates, then the S11 form (unregister → republish → delete), then the unmanaged
-solution container and the custom control, then a final republish. Two things it encodes:
+**`revert-s1.mjs` order matters** (9 steps, dry-run by default). Removing a custom page from an app
+needs three of them: `RemoveAppComponents`, then deleting the `appelement` rows that link page → app
+(component type 10088), then a republish — only then will the `canvasapp` delete. Chain:
+**app → appelement → page**.
+
+**`revert-s11.mjs`** unwinds the S11 artefacts instead (6 steps, dry-run by default): the two
+application tab templates, then the S11 form (unregister → republish → delete), then the spike
+solution container, then a final republish. Two things it encodes:
 
 - **Delete the template, not its parameters.** Parameters cascade with the template — and the platform
   creates parameter rows of its own on these templates, so filtering them by a `jhrb_s11` uniquename

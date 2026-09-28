@@ -1,9 +1,30 @@
-import fs from 'node:fs';
+// Seeds a Case with a deliberately deep email chain for the reading-slice spikes. See README.md.
+//
+//   DV_CASE=<existing case guid> node scripts/seed/seed.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
+// Dry run unless --confirm: this creates rows in a shared environment. Nothing is SENT — rows are
+// created directly and patched to Sent/Received, and every address is the demo tenant or
+// RFC 2606 `.invalid`.
+//
+// Refuses to run while seeded-ids.json still lists ids from an earlier run: overwriting it would
+// orphan those rows, because the manifest is the only record cleanup.mjs has of them.
+import {
+  CONFIRM, api as dvApi, getEnv, readCaseId, readIds, writeIds,
+} from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${SP}/.tok`, 'utf8').trim();
-const CASE = process.env.DV_CASE || fs.readFileSync(`${SP}/.caseid`, 'utf8').trim();
+const MANIFEST = `${SP}/seeded-ids.json`;
+const { org: ORG } = getEnv();
+const CASE = readCaseId(SP);
+
+const previous = readIds(MANIFEST);
+if (previous?.caseId || previous?.emails?.length) {
+  console.log(`REFUSING: seeded-ids.json still lists ${previous.emails?.length ?? 0} email(s) on case ${previous.caseId}.`);
+  console.log('Run node scripts/seed/cleanup.mjs --confirm first, so those rows are not orphaned.');
+  process.exit(1);
+}
 
 const AGENT_EMAIL = 'care@example.invalid';
 const AGENT_NAME = 'Kundeservice';
@@ -14,22 +35,8 @@ const CONTACT_NAME = 'Anna Hansen';
 const HASH_A = 111000001;
 const HASH_B = 111000002;
 
-const api = async (path, method, body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      Prefer: 'return=representation',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`${r.status} ${path}\n${txt.slice(0, 700)}`);
-  return txt ? JSON.parse(txt) : {};
-};
+const api = async (path, method, body) =>
+  (await dvApi(path, { method, body, headers: { Prefer: 'return=representation' } })).json ?? {};
 
 const dk = (iso) =>
   new Date(iso).toLocaleString('da-DK', { dateStyle: 'long', timeStyle: 'short' });
@@ -117,14 +124,38 @@ const orphans = [
 
 const created = [];
 
+// The manifest is rewritten after EVERY row, so a run that fails halfway still leaves cleanup.mjs
+// a complete list of what it created.
+const saveManifest = () => writeIds(MANIFEST, { org: ORG, caseId: CASE, emails: created });
+
+/** Records the row the moment it exists, then marks it Sent/Received. */
+async function recordAndSetState(r, entry, outgoing) {
+  created.push({ ...entry, id: r.id, state: 'created' });
+  saveManifest();
+  const st = await setState(r.id, outgoing);
+  created[created.length - 1].state = st;
+  saveManifest();
+  return st;
+}
+
+if (!CONFIRM) {
+  console.log(`Target: ${ORG}`);
+  console.log(`\nDRY RUN — nothing created. Re-run with --confirm.`);
+  console.log(`Would create ${threadA.length + threadB.length + orphans.length} emails on case ${CASE}:`);
+  console.log(`  Thread A  ${threadA.length} messages, hash ${HASH_A}`);
+  console.log(`  Thread B  ${threadB.length} messages, hash ${HASH_B}`);
+  console.log(`  Orphans   ${orphans.length} messages, no hash`);
+  console.log('and write their ids to seeded-ids.json for cleanup.mjs.');
+  process.exit(0);
+}
+
 async function runThread(msgs, subjBase, hash) {
   let prev = null, prevMeta = null;
   for (let i = 0; i < msgs.length; i++) {
     const [outgoing, when, text] = msgs[i];
     const subject = i === 0 ? subjBase : `RE: ${subjBase}`;
     const r = await createEmail({ subject, newText: text, outgoing, when, hash, prev, prevMeta });
-    const st = await setState(r.id, outgoing);
-    created.push({ id: r.id, subject, dir: outgoing ? 'Out' : 'In', when, hash, state: st });
+    const st = await recordAndSetState(r, { subject, dir: outgoing ? 'Out' : 'In', when, hash }, outgoing);
     console.log(`  ${String(i + 1).padStart(2)}. ${outgoing ? 'Out' : 'In '} ${when.slice(0, 10)}  ${subject.slice(0, 52)}  [${st}]`);
     prev = r.html;
     prevMeta = {
@@ -146,12 +177,11 @@ console.log(`\nOrphans (no hash - tests subject-normalisation fallback):`);
 let prev = null, prevMeta = null;
 for (const [outgoing, when, subject, text] of orphans) {
   const r = await createEmail({ subject, newText: text, outgoing, when, hash: undefined, prev, prevMeta });
-  const st = await setState(r.id, outgoing);
-  created.push({ id: r.id, subject, dir: outgoing ? 'Out' : 'In', when, hash: null, state: st });
+  const st = await recordAndSetState(r, { subject, dir: outgoing ? 'Out' : 'In', when, hash: null }, outgoing);
   console.log(`   -  ${outgoing ? 'Out' : 'In '} ${when.slice(0, 10)}  ${subject.slice(0, 52)}  [${st}]`);
   prev = r.html;
   prevMeta = { from: outgoing ? AGENT_NAME : CONTACT_NAME, fromEmail: outgoing ? AGENT_EMAIL : CONTACT_EMAIL, to: outgoing ? CONTACT_NAME : AGENT_NAME, when, subject };
 }
 
-fs.writeFileSync(`${SP}/seeded-ids.json`, JSON.stringify({ caseId: CASE, emails: created }, null, 2));
+saveManifest();
 console.log(`\nCreated ${created.length} emails. IDs written to seeded-ids.json (for cleanup).`);

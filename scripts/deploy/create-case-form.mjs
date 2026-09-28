@@ -1,11 +1,13 @@
 // Creates the dedicated Case form that hosts the email client, and registers it with the
 // Copilot Service Workspace app.
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/deploy/create-case-form.mjs [--confirm]
+//   node scripts/deploy/create-case-form.mjs [--confirm]
 //
-// Dry run unless --confirm.
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
+// Dry run unless --confirm. Refuses to run if a "Case - Email Client" form already exists: a
+// second copy would be registered with the app alongside the first, and revert-deploy.mjs would
+// only know about one of them.
 //
 // This is the SESSION-TAB placement from docs/design/01-design-decisions.md: an `Entity record`
 // application tab template points at this form, so the agent gets a second app tab on the same
@@ -16,13 +18,14 @@
 // Why a dedicated form rather than editing the out-of-the-box one: this is a SHARED environment.
 // Exporting a modified OOB Case form is how you carry someone else's customisations out, or
 // overwrite them on import. See docs/design/01-design-decisions.md.
-import fs from 'node:fs';
 import crypto from 'node:crypto';
+import {
+  CONFIRM, api as dvApi, getEnv, odataString, publish, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
+const SOLUTION = 'JHRBCaseEmailClient';
 const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';   // Copilot Service workspace
 const CONTROL = 'jhrb_JHRB.CaseEmailClient';
 const SOURCE_FORM_NAME = 'Enhanced full case form';       // what CSW opens a case on today
@@ -32,34 +35,31 @@ const TARGET = 'email';
 const VIEW = '{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}';    // All Emails
 const IDS_FILE = `${import.meta.dirname}/deployed-ids.json`;
 
-const api = async (path, method = 'GET', body, extra = {}) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      ...extra,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) throw new Error(`${method} ${path} -> ${r.status}: ${txt.slice(0, 400)}`);
-  return json;
-};
+const api = async (path, method = 'GET', body, opts = {}) =>
+  (await dvApi(path, { method, body, ...opts })).json;
 
 const guid = () => `{${crypto.randomUUID().toUpperCase()}}`;
 
 console.log(`Target: ${ORG}\n`);
 
+// ── 0. refuse a duplicate ────────────────────────────────────────────────────
+// Checked before anything else, including in a dry run, so the plan never describes a create
+// that --confirm would refuse.
+const already = await api(
+  `systemforms?$select=formid,name&$filter=objecttypecode eq 'incident' and name eq ${odataString(NEW_FORM_NAME)}`,
+);
+if (already.value?.length) {
+  console.log(`REFUSING: a "${NEW_FORM_NAME}" Case form already exists:`);
+  for (const f of already.value) console.log(`  ${f.formid}`);
+  console.log('Remove it first (node scripts/deploy/revert-deploy.mjs --confirm) or edit it in place.');
+  process.exit(1);
+}
+
 // ── 1. the source form ───────────────────────────────────────────────────────
 // Fetched live rather than from a local copy, so the new form starts from whatever the
 // environment actually has today.
 const found = await api(
-  `systemforms?$select=formid,name,formxml&$filter=objecttypecode eq 'incident' and name eq '${SOURCE_FORM_NAME}'`,
+  `systemforms?$select=formid,name,formxml&$filter=objecttypecode eq 'incident' and name eq ${odataString(SOURCE_FORM_NAME)}`,
 );
 if (!found.value?.length) throw new Error(`source form "${SOURCE_FORM_NAME}" not found`);
 const source = found.value[0];
@@ -137,6 +137,8 @@ if (!CONFIRM) {
 }
 
 // ── 3. create it ─────────────────────────────────────────────────────────────
+// With the solution header, so the form lands in JHRBCaseEmailClient rather than loose in the
+// Default solution where it would be missed at export time.
 const created = await api('systemforms', 'POST', {
   name: NEW_FORM_NAME,
   description:
@@ -146,26 +148,12 @@ const created = await api('systemforms', 'POST', {
   type: 2,          // Main
   formpresentation: 1, // Unified Interface
   formxml: xml,
-}, { Prefer: 'return=representation' });
+}, { solution: SOLUTION, headers: { Prefer: 'return=representation' } });
 
 console.log(`\nCreated systemform ${created.formid}`);
 
-// ── 4. register with the app and publish ─────────────────────────────────────
-// Without this the form exists but CSW will not open it.
-await api('AddAppComponents', 'POST', {
-  AppId: APP_ID,
-  Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: created.formid }],
-});
-console.log('Registered with the Copilot Service workspace app');
-
-await api('PublishXml', 'POST', {
-  ParameterXml:
-    `<importexportxml><entities><entity>incident</entity></entities>` +
-    `<appmodules><appmodule>${APP_ID}</appmodule></appmodules></importexportxml>`,
-});
-console.log('Published incident + the app');
-
-fs.writeFileSync(IDS_FILE, JSON.stringify({
+// Recorded straight away, so a failure below still leaves revert-deploy.mjs knowing the form id.
+const record = {
   createdAt: new Date().toISOString(),
   org: ORG,
   formId: created.formid,
@@ -175,6 +163,22 @@ fs.writeFileSync(IDS_FILE, JSON.stringify({
   controlUniqueId: ctrlUnique,
   controlName: CONTROL,
   appId: APP_ID,
-}, null, 2) + '\n');
-console.log(`\nWrote ${IDS_FILE}`);
+};
+writeIds(IDS_FILE, record);
+
+// ── 4. register with the app and publish ─────────────────────────────────────
+// Without this the form exists but CSW will not open it.
+await api('AddAppComponents', 'POST', {
+  AppId: APP_ID,
+  Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: created.formid }],
+});
+console.log('Registered with the Copilot Service workspace app');
+
+// NOTE: publishing the whole `incident` entity also publishes any OTHER pending customisations on
+// Case in this shared environment — other people's unpublished work, not only this form. A new
+// form is not visible until its entity is published, so the scope cannot be narrowed further.
+await publish({ entities: ['incident'], appModules: [APP_ID] });
+console.log('Published incident + the app');
+
+console.log('\nWrote deployed-ids.json');
 console.log('Remove it all again with: node scripts/deploy/revert-deploy.mjs --confirm');

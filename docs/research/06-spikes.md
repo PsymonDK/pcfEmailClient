@@ -1345,7 +1345,7 @@ Two things worth knowing:
   link must not cost the agent the case they are actually looking at.
 
 **Verification needed a data change, because no case in this environment has a parent** — R8 was
-literally unverifiable as the data stood. [`r8-parent-link.mjs`](../../scripts/deploy/r8-parent-link.mjs)
+literally unverifiable as the data stood. [`r8-parent-link.mjs`](../../scripts/spikes/r8-parent-link.mjs)
 sets and clears `parentcaseid` on the verification case: one lookup field, on one case, previously
 null. Set → verified (2 threads, all four markings present) → cleared. Confirmed afterwards by
 query: **0 cases environment-wide have a parent, as before.**

@@ -16,17 +16,21 @@
 //
 // READ ONLY, at GLOBAL depth. Agents never write configuration, and the table is
 // OrganizationOwned — user-level depth on an org-owned table returns nothing at all.
-import fs from 'node:fs';
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+import {
+  CONFIRM, api as dvApi, getEnv, odataString, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const SOLUTION = 'JHRBCaseEmailClient';
 const TABLE = 'jhrb_emailclientsetting';
 const ROLE_NAME = 'Case Email Client — Read State';
 const IDS_FILE = `${import.meta.dirname}/settings-role-ids.json`;
-const READSTATE_IDS = `${import.meta.dirname}/readstate-role-ids.json`;
+// A NAME, not a path: this goes into a committed ids file, and an absolute path there leaked the
+// author's local checkout location (L16).
+const READSTATE_IDS = 'readstate-role-ids.json';
 
 /**
  * Privilege names come from the table's **SchemaName**, not its logical name — so
@@ -47,26 +51,7 @@ const eqName = (a, b) => a.toLowerCase() === b.toLowerCase();
  */
 const ORG_DEPTH = 'Global';
 
-const api = async (path, method = 'GET', body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      'MSCRM.SolutionUniqueName': SOLUTION,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) {
-    throw new Error(`${method} ${path} -> ${r.status}: ${String(json?.error?.message ?? txt).replace(/\s+/g, ' ').slice(0, 280)}`);
-  }
-  return { json };
-};
+const api = (path, method = 'GET', body) => dvApi(path, { method, body, solution: SOLUTION });
 
 console.log(`Target: ${ORG}`);
 console.log(`Role:   ${ROLE_NAME}\n`);
@@ -84,7 +69,7 @@ if (!readPriv) {
 console.log(`  Read     ${readPriv.name}  ${readPriv.privilegeid}`);
 
 const role = (await api(
-  `roles?$select=roleid,name&$filter=name eq '${ROLE_NAME.replace(/'/g, "''")}'`,
+  `roles?$select=roleid,name&$filter=name eq ${odataString(ROLE_NAME)}`,
 )).json.value[0];
 if (!role) {
   console.log(`\nFAILED: role "${ROLE_NAME}" does not exist.`);
@@ -127,7 +112,7 @@ console.log(mine?.Depth === ORG_DEPTH
   ? `3. verified: Read is at ${ORG_DEPTH} depth`
   : `3. WARNING: Read is at ${mine?.Depth ?? 'unknown'} depth, not ${ORG_DEPTH} — agents will see no rows`);
 
-fs.writeFileSync(IDS_FILE, JSON.stringify({
+writeIds(IDS_FILE, {
   createdAt: new Date().toISOString(),
   org: ORG,
   roleId: role.roleid,
@@ -135,7 +120,7 @@ fs.writeFileSync(IDS_FILE, JSON.stringify({
   table: TABLE,
   privilege: readPriv.name,
   depth: ORG_DEPTH,
-  note: `Extends the role created by ${READSTATE_IDS}. One role to assign, not two.`,
-}, null, 2) + '\n');
-console.log(`\nWrote ${IDS_FILE}`);
+  note: `Extends the role recorded in ${READSTATE_IDS}. One role to assign, not two.`,
+});
+console.log('\nWrote settings-role-ids.json');
 console.log('\nThe manual step is unchanged: assign this ONE role to the agents who use the client.');

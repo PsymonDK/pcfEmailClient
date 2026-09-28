@@ -2,6 +2,8 @@
 //
 //   node scripts/deploy/revert-settings-table.mjs [--confirm]
 //
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
 // Deleting the table drops its columns, its queue lookups and its rows with it. This is a SHARED
 // environment, so the script refuses to touch anything whose name it did not create.
 //
@@ -9,10 +11,10 @@
 // nothing to unwind on the role. The role itself belongs to the read-state feature and is left
 // alone — see revert-readstate-table.mjs for that one.
 import fs from 'node:fs';
+import path from 'node:path';
+import { CONFIRM, api, getEnv } from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+getEnv();
 const TABLE = 'jhrb_emailclientsetting';
 const IDS_FILES = [
   `${import.meta.dirname}/settings-ids.json`,
@@ -20,18 +22,12 @@ const IDS_FILES = [
   `${import.meta.dirname}/settings-row-ids.json`,
 ];
 
-const api = async (path, method = 'GET') => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${TOK}`, Accept: 'application/json', 'OData-Version': '4.0' },
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`${method} ${path} -> ${r.status}: ${txt.replace(/\s+/g, ' ').slice(0, 250)}`);
-  return txt ? JSON.parse(txt) : null;
-};
-
-const found = await api(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId,IsCustomEntity`)
-  .catch(() => null);
+// Only a 404 means "does not exist". A 401/403 throws: an expired token must never read as
+// "nothing to do".
+const found = (await api(
+  `EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId,IsCustomEntity`,
+  { allow404: true },
+))?.json;
 
 if (!found) {
   console.log(`${TABLE} does not exist. Nothing to do.`);
@@ -43,9 +39,13 @@ if (found.IsCustomEntity !== true) {
   process.exit(1);
 }
 
-const rows = await api(`${TABLE}s?$select=jhrb_name&$top=50`).catch(() => ({ value: [] }));
-console.log(`${TABLE} exists (${found.MetadataId}) with ${rows.value.length} row(s):`);
-for (const r of rows.value) console.log(`  "${r.jhrb_name}"`);
+try {
+  const rows = (await api(`${TABLE}s?$select=jhrb_name&$top=50`)).json.value;
+  console.log(`${TABLE} exists (${found.MetadataId}) with ${rows.length} row(s):`);
+  for (const r of rows) console.log(`  "${r.jhrb_name}"`);
+} catch (e) {
+  console.log(`${TABLE} exists (${found.MetadataId}); its rows could not be listed (${e.message}).`);
+}
 
 if (!CONFIRM) {
   console.log('\nDRY RUN — nothing deleted. Re-run with --confirm.');
@@ -54,11 +54,11 @@ if (!CONFIRM) {
   process.exit(0);
 }
 
-await api(`EntityDefinitions(LogicalName='${TABLE}')`, 'DELETE');
+await api(`EntityDefinitions(LogicalName='${TABLE}')`, { method: 'DELETE' });
 console.log(`Deleted ${TABLE}.`);
 for (const f of IDS_FILES) {
   if (fs.existsSync(f)) {
     fs.unlinkSync(f);
-    console.log(`Removed ${f}.`);
+    console.log(`Removed ${path.basename(f)}.`);
   }
 }

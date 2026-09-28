@@ -132,3 +132,35 @@ Newest last. One line per change, naming the IDs it closes.
 ## Verification
 
 Final state, run from `pcf/`: `npm test` **650 passed** (586 at the start), `npm run typecheck` clean over all source, `npm run lint` clean with no warnings, `npm run build` succeeded, production build succeeded (bundle 159 KiB gzipped). Nothing was deployed and no script was run against the environment — every behaviour change here is verified by unit tests and the type gate only. The flows most worth checking in the published app before merging: Reply → expand quote on a hostile message (C1); change From on a saved draft, then Send (H1); Reply on B while A is open (H2); Forward → Send immediately (H4); a session switch with compose open (M11).
+
+## Published-app test run — 2026-09-28
+
+Run in CSW through Claude in Chrome on a dedicated case, **CAS-01131-N6S2T3** ("[TEST] … safe to
+delete"), whose only parties are the approved test contact and the Care queue. Its inbound email
+was created over the API with a script-bait body, a remote image and a small attachment. Two real
+sends went out, both from Care to simon.jehrbo@example.com, each announced before sending.
+
+| Check | Version | Result |
+|---|---|---|
+| C1 compose-quote XSS | 1.14.0 | ✅ Marker never set; no handlers or `javascript:` links anywhere in the page with the quote expanded; quote ids prefixed, images `no-referrer` |
+| M4 remote images | 1.14.0 | ✅ "Show pictures" bar; image held back |
+| H1 sender change | 1.14.0 | ✅ Changing From rewrote the draft row's sender (read over the API); own-mailbox sender blocked with its reason; sent as Care after switching back |
+| Send guard, no recipients | 1.14.0 | ✅ "Not sent — Add at least one recipient first"; nothing sent |
+| M9 / L11 notice | 1.14.0 | ✅ Compose closed on acceptance; neutral notice, corrected to "Sent" when the platform reported status 3 |
+| H4 forward → Send immediately | 1.15.0 | ✅ Sent with testbilag.txt, reusing the original's blob — after fixing N2 below |
+| H2 second compose over the first | 1.15.0 | ✅ A's last words saved on the switch (before its debounce); B opened with its own editor; no stray draft |
+| Threading merge (N1) on CAS-01130-T1M1W1 | 1.14.0 | ✅ "Hjælp til selvhjælp" is one thread of 3; the auto-acknowledgement stays apart |
+| M11 two-session teardown | 1.15.0 | ❌ Selection restored, compose and expanded messages lost — N3, fixed in 1.16.0, **re-test pending** |
+
+### Found by the test run
+
+| ID | Finding | Status |
+|---|---|---|
+| N1 | A customer reply that arrives with a new conversation hash was a separate thread (reported on CAS-01130-T1M1W1). Threads now merge on `correlatedactivityid` — not `parentactivityid`, which the auto-acknowledgement carries. | fixed (1.14.0) |
+| N2 | **Forward dropped every attachment.** `$select=attachmentid` (a lookup's logical name) is silently ignored by the Web API; the field never arrived. Pre-dates this review; the unit test's fixture used the assumed shape. Now `_attachmentid_value`; all other selects audited. | fixed (1.15.0) |
+| N3 | M11 as first written did not restore: the mount-time persist came back as `restored` before the landing ran. The landing now reads the state as it was at mount. New shell smoke test fails without the fix. | fixed (1.16.0), re-test pending |
+| N4 | The form's sticky header is drawn over the top ~240 px of the control once the form scrolls: the list's search and first rows, and the message card's Reply/Forward buttons, are hidden. The height claim assumes nothing sits over the control. Pre-dates this review. | open |
+| N5 | "Signature still belongs to the previous sender" stayed after switching From back. | fixed (1.16.0) |
+| — | An apparent hang (renderer frozen, script injection timing out) turned out to be Chrome throttling and freezing a hidden tab — `visibilityState: hidden`, and the window was confirmed minimised; no long tasks once visible. Not a control defect. | not a bug |
+| — | One forward send was triggered without the test script's click; the script found Send already disabled. A controlled repro (20 s, recipient added, Send untouched) sent nothing, and the only path to `sendDraft` is the button's click handler. Cause not determined. | watch |
+| — | The reply to the API-seeded message got its own thread: seeded rows have no `conversationindex`, so the platform gave the reply a new root. Seed-data artefact (CLAUDE.md), not a product defect. | not a bug |

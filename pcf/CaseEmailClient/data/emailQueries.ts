@@ -77,7 +77,11 @@ const PARTY_COLUMNS = [
 
 const ATTACHMENT_COLUMNS = [
   'activitymimeattachmentid',
-  'attachmentid',
+  // The LOOKUP form. Selecting the logical name `attachmentid` is not an error — the platform
+  // silently returns the row without it — so until 2026-09-28 every forward dropped its
+  // attachments with nothing anywhere saying so. Found in the published app, not by the unit
+  // test, whose fixture used the shape the code assumed rather than the shape the server sends.
+  '_attachmentid_value',
   'filename',
   'mimetype',
   'filesize',
@@ -462,7 +466,7 @@ export async function fetchAttachments(
     );
     return page.entities.map((row) => ({
       id: asString(row.activitymimeattachmentid, ''),
-      attachmentId: row.attachmentid ? asString(row.attachmentid) : undefined,
+      attachmentId: row._attachmentid_value ? asString(row._attachmentid_value) : undefined,
       filename: asString(row.filename, '(unnamed)'),
       mimeType: asString(row.mimetype, 'application/octet-stream'),
       fileSize: typeof row.filesize === 'number' ? row.filesize : 0,

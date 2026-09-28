@@ -232,10 +232,13 @@ describe('fetching', () => {
   });
 
   it('maps attachment metadata, keeping attachmentid for reuse on forward', async () => {
+    // The shape the server REALLY sends: a lookup arrives as `_attachmentid_value`. The fixture
+    // used `attachmentid` until 2026-09-28, which is why this test passed while every forward
+    // in the published app dropped its attachments.
     const api: WebApiLike = {
       retrieveMultipleRecords: vi.fn(() => page([{
         activitymimeattachmentid: 'a-1',
-        attachmentid: 'shared-file-1',
+        _attachmentid_value: 'shared-file-1',
         filename: 'Fotodokumentation_etape3.pdf',
         mimetype: 'application/pdf',
         filesize: 2516582,
@@ -247,6 +250,12 @@ describe('fetching', () => {
     expect(att.fileSize).toBe(2516582);
     // Reused rather than re-uploaded on forward: same stored file, no extra storage.
     expect(att.attachmentId).toBe('shared-file-1');
+  });
+
+  it('SELECTS the lookup form — the logical name is silently ignored by the server', () => {
+    const q = buildAttachmentsQuery(MSG);
+    expect(q).toContain('_attachmentid_value');
+    expect(q).not.toMatch(/[,=]attachmentid[,&]/);
   });
 
   it('names an unnamed attachment rather than rendering nothing', async () => {

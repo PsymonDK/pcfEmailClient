@@ -9,23 +9,28 @@ Workspace (CSW)** app. It gives agents a native mail experience (threading, in-p
 attachments, templates, signatures, drafts) scoped to a single Case — where the OOB Timeline is an
 activity feed and the OOB Inbox is queue-scoped rather than Case-scoped.
 
-**Current state: Phase 1 (the reading slice) is complete and deployed.** The control (v1.5.5,
-unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
+**What has shipped and what is left lives in
+[`docs/project-plan.md`](docs/project-plan.md) — not here.** Keeping the plan in this file meant
+maintaining it in two places, and the two drifted. In short: the reading slice and compose/send
+are both done and merged; Phase 3 is packaging (N3), templates (R22), accessibility (N6) and
+performance (N5).
+
+The control (unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
 `Case - Email Client` form, verified in the published app. Design is signed off — see
-[`docs/design/`](docs/design/01-design-decisions.md). **Phase 2 (compose) is under way** — the compose surface, templates, signature, queue sender with R18 pre-flight, R16 autosaved drafts and R13 attachments are built and verified in the published app (v1.10.1). **Still to come: the send write path (R17).** The 2.0
-gate is closed — the editor is **TipTap 2** (S13, 2026-09-23) — and R12's invariant is written and
-tested in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts) before any compose UI
-exists, which is the order the plan demands. The
-architecture decision is **spike-validated on both target placements** — S1 (Case form tab) and S11
-(session tab, via an `Entity record` app tab template) both confirmed live that `setControlState`
-survives a CSW two-session teardown. S2 confirmed the same inside a custom page, which S11 then made
-unnecessary. S6 (attachments) and S7 (real send, receipt
-confirmed) have also passed, and **S8 is closed** — grouping, `conversationindex` ordering and the
-depth formula are all verified on a real conversation. **No research gate remains open.**
+[`docs/design/`](docs/design/01-design-decisions.md). The editor is **TipTap 2** (S13, 2026-09-23),
+and R12's invariant is written and tested in
+[`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts).
+
+**No research gate remains open.** The architecture is spike-validated on both target placements —
+S1 (Case form tab) and S11 (session tab, via an `Entity record` app tab template) both confirmed
+live that `setControlState` survives a CSW two-session teardown. S2 confirmed the same inside a
+custom page, which S11 then made unnecessary. S6 (attachments) and S7 (real send, receipt
+confirmed) have also passed, and S8 is closed — grouping, `conversationindex` ordering and the
+depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **550 tests**, lint and typecheck clean.
+helpers — **586 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -79,15 +84,12 @@ four places and two of them omitted the direction check, which is how the readin
 treat the agent's own replies as waiting to be read. Use `isUnread` / `messageToOpen` /
 `worthPersisting`; do not re-inline the predicate.
 
-**Phase 1 (the reading slice) is COMPLETE and deployed as v1.5.5** — R1–R8, R21, N1–N4, N7, plus
-issue #4 (conversations expand in the list) — including R6's durable per-agent
-read state on the `jhrb_emailreadstate` table (see the Dataverse section below), **verified end to
-end in the published app on 2026-09-22** — read state now survives a full page reload, which
-`setControlState` never could. Run the suite from
-`pcf/`, not the repo root — `npm test`, `npm run lint`, `npm run typecheck`. Do **not** use
-`npx vitest`: it resolves a cached global copy that has no jsdom and silently skips a test file.
+**Run the suite from `pcf/`, not the repo root** — `npm test`, `npm run lint`,
+`npm run typecheck`. Do **not** use `npx vitest`: it resolves a cached global copy that has no
+jsdom and silently skips a test file.
 
-See [`docs/design/01-design-decisions.md`](docs/design/01-design-decisions.md) for what to build,
+See [`docs/project-plan.md`](docs/project-plan.md) for what is done and what is next,
+[`docs/design/01-design-decisions.md`](docs/design/01-design-decisions.md) for what to build,
 [`docs/design/02-component-inventory.md`](docs/design/02-component-inventory.md) for what builds it,
 [`docs/research/00-index.md`](docs/research/00-index.md) and the ADR at
 [`docs/research/07-decision.md`](docs/research/07-decision.md) for why.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addressFilter, resolveAddress } from '../recipients';
+import { addressFilter, enrichRecipients, resolveAddress } from '../recipients';
 import type { WebApiLike } from '../emailQueries';
 
 /** What the server sees: the options string URL-decoded once, as the query string is. */
@@ -51,6 +51,22 @@ describe('resolveAddress — which failures may the search skip past (L6)', () =
   it('STOPS on any other failure, rather than binding a later table\'s record', async () => {
     const out = await resolveAddress(api({ status: 503, message: 'busy' }), ADDRESS);
     expect(out).toEqual({ kind: 'none' });
+  });
+});
+
+describe('enrichRecipients — an ambiguous match is kept unresolved but labelled (L6)', () => {
+  it('marks the recipient with how many records matched, and binds none', async () => {
+    const api: WebApiLike = {
+      retrieveMultipleRecords: (entity: string) => Promise.resolve({
+        entities: entity === 'contact'
+          ? [{ contactid: 'b5e30418-23f2-f011-8406-0022489cf5dd' }, { contactid: 'c5e30418-23f2-f011-8406-0022489cf5dd' }]
+          : [],
+      }),
+      retrieveRecord: () => Promise.resolve({}),
+    };
+    const [r] = await enrichRecipients(api, [{ name: 'Dup', address: 'dup@example.invalid' }]);
+    expect(r.partyId).toBeUndefined();
+    expect(r.ambiguousMatches).toBe(2);
   });
 });
 

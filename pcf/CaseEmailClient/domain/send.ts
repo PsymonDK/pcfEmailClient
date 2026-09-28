@@ -188,6 +188,8 @@ export function blockingReasonBeforeSend(args: {
    * each call site to decide, which is the only thing that has actually prevented a recurrence.
    */
   unresolvedAddresses: readonly string[];
+  /** Those of `unresolvedAddresses` that matched several records. Required, for the same reason. */
+  ambiguousAddresses: readonly string[];
   allowUnresolved: boolean;
 }): string | undefined {
   if (args.recipientCount === 0) return 'Add at least one recipient first.';
@@ -196,7 +198,7 @@ export function blockingReasonBeforeSend(args: {
   // Checked last: it is the most specific complaint, and the least useful to show while
   // something more basic is also wrong.
   if (!args.allowUnresolved && args.unresolvedAddresses.length > 0) {
-    return describeUnresolved(args.unresolvedAddresses);
+    return describeUnresolved(args.unresolvedAddresses, args.ambiguousAddresses);
   }
   return undefined;
 }

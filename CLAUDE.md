@@ -286,7 +286,9 @@ bite if forgotten:
   trusts the 200 will tell agents mail was sent that never leaves. Before offering Send, check:
   org `requireapprovalforqueueemail` / `requireapprovalforuseremail`, then the sender's
   `emailrouteraccessapproval` (**1 = Approved**, on `queue` or `systemuser`), then the mailbox's
-  `outgoingemailstatus` (want *Success*) and `mailboxstatus`.
+  `outgoingemailstatus` (want *Success*). **Not `mailboxstatus`** — measured 2026-09-28 it says
+  nothing about sending: the agent's mailbox reads `mailboxstatus` = Success with outgoing = Not
+  Run, and cannot send. This file used to list it as a check.
   Counter-intuitive companion finding: a queue with **no** address fails **loudly** (synchronous 400);
   a queue with an **unapproved** address fails **silently**. Don't infer one from the other.
 

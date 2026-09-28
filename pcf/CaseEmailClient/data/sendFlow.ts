@@ -1,7 +1,7 @@
 import type { PendingAttachment } from '../domain/attachments';
 import type { Recipient } from '../domain/compose';
 import type { PreflightVerdict } from '../domain/preflight';
-import { unresolvedAddresses } from '../domain/recipients';
+import { ambiguousAddresses, unresolvedAddresses } from '../domain/recipients';
 import { blockingReasonAfterSave, blockingReasonBeforeSend } from '../domain/send';
 import type { SenderCandidate } from '../domain/sender';
 import { fetchQueueById } from './caseQueue';
@@ -59,6 +59,7 @@ export async function runSend(input: SendInput, deps: SendDeps): Promise<SendOut
     recipientCount: input.to.length + input.cc.length,
     attachments: deps.attachments(),
     unresolvedAddresses: unresolvedAddresses(input.to, input.cc),
+    ambiguousAddresses: ambiguousAddresses(input.to, input.cc),
     allowUnresolved: input.allowUnresolved,
   });
   if (before) return { ok: false, detail: before };

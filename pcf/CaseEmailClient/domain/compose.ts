@@ -54,6 +54,11 @@ export interface Recipient {
    * to agree today.
    */
   partyNav?: string;
+  /**
+   * The address matched MORE than one record, so none was chosen (L6). Still unresolved — two
+   * matches is never a guess — but the agent is told why, instead of "not a known record".
+   */
+  ambiguousMatches?: number;
 }
 
 export interface ResolvedRecipients {

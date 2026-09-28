@@ -228,6 +228,8 @@ export async function enrichRecipients(
   return recipients.map((r) => {
     if (r.partyId) return r;
     const outcome = resolved.get(r.address.trim().toLowerCase());
+    // Several matches stay unresolved — never a guess — but say so (L6).
+    if (outcome?.kind === 'ambiguous') return { ...r, ambiguousMatches: outcome.matches };
     if (!outcome || outcome.kind !== 'resolved') return r;
     return {
       ...r,

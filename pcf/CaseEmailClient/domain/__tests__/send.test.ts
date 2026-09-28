@@ -129,6 +129,7 @@ describe('blockingReasonBeforeSend', () => {
     recipientCount: 1,
     attachments: [] as PendingAttachment[],
     unresolvedAddresses: [] as string[],
+    ambiguousAddresses: [] as string[],
     allowUnresolved: false,
   };
 
@@ -183,6 +184,17 @@ describe('blockingReasonBeforeSend', () => {
 
     it('says nothing when every recipient resolves', () => {
       expect(blockingReasonBeforeSend({ ...ok, unresolvedAddresses: [] })).toBeUndefined();
+    });
+
+    it('says an address matching SEVERAL records is ambiguous, not unknown (L6)', () => {
+      const reason = blockingReasonBeforeSend({
+        ...ok,
+        unresolvedAddresses: ['kunde@example.com', 'dup@example.com'],
+        ambiguousAddresses: ['dup@example.com'],
+      });
+      expect(reason).toContain('kunde@example.com is not a known record');
+      expect(reason).toContain('dup@example.com matches more than one record');
+      expect(reason).not.toContain('dup@example.com is not');
     });
 
     it('reports a more basic problem first', () => {

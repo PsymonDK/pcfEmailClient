@@ -606,9 +606,11 @@ const RecipientRow: React.FC<{
       return (
         <span
           key={`${i}-${r.address}`}
-          title={unknown
-            ? `${r.address} — not a known contact, account, user or queue`
-            : r.address}
+          title={!unknown
+            ? r.address
+            : r.ambiguousMatches
+              ? `${r.address} — matches more than one record; use the lookup to pick the right one`
+              : `${r.address} — not a known contact, account, user or queue`}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
             height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',

@@ -80,7 +80,10 @@ export async function fetchOutgoingStatus(
     const mailbox = await webApi.retrieveRecord(
       'mailbox',
       toGuid(mailboxId, 'mailboxId'),
-      '?$select=outgoingemailstatus,mailboxstatus',
+      // `outgoingemailstatus` ONLY. `mailboxstatus` was selected and never used (L3); measured
+      // 2026-09-28 it is no signal for sending: the agent's mailbox reads mailboxstatus = Success
+      // with outgoing = Not Run, and it cannot send. Gating on it would block nothing this doesn't.
+      '?$select=outgoingemailstatus',
     );
     return typeof mailbox.outgoingemailstatus === 'number'
       ? mailbox.outgoingemailstatus

@@ -125,12 +125,43 @@ export function unresolvedAddresses(
  * **Names them.** "Some recipients could not be resolved" leaves the agent hunting; the whole
  * value of blocking is telling them precisely which address to fix.
  */
-export function describeUnresolved(addresses: readonly string[]): string {
+export function describeUnresolved(
+  addresses: readonly string[],
+  /**
+   * Those of `addresses` that matched several records. They get their own sentence: "not a known
+   * record" was untrue for them, and sent the agent looking for a record that exists twice (L6).
+   */
+  ambiguous: readonly string[] = [],
+): string {
   if (addresses.length === 0) return '';
-  const list = addresses.join(', ');
-  const subject = addresses.length === 1 ? 'is not a known record' : 'are not known records';
-  return `${list} ${subject}. This organisation only delivers to recipients that match a `
+  const several = new Set(ambiguous.map((a) => a.toLowerCase()));
+  const unknown = addresses.filter((a) => !several.has(a.toLowerCase()));
+  const matchedMany = addresses.filter((a) => several.has(a.toLowerCase()));
+  const parts: string[] = [];
+  if (unknown.length > 0) {
+    const verb = unknown.length === 1 ? 'is not a known record' : 'are not known records';
+    parts.push(`${unknown.join(', ')} ${verb}.`);
+  }
+  if (matchedMany.length > 0) {
+    const verb = matchedMany.length === 1 ? 'matches' : 'each match';
+    parts.push(`${matchedMany.join(', ')} ${verb} more than one record, so it is not clear who is meant.`);
+  }
+  return `${parts.join(' ')} This organisation only delivers to recipients that match a `
     + 'contact, account, user or queue — use the lookup to pick one.';
+}
+
+/** The unresolved addresses that matched SEVERAL records rather than none (L6). */
+export function ambiguousAddresses(
+  to: readonly Recipient[],
+  cc: readonly Recipient[],
+): string[] {
+  const seen = new Set<string>();
+  for (const r of [...to, ...cc]) {
+    if (isResolved(r) || !r.ambiguousMatches) continue;
+    const a = r.address.trim().toLowerCase();
+    if (a) seen.add(a);
+  }
+  return [...seen];
 }
 
 /**

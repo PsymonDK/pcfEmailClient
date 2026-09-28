@@ -150,7 +150,9 @@ sends went out, both from Care to simon.jehrbo@example.com, each announced befor
 | H4 forward → Send immediately | 1.15.0 | ✅ Sent with testbilag.txt, reusing the original's blob — after fixing N2 below |
 | H2 second compose over the first | 1.15.0 | ✅ A's last words saved on the switch (before its debounce); B opened with its own editor; no stray draft |
 | Threading merge (N1) on CAS-01130-T1M1W1 | 1.14.0 | ✅ "Hjælp til selvhjælp" is one thread of 3; the auto-acknowledgement stays apart |
-| M11 two-session teardown | 1.15.0 | ❌ Selection restored, compose and expanded messages lost — N3, fixed in 1.16.0, **re-test pending** |
+| M11 two-session teardown | 1.15.0 | ❌ Selection restored, compose and expanded messages lost — N3 |
+| M11 two-session teardown, re-test | 1.16.0 | ✅ Compose reopened with its text ("M11 sessionsskift test 1.16"), message re-expanded, thread selected |
+| "Show pictures" clickable | 1.16.0 | ❌ Covered by the form header on a fresh load (elementFromPoint = header) — N4, fix in 1.17.0, **re-test pending** |
 
 ### Found by the test run
 
@@ -158,8 +160,8 @@ sends went out, both from Care to simon.jehrbo@example.com, each announced befor
 |---|---|---|
 | N1 | A customer reply that arrives with a new conversation hash was a separate thread (reported on CAS-01130-T1M1W1). Threads now merge on `correlatedactivityid` — not `parentactivityid`, which the auto-acknowledgement carries. | fixed (1.14.0) |
 | N2 | **Forward dropped every attachment.** `$select=attachmentid` (a lookup's logical name) is silently ignored by the Web API; the field never arrived. Pre-dates this review; the unit test's fixture used the assumed shape. Now `_attachmentid_value`; all other selects audited. | fixed (1.15.0) |
-| N3 | M11 as first written did not restore: the mount-time persist came back as `restored` before the landing ran. The landing now reads the state as it was at mount. New shell smoke test fails without the fix. | fixed (1.16.0), re-test pending |
-| N4 | The form's sticky header is drawn over the top ~240 px of the control once the form scrolls: the list's search and first rows, and the message card's Reply/Forward buttons, are hidden. The height claim assumes nothing sits over the control. Pre-dates this review. | open |
+| N3 | M11 as first written did not restore: the mount-time persist came back as `restored` before the landing ran. The landing now reads the state as it was at mount. New shell smoke test fails without the fix. | fixed (1.16.0), verified live |
+| N4 | On a fresh load the form header is drawn over the top ~240 px of the control — the list's first rows, the Reply/Forward buttons, and "Show pictures", which cannot be clicked (reported by the user). Measured: after a session restore the control sits at y=480 claiming 491 px and is fine; on a fresh load it sits at y=128 under UCI's sticky-header overlay. Not caused by tab switching or `scrollIntoView`. The first render claimed height with `rootTop = 0` (nearly the whole viewport), so the new tab was taller than the form and UCI scrolled it into view, engaging the overlay. `rootTop` is now measured in a layout effect before first paint, and the unmeasured claim is `MIN_HEIGHT`. Pre-dates this review. | fixed (1.17.0), re-test pending |
 | N5 | "Signature still belongs to the previous sender" stayed after switching From back. | fixed (1.16.0) |
 | — | An apparent hang (renderer frozen, script injection timing out) turned out to be Chrome throttling and freezing a hidden tab — `visibilityState: hidden`, and the window was confirmed minimised; no long tasks once visible. Not a control defect. | not a bug |
 | — | One forward send was triggered without the test script's click; the script found Send already disabled. A controlled repro (20 s, recipient added, Send untouched) sent nothing, and the only path to `sendDraft` is the button's click handler. Cause not determined. | watch |

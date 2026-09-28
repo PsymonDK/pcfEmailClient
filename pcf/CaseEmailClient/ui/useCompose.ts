@@ -25,7 +25,7 @@ import { runSend, type SendOutcome } from '../data/sendFlow';
 import { type SenderCandidate } from '../domain/sender';
 import { reportFor, type SendReport } from '../domain/send';
 import {
-  partyNavFor, recipientFromParty, withoutDuplicates, type ResolutionOutcome,
+  partyNavFor, recipientFromParty, replaceUnresolved, withoutDuplicates, type ResolutionOutcome,
 } from '../domain/recipients';
 import {
   enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity, searchRecipients,
@@ -705,6 +705,29 @@ export function useCompose(args: ComposeArgs) {
     addToField(field, [r]);
   }, [addToField, ourAddresses, setNotice, webApiRef]);
 
+  /**
+   * A flagged (unresolved) chip was clicked: open the platform lookup searching for its address,
+   * and put the picked record in its place. The chip then names a record and is deliverable.
+   */
+  const resolveRecipient = React.useCallback(async (field: 'to' | 'cc', address: string): Promise<void> => {
+    const [picked] = await openRecipientLookup({ searchText: address, allowMultiSelect: false });
+    if (!picked) return; // cancelled: the chip stays as it was
+    const entity = pickedEntity(picked);
+    const found = entity ? await fetchPartyAddress(webApiRef.current, entity, picked.id) : undefined;
+    const out = recipientFromParty(picked, found);
+    if (!out.ok) {
+      setNotice({ headline: 'That record was not used', detail: out.reason });
+      return;
+    }
+    setCompose((c) => {
+      if (!c) return c;
+      const others = field === 'to' ? c.cc : c.to;
+      return { ...c, [field]: replaceUnresolved(c[field], others, address, out.recipient) };
+    });
+    markPartiesDirty();
+    scheduleDraftSave();
+  }, [markPartiesDirty, scheduleDraftSave, setNotice, webApiRef]);
+
   const addRecipients = React.useCallback(async (field: 'to' | 'cc'): Promise<void> => {
     const picked = await openRecipientLookup();
     // Cancelling resolves with an empty array rather than rejecting, so this is the normal
@@ -928,6 +951,7 @@ export function useCompose(args: ComposeArgs) {
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
     changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
+    resolveRecipient,
   };
 }
 

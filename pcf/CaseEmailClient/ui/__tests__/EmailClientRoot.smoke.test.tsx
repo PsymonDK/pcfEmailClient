@@ -82,7 +82,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
           case 'activityparty': return partyRows;
           case 'contact':
             // The type-ahead's query; the address resolver's is an equality filter instead.
-            return options?.includes('startswith(fullname')
+            return options?.includes("startswith(fullname,'sim")
               ? [{ contactid: CONTACT, fullname: 'Simon Jehrbo', emailaddress1: 'simon.jehrbo@example.com' }]
               : [];
           case 'organization': return [{ requireapprovalforqueueemail: true, requireapprovalforuseremail: true }];
@@ -108,6 +108,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
         return Promise.resolve({ fullname: 'Simon Jehrbo', internalemailaddress: 'simon@example.invalid', emailrouteraccessapproval: 1 });
       }
       if (entity === 'mailbox') return Promise.resolve({ outgoingemailstatus: 1 });
+      if (entity === 'contact') return Promise.resolve({ emailaddress1: 'simon.jehrbo@example.com' });
       if (entity === 'email') return Promise.resolve({ activityid: IN, description: '<p>Hej Care</p>' });
       if (entity === 'organization') return Promise.resolve({ maxuploadfilesize: 5242880 });
       return Promise.resolve({});
@@ -206,5 +207,46 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     const chip = r.host.querySelector('[aria-label="Remove Simon Jehrbo"]');
     expect(chip).not.toBeNull();
     expect(r.host.querySelector('#cec-suggest-to [role=option]')).toBeNull();
+  });
+
+  it('a flagged chip can be resolved in place through the platform lookup', async () => {
+    const picks: unknown[] = [];
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      Utility: {
+        lookupObjects: (opts: unknown) => {
+          picks.push(opts);
+          return Promise.resolve([{ id: `{${CONTACT.toUpperCase()}}`, entityType: 'contact', name: 'Simon Jehrbo' }]);
+        },
+      },
+    };
+    try {
+      const r = await renderShell({
+        selectedThreadKey: 'h:-1269871662',
+        compose: { mode: 'reply', activityId: SENT, emailId: DRAFT },
+      });
+      const input = r.host.querySelector<HTMLInputElement>('input[aria-label^="Add To recipient"]')!;
+      await act(async () => {
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+        setter.call(input, 'nobody@example.invalid');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await new Promise<void>((resolve) => { setTimeout(resolve, 400); });
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await new Promise<void>((resolve) => { setTimeout(resolve, 300); });
+      });
+      const resolveButton = r.host.querySelector<HTMLButtonElement>('button[aria-label="Resolve nobody@example.invalid to a record"]');
+      expect(Array.from(r.host.querySelectorAll('span[title]'), (x) => x.getAttribute('title')).filter((t) => t?.includes('@'))).toContain('nobody@example.invalid — not a known contact, account, lead, user or queue. Click to pick the right record.');
+      expect(resolveButton).not.toBeNull();
+      await act(async () => {
+        resolveButton!.click();
+        await new Promise<void>((resolve) => { setTimeout(resolve, 50); });
+      });
+      // The lookup opened searching for the chip's address, single-pick.
+      expect(picks[0]).toMatchObject({ searchText: 'nobody@example.invalid', allowMultiSelect: false });
+      expect(r.host.querySelector('button[aria-label^="Resolve "]')).toBeNull();
+      expect(r.host.querySelector('[aria-label="Remove Simon Jehrbo"]')).not.toBeNull();
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
   });
 });

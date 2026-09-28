@@ -45,9 +45,13 @@ export const RESOLVE_ORDER: readonly PartyEntity[] = ['contact', 'account', 'sys
  *
  * Queue IS here, unlike `RESOLVE_ORDER` — an agent deliberately picking a queue (to hand a
  * thread to another team) is a real thing, whereas silently resolving an address to one is not.
+ *
+ * Lead joined 2026-09-28: address matching already resolved to leads, so a lead could arrive on a
+ * reply but could not be picked — the same table the standard email form offers. The order is
+ * the type-ahead's too: customers first, then colleagues, then queues.
  */
 export const LOOKUP_ENTITIES: readonly PartyEntity[] = [
-  'contact', 'account', 'systemuser', 'queue',
+  'contact', 'account', 'lead', 'systemuser', 'queue',
 ];
 
 export function isPartyEntity(value: string): value is PartyEntity {
@@ -211,4 +215,23 @@ export function withoutDuplicates(
     out.push(r);
   }
   return out;
+}
+
+/**
+ * Replace a flagged (unresolved) recipient with the record the agent picked for it, in place —
+ * the chip keeps its position in the row. If that record is already on the message, the flagged
+ * chip simply goes: the same person twice is never what was meant.
+ */
+export function replaceUnresolved(
+  list: readonly Recipient[],
+  others: readonly Recipient[],
+  address: string,
+  replacement: Recipient,
+): Recipient[] {
+  const at = list.findIndex((r) => !isResolved(r) && r.address.trim().toLowerCase() === address.trim().toLowerCase());
+  if (at < 0) return [...list];
+  const key = replacement.address.trim().toLowerCase();
+  const taken = [...others, ...list.filter((_, i) => i !== at)]
+    .some((r) => r.address.trim().toLowerCase() === key);
+  return taken ? list.filter((_, i) => i !== at) : list.map((r, i) => (i === at ? replacement : r));
 }

@@ -58,6 +58,8 @@ export interface ComposeProps {
   onPickRecipient?: (field: 'to' | 'cc', suggestion: RecipientSuggestion) => void;
   /** Enter on a typed address that no suggestion matched: resolve it like a reply would. */
   onTypedAddress?: (field: 'to' | 'cc', address: string) => void;
+  /** A flagged chip was clicked: pick the record it should be. Absent without the lookup. */
+  onResolveRecipient?: (field: 'to' | 'cc', address: string) => void;
   /** Mark recipients that match no record — i.e. this org refuses unresolved parties. */
   flagUnresolved?: boolean;
   /** Who the message goes out as (R17). On a Case this is normally the Case's queue. */
@@ -114,6 +116,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
+    onResolveRecipient,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
     sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed,
@@ -262,6 +265,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         onSearch={onSearchRecipients}
         onPick={(s) => onPickRecipient?.('to', s)}
         onTypedAddress={(a) => onTypedAddress?.('to', a)}
+        onResolve={onResolveRecipient ? (a) => onResolveRecipient('to', a) : undefined}
       />
       {/* Cc appears once it has someone in it, or once the agent asks for it. Rendering it
           unconditionally would spend 30 of the 471 measured vertical pixels on an empty row. */}
@@ -276,6 +280,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           onSearch={onSearchRecipients}
           onPick={(s) => onPickRecipient?.('cc', s)}
           onTypedAddress={(a) => onTypedAddress?.('cc', a)}
+          onResolve={onResolveRecipient ? (a) => onResolveRecipient('cc', a) : undefined}
         />
       )}
 
@@ -618,7 +623,9 @@ const RecipientRow: React.FC<{
   onSearch?: (text: string) => Promise<RecipientSuggestion[]>;
   onPick?: (suggestion: RecipientSuggestion) => void;
   onTypedAddress?: (address: string) => void;
-}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved, onSearch, onPick, onTypedAddress }) => {
+  /** Resolve a flagged chip to a record. When set, a flagged chip's label is a button. */
+  onResolve?: (address: string) => void;
+}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved, onSearch, onPick, onTypedAddress, onResolve }) => {
   const [text, setText] = React.useState('');
   const [suggestions, setSuggestions] = React.useState<RecipientSuggestion[]>([]);
   const [active, setActive] = React.useState(0);
@@ -686,14 +693,14 @@ const RecipientRow: React.FC<{
         )}
         {people.map((r, i) => {
           const unknown = flagUnresolved && !isResolved(r);
+          const resolvable = unknown && !!onResolve && !disabled;
+          const why = r.ambiguousMatches
+            ? `${r.address} — matches more than one record`
+            : `${r.address} — not a known contact, account, lead, user or queue`;
           return (
             <span
               key={`${i}-${r.address}`}
-              title={!unknown
-                ? r.address
-                : r.ambiguousMatches
-                  ? `${r.address} — matches more than one record; use the lookup to pick the right one`
-                  : `${r.address} — not a known contact, account, user or queue`}
+              title={!unknown ? r.address : resolvable ? `${why}. Click to pick the right record.` : why}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
                 height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
@@ -704,9 +711,24 @@ const RecipientRow: React.FC<{
               }}
             >
               {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {r.name || r.address}
-              </span>
+              {resolvable ? (
+                <button
+                  type="button"
+                  onClick={() => onResolve?.(r.address)}
+                  aria-label={`Resolve ${r.address} to a record`}
+                  style={{
+                    border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+                    font: 'inherit', fontSize: '12px', color: T.fg1, textDecoration: 'underline dotted',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {r.name || r.address}
+                </button>
+              ) : (
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.name || r.address}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => onRemove(r.address)}

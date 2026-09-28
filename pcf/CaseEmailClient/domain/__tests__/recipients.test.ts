@@ -9,6 +9,7 @@ import {
   PARTY_EMAIL_COLUMN,
   partyNavFor,
   recipientFromParty,
+  replaceUnresolved,
   RESOLVE_ORDER,
   unresolvedAddresses,
   withoutDuplicates,
@@ -56,6 +57,13 @@ describe('resolution and lookup tables', () => {
   it('DOES offer queue in the lookup, where the agent chose it deliberately', () => {
     // Handing a thread to another team is a real thing; silently resolving to one is not.
     expect(LOOKUP_ENTITIES).toContain('queue');
+  });
+
+  it('offers LEAD in the lookup — address matching already resolved to leads', () => {
+    expect(LOOKUP_ENTITIES).toContain('lead');
+    // Customers first, queues last: the type-ahead lists in this order too.
+    expect(LOOKUP_ENTITIES[0]).toBe('contact');
+    expect(LOOKUP_ENTITIES[LOOKUP_ENTITIES.length - 1]).toBe('queue');
   });
 
   it('recognises only party-capable tables', () => {
@@ -175,5 +183,30 @@ describe('withoutDuplicates', () => {
 
   it('keeps genuinely new recipients', () => {
     expect(withoutDuplicates([bare('new@example.com')], [resolved()])).toHaveLength(1);
+  });
+});
+
+describe('replaceUnresolved — resolving a flagged chip in place', () => {
+  const flagged: Recipient = { name: '', address: 'kunde@example.invalid' };
+  const other: Recipient = { name: 'A', address: 'a@example.invalid', partyId: 'p-a', partyEntity: 'contact' };
+  const picked: Recipient = { name: 'Kunde', address: 'kunde@example.invalid', partyId: 'p-k', partyEntity: 'contact' };
+
+  it('puts the record where the flagged chip was', () => {
+    expect(replaceUnresolved([other, flagged], [], 'KUNDE@example.invalid', picked)).toEqual([other, picked]);
+  });
+
+  it('takes the RECORD’s address, which may differ from what was typed', () => {
+    const elsewhere = { ...picked, address: 'kunde@firma.example.invalid' };
+    expect(replaceUnresolved([flagged], [], flagged.address, elsewhere)).toEqual([elsewhere]);
+  });
+
+  it('drops the flagged chip if that record is already on the message', () => {
+    const inCc: Recipient = { ...picked };
+    expect(replaceUnresolved([other, flagged], [inCc], flagged.address, picked)).toEqual([other]);
+  });
+
+  it('never touches a resolved recipient with the same address', () => {
+    const resolved = { ...picked };
+    expect(replaceUnresolved([resolved], [], resolved.address, other)).toEqual([resolved]);
   });
 });

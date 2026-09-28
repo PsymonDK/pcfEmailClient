@@ -66,14 +66,19 @@ export function resolveXrmUtility(): XrmUtility | undefined {
  * Returns `[]` for a cancel, which the caller treats as "nothing to do" rather than an error.
  */
 export async function openRecipientLookup(
+  options: {
+    /** Pre-fills the dialog's search — resolving a flagged chip searches for its address. */
+    searchText?: string;
+    allowMultiSelect?: boolean;
+  } = {},
   utility: XrmUtility | undefined = resolveXrmUtility(),
 ): Promise<PickedRecord[]> {
   if (!utility) return [];
   try {
     const picked = await utility.lookupObjects({
       entityTypes: [...LOOKUP_ENTITIES],
-      allowMultiSelect: true,
-      searchText: '',
+      allowMultiSelect: options.allowMultiSelect ?? true,
+      searchText: options.searchText ?? '',
     });
     return Array.isArray(picked) ? picked : [];
   } catch {

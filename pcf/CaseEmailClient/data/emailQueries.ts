@@ -1,3 +1,6 @@
+import { PARTY_ROLE } from '../domain/draft';
+import { asString } from './coerce';
+import { toGuid } from '../domain/guid';
 import type { EmailRow } from '../domain/threading';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 
@@ -212,26 +215,15 @@ export function buildAttachmentBodyQuery(): string {
   return '?$select=filename,mimetype,filesize,body';
 }
 
-/**
- * GUIDs go into these filters unquoted, so they are the one place a caller could inject OData.
- * Validating rather than escaping, because a non-GUID here is always a bug rather than input.
- */
-const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
+/** GUIDs go into these filters unquoted — see `domain/guid.ts`. */
 export function assertGuid(value: string, what: string): void {
-  const bare = value.replace(/^\{|\}$/g, '');
-  if (!GUID_RE.test(bare)) throw new Error(`${what} is not a GUID: ${JSON.stringify(value)}`);
+  toGuid(value, what);
 }
 
 // ── party roles ──────────────────────────────────────────────────────────────
 
 /** `participationtypemask` values. Recipients are rows, never a string — see `torecipients`. */
-export const PARTY_ROLE = {
-  sender: 1,
-  to: 2,
-  cc: 3,
-  bcc: 4,
-} as const;
+export { PARTY_ROLE };
 
 export type PartyRole = keyof typeof PARTY_ROLE;
 
@@ -320,15 +312,6 @@ export function groupParties(
 
 // ── row mapping ──────────────────────────────────────────────────────────────
 
-/**
- * Dataverse rows arrive as `Record<string, unknown>`, and `String(unknown)` happily produces
- * "[object Object]" for anything that is not a primitive. This keeps that out of the UI.
- */
-function asString(value: unknown, fallback = ''): string {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return fallback;
-}
 
 /** Maps a raw Dataverse row onto the shape the threading module expects. */
 export function toEmailRow(raw: Record<string, unknown>): EmailRow {
@@ -400,6 +383,29 @@ const wrap = async <T>(work: () => Promise<T>): Promise<T> => {
   }
 };
 
+/**
+ * Every row a query matches, following `@odata.nextLink` rather than truncating.
+ *
+ * A case-scoped view will rarely need a second page, but silently showing the first 100 of 140
+ * messages is a correctness bug, not a performance one. One copy (R4): the read-state page had
+ * its own.
+ */
+export async function fetchAllPages(
+  webApi: WebApiLike,
+  entity: string,
+  firstOptions: string,
+  pageSize: number,
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let options: string | undefined = firstOptions;
+  while (options) {
+    const page = await webApi.retrieveMultipleRecords(entity, options, pageSize);
+    rows.push(...page.entities);
+    options = page.nextLink ? page.nextLink.slice(page.nextLink.indexOf('?')) : undefined;
+  }
+  return rows;
+}
+
 /** All emails on a case, paged. Pass several ids to include ancestor cases (R8). */
 export async function fetchCaseEmails(
   webApi: WebApiLike,
@@ -407,20 +413,10 @@ export async function fetchCaseEmails(
   pageSize = 100,
 ): Promise<EmailRow[]> {
   return wrap(async () => {
-    const rows: Record<string, unknown>[] = [];
-    let options: string | undefined = typeof caseId === 'string'
+    const options = typeof caseId === 'string'
       ? buildListQuery(caseId)
       : buildListQueryForCases(caseId);
-
-    // Follow @odata.nextLink rather than truncating. A case-scoped view will rarely need it, but
-    // silently showing the first 100 of 140 messages is a correctness bug, not a performance one.
-    while (options) {
-      const page = await webApi.retrieveMultipleRecords('email', options, pageSize);
-      rows.push(...page.entities);
-      options = page.nextLink ? page.nextLink.slice(page.nextLink.indexOf('?')) : undefined;
-    }
-
-    return rows.map(toEmailRow);
+    return (await fetchAllPages(webApi, 'email', options, pageSize)).map(toEmailRow);
   });
 }
 

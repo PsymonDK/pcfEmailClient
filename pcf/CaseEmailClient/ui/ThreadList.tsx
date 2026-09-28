@@ -1,16 +1,20 @@
+import { EMAIL_STATUS, isInFlight } from '../domain/send';
 import * as React from 'react';
-import type { Thread } from '../domain/threading';
 import { normaliseSubject } from '../domain/threading';
 import { listView } from '../domain/listState';
+import type { ThreadSummary } from '../domain/threadSummary';
 import {
-  buildListRows, firstFocusable, nextFocusable, parentThreadIndex, type ListRow,
+  buildListRows, nextFocusable, parentThreadIndex, type ListRow,
 } from '../domain/listRows';
 import type { MessageParties } from '../data/emailQueries';
 import {
   clearClause, describeFilter, SEARCHES, type ThreadFilter,
 } from '../domain/filter';
 import { formatWhen, RADIUS, T } from './tokens';
-import { AttachmentIcon, Avatar, Card, CardHeader, DirectionIcon, GroupHeader, IconButton, Shimmer, StatusBadge, UnreadDot } from './parts';
+import {
+  AttachmentIcon, Avatar, Card, CardHeader, DirectionIcon, ErrorPanel, GroupHeader, IconButton, Shimmer,
+  StatusBadge, UnreadDot,
+} from './parts';
 
 /**
  * The thread list. R1 (grouping), R6 (unread), and the keyboard model from
@@ -21,18 +25,8 @@ import { AttachmentIcon, Avatar, Card, CardHeader, DirectionIcon, GroupHeader, I
  * accessibility failure in a custom mail list. Focus is remembered when you leave and come back.
  */
 
-export interface ThreadSummary {
-  thread: Thread;
-  /** Unread message count in this thread, for this agent. */
-  unreadCount: number;
-  /** Distinct participant display names, newest activity first. */
-  participants: string[];
-  hasAttachments: boolean;
-  hasDraft: boolean;
-  /** Set when the thread belongs to the parent case rather than this one (R8). */
-  parentCaseNumber?: string;
-  lastActivity: string;
-}
+// Built by `toSummary` in domain/threadSummary.ts; re-exported for the list's own props.
+export type { ThreadSummary };
 
 export interface ThreadListProps {
   summaries: ThreadSummary[];
@@ -88,8 +82,9 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
   const chips = describeFilter(filter);
 
   const listRef = React.useRef<HTMLDivElement>(null);
-  // Remembered across focus loss, per the interaction spec.
-  const [focusIndex, setFocusIndex] = React.useState(0);
+  // Remembered across focus loss, per the interaction spec — as a ROW ID, not a position (M14).
+  // An index pointed at a different row after every expand, collapse, filter or reload.
+  const [focusedRowId, setFocusedRowId] = React.useState<string>();
 
   // One decision, taken in a tested pure function, instead of a scatter of `!loading &&` guards
   // that made a failed load indistinguishable from an empty case.
@@ -107,19 +102,20 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
     () => buildListRows(summaries, expandedThreadKeys, readIds),
     [summaries, expandedThreadKeys, readIds],
   );
+  const focusIndex = Math.max(0, rows.findIndex((r) => rowId(r) === focusedRowId));
 
   const moveFocus = (next: number) => {
-    setFocusIndex(next);
+    const target = rows[next];
+    if (!target) return;
+    setFocusedRowId(rowId(target));
     // Keep the focused row in view without stealing the page's scroll.
     //
     // Addressed by ROW ID, not by position. Indexing `querySelectorAll` by the row index looked
     // right and was wrong: group headers are rows in the sequence but carry no `data-list-row`,
     // so every index past the first header pointed at the wrong element and scrolled somewhere
     // arbitrary. Ids cannot drift out of step with the array the way two parallel orders can.
-    const target = rows[next];
-    if (!target) return;
     listRef.current
-      ?.querySelector(`[data-row-id="${CSS.escape(`${target.kind}:${target.id}`)}"]`)
+      ?.querySelector(`[data-row-id="${CSS.escape(rowId(target))}"]`)
       ?.scrollIntoView({ block: 'nearest' });
   };
 
@@ -314,7 +310,7 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
         {view === 'loading' && <ListSkeleton />}
 
         {/* Error BEFORE any empty state, and it stays up while a retry is in flight. */}
-        {view === 'error' && error && <ListError error={error} onRetry={onRetry} />}
+        {view === 'error' && error && <ErrorPanel margin="12px" error={error} onRetry={onRetry} />}
 
         {view === 'empty' && <EmptyNoMail />}
 
@@ -345,8 +341,8 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
                 focused={focusIndex === i}
                 expandable={row.expandable}
                 expanded={row.expanded}
-                onToggleExpand={() => { setFocusIndex(i); onToggleExpand(row.id); }}
-                onSelect={() => { setFocusIndex(i); onSelect(row.id); }}
+                onToggleExpand={() => { setFocusedRowId(rowId(row)); onToggleExpand(row.id); }}
+                onSelect={() => { setFocusedRowId(rowId(row)); onSelect(row.id); }}
               />
             );
           }
@@ -357,7 +353,7 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
               parties={parties}
               selected={row.id === selectedMessageId}
               focused={focusIndex === i}
-              onSelect={() => { setFocusIndex(i); onSelectMessage(row.threadKey, row.id); }}
+              onSelect={() => { setFocusedRowId(rowId(row)); onSelectMessage(row.threadKey, row.id); }}
             />
           );
         })}
@@ -523,60 +519,6 @@ const ListSkeleton: React.FC = () => (
   </div>
 );
 
-/**
- * The load-failure state. Takes precedence over every empty state, because the two are not
- * interchangeable: one means "nothing to deal with", the other means "we do not know".
- */
-const ListError: React.FC<{
-  error: { headline: string; reassurance?: string; detail: string };
-  onRetry: () => void;
-}> = ({ error, onRetry }) => {
-  const [showDetail, setShowDetail] = React.useState(false);
-  return (
-    <div
-      role="alert"
-      style={{
-        margin: '12px', padding: '10px', boxSizing: 'border-box', background: T.dangerBg,
-        border: `1px solid ${T.dangerStroke}`, borderRadius: RADIUS.md,
-        display: 'flex', flexDirection: 'column', gap: '6px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px' }} aria-hidden="true">
-          <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
-        </svg>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{error.headline}</span>
-      </div>
-      {/* The agent's first question, answered before they ask it. */}
-      {error.reassurance && <span style={{ fontSize: '12px', color: T.fg2 }}>{error.reassurance}</span>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={onRetry}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '5px', height: '26px', padding: '0 10px',
-            boxSizing: 'border-box', borderRadius: RADIUS.md, background: T.bg1,
-            border: `1px solid ${T.stroke1}`, font: 'inherit', fontSize: '12px', cursor: 'pointer',
-          }}
-        >
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDetail((v) => !v)}
-          style={{ border: 'none', background: 'transparent', font: 'inherit', fontSize: '12px', color: T.link, cursor: 'pointer' }}
-        >
-          {showDetail ? 'Hide details' : 'Details'}
-        </button>
-      </div>
-      {showDetail && (
-        <code style={{ fontFamily: T.mono, fontSize: '11px', color: T.fg2, wordBreak: 'break-all' }}>
-          {error.detail}
-        </code>
-      )}
-    </div>
-  );
-};
 
 /**
  * Genuinely no mail. The ONLY state allowed to say "yet" — that word is what separates "nothing
@@ -669,16 +611,15 @@ const MessageRow: React.FC<{
       >
         {sender}
       </span>
-      {message.statuscode === 1 && <StatusBadge label="Draft" tone="warn" />}
+      {message.statuscode === EMAIL_STATUS.draft && <StatusBadge label="Draft" tone="warn" />}
       {/*
         R17. Compose closes as soon as the platform ACCEPTS a message, so this badge is where
         the agent watches it land. Measured 2026-09-25: server-side sync took ~2.5 minutes to
         move a healthy send from Pending Send to Sent, far longer than compose can reasonably
         stay open — so the status has to live somewhere durable, not in a transient panel.
       */}
-      {(message.statuscode === 6 || message.statuscode === 7)
-        && <StatusBadge label="Sending" tone="warn" />}
-      {message.statuscode === 8 && <StatusBadge label="Failed" tone="danger" />}
+      {isInFlight(message.statuscode) && <StatusBadge label="Sending" tone="warn" />}
+      {message.statuscode === EMAIL_STATUS.failed && <StatusBadge label="Failed" tone="danger" />}
       <span style={{ flexGrow: 1 }} />
       {(message.attachmentcount ?? 0) > 0 && <AttachmentIcon />}
       <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto' }}>
@@ -898,4 +839,9 @@ function normaliseSubjectForDisplay(subject: string): string {
   // agent sees the sender's own capitalisation.
   const at = subject.toLowerCase().indexOf(normalised.slice(0, 24));
   return at >= 0 ? subject.slice(at).replace(/\s*\b[A-Za-z]{2,8}:\d{4,12}\b\s*/g, ' ').trim() : subject;
+}
+
+/** The same id a row carries as `data-row-id`. One definition, so focus and lookup agree. */
+function rowId(row: { kind: string; id: string }): string {
+  return `${row.kind}:${row.id}`;
 }

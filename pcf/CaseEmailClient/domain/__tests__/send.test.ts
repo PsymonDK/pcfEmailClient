@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  blockingReasonAfterSave,
   blockingReasonBeforeSend,
   EMAIL_STATUS,
   isInFlight,
@@ -8,6 +9,7 @@ import {
   POLL_DELAYS,
   reportFor,
 } from '../send';
+import type { PendingAttachment } from '../attachments';
 
 describe('EMAIL_STATUS — read from live metadata, not memory', () => {
   it('matches the environment', () => {
@@ -125,8 +127,7 @@ describe('POLL_DELAYS', () => {
 describe('blockingReasonBeforeSend', () => {
   const ok = {
     recipientCount: 1,
-    statusCode: EMAIL_STATUS.draft,
-    uploadsInFlight: false,
+    attachments: [] as PendingAttachment[],
     unresolvedAddresses: [] as string[],
     allowUnresolved: false,
   };
@@ -140,25 +141,26 @@ describe('blockingReasonBeforeSend', () => {
   });
 
   it('waits for attachments rather than sending half of them', () => {
-    expect(blockingReasonBeforeSend({ ...ok, uploadsInFlight: true })).toContain('attachments');
+    expect(blockingReasonBeforeSend({ ...ok, attachments: [att({ status: 'uploading' })] }))
+      .toContain('attachments');
+    expect(blockingReasonBeforeSend({ ...ok, attachments: [att({ status: 'pending' })] }))
+      .toContain('attachments');
   });
 
-  it('refuses to send a message the platform already took', () => {
-    // Guards the double-send: re-issuing SendEmail on a Pending Send row.
-    expect(blockingReasonBeforeSend({ ...ok, statusCode: EMAIL_STATUS.pendingSend }))
-      .toContain('already been sent');
-    expect(blockingReasonBeforeSend({ ...ok, statusCode: EMAIL_STATUS.sent }))
-      .toContain('already been sent');
+  it('refuses while an attachment is failed — the tray would disagree with what is sent', () => {
+    expect(blockingReasonBeforeSend({ ...ok, attachments: [att({ status: 'failed' })] }))
+      .toContain('attachment');
   });
 
-  it('allows a draft whose status is not yet known', () => {
-    // A draft that has not saved yet has no statuscode; that is not a reason to block.
-    expect(blockingReasonBeforeSend({ ...ok, statusCode: undefined })).toBeUndefined();
+  it('does NOT block on a forwarded file before the save — the save is what creates its row', () => {
+    expect(blockingReasonBeforeSend({
+      ...ok, attachments: [att({ reusedAttachmentId: 'a1' })],
+    })).toBeUndefined();
   });
 
   it('reports the missing recipient before anything else', () => {
     expect(blockingReasonBeforeSend({
-      recipientCount: 0, uploadsInFlight: true, unresolvedAddresses: [], allowUnresolved: false,
+      ...ok, recipientCount: 0, attachments: [att({ status: 'uploading' })],
     })).toContain('recipient');
   });
 
@@ -191,3 +193,50 @@ describe('blockingReasonBeforeSend', () => {
     });
   });
 });
+
+describe('blockingReasonAfterSave', () => {
+  const none = [] as PendingAttachment[];
+
+  it('allows a saved draft', () => {
+    expect(blockingReasonAfterSave({ statusCode: EMAIL_STATUS.draft, attachments: none }))
+      .toBeUndefined();
+  });
+
+  it('refuses to send a message the platform already took', () => {
+    // Guards the double-send: re-issuing SendEmail on a Pending Send row.
+    expect(blockingReasonAfterSave({ statusCode: EMAIL_STATUS.pendingSend, attachments: none }))
+      .toContain('already been sent');
+    expect(blockingReasonAfterSave({ statusCode: EMAIL_STATUS.sent, attachments: none }))
+      .toContain('already been sent');
+  });
+
+  it('FAILS CLOSED when the status could not be read (M3)', () => {
+    // Before 2026-09-28 an unreadable status passed as "not sent yet" — the one moment the guard
+    // could not see was the moment it let the send through.
+    expect(blockingReasonAfterSave({ statusCode: undefined, attachments: none }))
+      .toContain('Could not confirm');
+  });
+
+  it('allows a FAILED send to be retried, as the failure report promises (L1)', () => {
+    expect(blockingReasonAfterSave({ statusCode: EMAIL_STATUS.failed, attachments: none }))
+      .toBeUndefined();
+    expect(reportFor(EMAIL_STATUS.failed, false).detail).toContain('sent again');
+  });
+
+  it('refuses a forwarded file that still has no row after the save (H4)', () => {
+    expect(blockingReasonAfterSave({
+      statusCode: EMAIL_STATUS.draft, attachments: [att({ reusedAttachmentId: 'a1' })],
+    })).toContain('forwarded attachment');
+    expect(blockingReasonAfterSave({
+      statusCode: EMAIL_STATUS.draft,
+      attachments: [att({ reusedAttachmentId: 'a1', attachmentId: 'row1' })],
+    })).toBeUndefined();
+  });
+});
+
+function att(patch: Partial<PendingAttachment>): PendingAttachment {
+  return {
+    key: 'k', filename: 'f.pdf', mimeType: 'application/pdf', size: 1, status: 'done',
+    progress: 100, ...patch,
+  };
+}

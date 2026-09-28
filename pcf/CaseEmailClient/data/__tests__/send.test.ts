@@ -60,11 +60,10 @@ describe('issueSend — the bound-action shape', () => {
     expect((execute.mock.calls[0][0] as { IssueSend: boolean }).IssueSend).toBe(false);
   });
 
-  it('strips braces from the id', async () => {
+  it('strips braces from the id (and normalises case — GUIDs are case-insensitive)', async () => {
     const execute = vi.fn((_req: unknown) => Promise.resolve({ json: () => Promise.resolve({}) }));
     await issueSend(`{${EMAIL.toUpperCase()}}`, false, execute);
-    expect((execute.mock.calls[0][0] as { entity: { id: string } }).entity.id)
-      .toBe(EMAIL.toUpperCase());
+    expect((execute.mock.calls[0][0] as { entity: { id: string } }).entity.id).toBe(EMAIL);
   });
 
   it('refuses an unsaved draft without calling the platform', async () => {

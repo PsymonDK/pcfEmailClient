@@ -1,3 +1,4 @@
+import { isInFlight } from '../domain/send';
 import * as React from 'react';
 import type { EmailRow, Thread } from '../domain/threading';
 import type { Attachment, MessageParties } from '../data/emailQueries';
@@ -5,7 +6,7 @@ import type { ComposeMode } from '../domain/compose';
 import { BodyFrame } from './BodyFrame';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
-  AttachmentIcon, Avatar, Card, CardHeader, Chevron, DirectionIcon, IconButton, Shimmer,
+  AttachmentIcon, Avatar, Card, CardHeader, Chevron, DirectionIcon, ErrorPanel, IconButton, Shimmer,
   StatusBadge, UnreadDot,
 } from './parts';
 
@@ -22,6 +23,8 @@ export interface MessageState {
   loadingBody: boolean;
   bodyError?: string;
   attachments?: Attachment[];
+  /** The attachment list would not load. The body still shows — one failure, not two (L11). */
+  attachmentsError?: boolean;
   expanded: boolean;
   quoteExpanded: boolean;
   noticesExpanded: boolean;
@@ -41,6 +44,8 @@ export interface ReadingPaneProps {
   focusMessageId?: string;
   onToggleNotices: (activityId: string) => void;
   onDownloadAttachment: (attachment: Attachment) => void;
+  /** Fetch a body again after it failed to load. */
+  onRetryBody: (activityId: string) => void;
   /** Fires when a message has been expanded and visible long enough to count as read (R6). */
   onDwellRead: (activityId: string) => void;
   /** R9 entry points. The pane knows which message; the shell knows how to compose against it. */
@@ -57,14 +62,25 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
   const {
     thread, parties, states, collapsedOlderCount, onExpandOlder, onToggleMessage,
     onToggleQuote, onToggleNotices, onDownloadAttachment, onDwellRead, loading, error, onRetry,
+    onRetryBody,
     focusMessageId, onCompose,
   } = props;
 
   const stackRef = React.useRef<HTMLDivElement>(null);
-  const [focusIndex, setFocusIndex] = React.useState(0);
+  // Focus is a message ID, not a position (M14). An index survived a thread change pointing past
+  // the end of the new thread, and Space then threw on `visible[focusIndex]`.
+  const [focusedId, setFocusedId] = React.useState<string>();
 
   const messages = thread?.messages ?? [];
   const visible = messages.slice(collapsedOlderCount);
+  const focusIndex = Math.max(0, visible.findIndex((m) => m.activityid === focusedId));
+
+  /** Addressed by id, never by index into `querySelectorAll` — see CLAUDE.md. */
+  const scrollToMessage = (activityId: string) => {
+    stackRef.current
+      ?.querySelector(`[data-message-id="${CSS.escape(activityId)}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  };
 
   /**
    * Issue #4, option (b): the pane keeps the whole conversation and scrolls to the chosen message.
@@ -79,26 +95,27 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
    */
   React.useEffect(() => {
     if (!focusMessageId) return;
-    const i = visible.findIndex((m) => m.activityid === focusMessageId);
-    if (i < 0) return;
-    stackRef.current?.querySelectorAll('[data-message]')[i]
-      ?.scrollIntoView({ block: 'nearest' });
-    setFocusIndex(i);
-    
+    if (!visible.some((m) => m.activityid === focusMessageId)) return;
+    scrollToMessage(focusMessageId);
+    setFocusedId(focusMessageId);
+    // Keyed on the id, deliberately not on `visible` (a new array every render) — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusMessageId, thread?.key, collapsedOlderCount]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (visible.length === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const next = e.key === 'ArrowDown'
+      const next = visible[e.key === 'ArrowDown'
         ? Math.min(visible.length - 1, focusIndex + 1)
-        : Math.max(0, focusIndex - 1);
-      setFocusIndex(next);
-      stackRef.current?.querySelectorAll('[data-message]')[next]?.scrollIntoView({ block: 'nearest' });
+        : Math.max(0, focusIndex - 1)];
+      if (!next) return;
+      setFocusedId(next.activityid);
+      scrollToMessage(next.activityid);
     } else if (e.key === ' ') {
       e.preventDefault();
-      onToggleMessage(visible[focusIndex].activityid);
+      const target = visible[focusIndex];
+      if (target) onToggleMessage(target.activityid);
     }
   };
 
@@ -159,7 +176,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
           borderTop: `1px solid ${T.stroke3}`, outlineOffset: '-2px',
         }}
       >
-        {error && <PaneError error={error} onRetry={onRetry} />}
+        {error && <ErrorPanel error={error} onRetry={onRetry} margin="12px 14px" />}
 
         {loading && !error && <MessageSkeleton />}
 
@@ -190,10 +207,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
             state={states.get(message.activityid)}
             focused={i === focusIndex}
             selected={message.activityid === focusMessageId}
-            onToggle={() => { setFocusIndex(i); onToggleMessage(message.activityid); }}
+            onToggle={() => { setFocusedId(message.activityid); onToggleMessage(message.activityid); }}
             onToggleQuote={() => onToggleQuote(message.activityid)}
             onToggleNotices={() => onToggleNotices(message.activityid)}
             onDownloadAttachment={onDownloadAttachment}
+            onRetryBody={() => onRetryBody(message.activityid)}
             onDwellRead={() => onDwellRead(message.activityid)}
             onReply={() => onCompose('reply', message.activityid)}
             onReplyAll={() => onCompose('replyAll', message.activityid)}
@@ -216,6 +234,7 @@ const MessageView: React.FC<{
   onToggleQuote: () => void;
   onToggleNotices: () => void;
   onDownloadAttachment: (a: Attachment) => void;
+  onRetryBody: () => void;
   onDwellRead: () => void;
   /** R9 entry points, per message — the pane knows which one is being answered. */
   onReply: () => void;
@@ -225,14 +244,23 @@ const MessageView: React.FC<{
   const {
     message, parties, state, focused, selected, onToggle, onToggleQuote, onToggleNotices,
     onReply, onReplyAll, onForward,
-    onDownloadAttachment, onDwellRead,
+    onDownloadAttachment, onDwellRead, onRetryBody,
   } = props;
 
   const expanded = state?.expanded ?? false;
   const unread = state?.unread ?? false;
   const outgoing = message.directioncode === true;
-  const senderName = parties?.sender?.name ?? (outgoing ? 'Care' : '(unknown sender)');
+  // Not 'Care': that is one queue in one environment (L13). Same fallback as the thread list.
+  const senderName = parties?.sender?.name ?? (outgoing ? 'Us' : '(unknown sender)');
   const rowRef = React.useRef<HTMLDivElement>(null);
+  /**
+   * The latest callback, read when the timer fires. As an effect dependency it was a new function
+   * on every parent render, so each render tore down the observer and restarted the 1.5s clock —
+   * and a parent that re-renders steadily (a `setControlState` round trip does) meant nothing
+   * was ever marked read (M13).
+   */
+  const dwellRef = React.useRef(onDwellRead);
+  dwellRef.current = onDwellRead;
 
   /**
    * R6 — mark read ON DWELL. Both conditions must hold continuously for ~1.5s: the message is
@@ -250,11 +278,12 @@ const MessageView: React.FC<{
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const clear = () => { if (timer) { clearTimeout(timer); timer = undefined; } };
+    const fire = () => dwellRef.current();
 
     // IntersectionObserver is the on-screen half. Without it, a message expanded far below the
     // fold would be marked read while never having been visible.
     if (typeof IntersectionObserver === 'undefined') {
-      timer = setTimeout(onDwellRead, DWELL_MS);
+      timer = setTimeout(fire, DWELL_MS);
       return clear;
     }
 
@@ -262,7 +291,7 @@ const MessageView: React.FC<{
       for (const entry of entries) {
         if (entry.isIntersecting) {
           clear();
-          timer = setTimeout(onDwellRead, DWELL_MS);
+          timer = setTimeout(fire, DWELL_MS);
         } else {
           clear(); // left the viewport before the dwell completed: not read
         }
@@ -271,15 +300,17 @@ const MessageView: React.FC<{
 
     observer.observe(el);
     return () => { clear(); observer.disconnect(); };
-  }, [expanded, unread, onDwellRead]);
+  }, [expanded, unread]);
 
   const statusLabel = message.statuslabel ?? (outgoing ? 'Sent' : 'Received');
-  const statusTone = statusLabel.toLowerCase().includes('pending') ? 'warn' : 'neutral';
+  // From the status CODE, not a substring of its label: the label is localised (L13).
+  const statusTone = isInFlight(message.statuscode) ? 'warn' : 'neutral';
 
   return (
     <div
       ref={rowRef}
       data-message=""
+      data-message-id={message.activityid}
       role="listitem"
       style={{
         display: 'flex',
@@ -400,7 +431,9 @@ const MessageView: React.FC<{
                 <span style={{ fontSize: '12px', color: T.dangerFg }}>Message text couldn&apos;t be loaded.</span>
                 <button
                   type="button"
-                  onClick={onToggle}
+                  // Retries the fetch. It called `onToggle` until 2026-09-28, which COLLAPSED the
+                  // message instead (L11).
+                  onClick={onRetryBody}
                   style={{ border: 'none', background: 'transparent', font: 'inherit', fontSize: '12px', color: T.link, fontWeight: 600, cursor: 'pointer' }}
                 >
                   Retry
@@ -418,6 +451,11 @@ const MessageView: React.FC<{
               />
             )}
 
+            {state?.attachmentsError && (
+              <span style={{ fontSize: '12px', color: T.dangerFg }}>
+                The attachments on this message couldn&apos;t be listed.
+              </span>
+            )}
             {state?.attachments && state.attachments.length > 0 && (
               <AttachmentList attachments={state.attachments} onDownload={onDownloadAttachment} />
             )}
@@ -468,60 +506,6 @@ const FileIcon: React.FC<{ mimeType: string }> = ({ mimeType }) => {
   );
 };
 
-const PaneError: React.FC<{
-  error: { headline: string; reassurance?: string; detail: string };
-  onRetry: () => void;
-}> = ({ error, onRetry }) => {
-  const [showDetail, setShowDetail] = React.useState(false);
-  return (
-    <div
-      role="alert"
-      style={{
-        margin: '12px 14px', padding: '10px', boxSizing: 'border-box', background: T.dangerBg,
-        border: `1px solid ${T.dangerStroke}`, borderRadius: RADIUS.md,
-        display: 'flex', flexDirection: 'column', gap: '6px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px' }} aria-hidden="true">
-          <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
-        </svg>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{error.headline}</span>
-      </div>
-      {/* The agent's first question, answered before they ask it. */}
-      {error.reassurance && <span style={{ fontSize: '12px', color: T.fg2 }}>{error.reassurance}</span>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <button
-          type="button"
-          onClick={onRetry}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '5px', height: '26px', padding: '0 10px',
-            boxSizing: 'border-box', borderRadius: RADIUS.md, background: T.bg1,
-            border: `1px solid ${T.stroke1}`, font: 'inherit', fontSize: '12px', cursor: 'pointer',
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke={T.fg1} strokeWidth="1.6" aria-hidden="true">
-            <path d="M16 10a6 6 0 1 1-2.2-4.6" /><path d="M16.2 3.6v3h-3" />
-          </svg>
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDetail((v) => !v)}
-          style={{ border: 'none', background: 'transparent', font: 'inherit', fontSize: '12px', color: T.link, cursor: 'pointer' }}
-        >
-          {showDetail ? 'Hide details' : 'Details'}
-        </button>
-      </div>
-      {/* Raw platform text lives here, never in the headline. */}
-      {showDetail && (
-        <code style={{ fontFamily: T.mono, fontSize: '11px', color: T.fg2, wordBreak: 'break-all' }}>
-          {error.detail}
-        </code>
-      )}
-    </div>
-  );
-};
 
 const MessageSkeleton: React.FC = () => (
   <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '16px' }} aria-busy="true">

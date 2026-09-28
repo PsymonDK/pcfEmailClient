@@ -117,7 +117,11 @@ export const browserDownloadIo: DownloadIo = {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+    // ALWAYS octet-stream, whatever the sender claimed (L7). The type is the sender's word, and a
+    // blob typed text/html or image/svg+xml is one the browser is willing to render. This one is
+    // only ever saved; the filename's extension is all the OS needs.
+    void mimeType;
+    return new Blob([bytes], { type: 'application/octet-stream' });
   },
   createObjectUrl: (blob) => URL.createObjectURL(blob),
   revokeObjectUrl: (url) => URL.revokeObjectURL(url),

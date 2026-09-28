@@ -175,9 +175,10 @@ describe('no component paints a hardcoded surface', () => {
     for (const file of files) {
       const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
       for (const line of source.split('\n')) {
-        // A hex used as a colour, excluding the ones inside SVG path data and comments.
+        // A colour literal, excluding comments. Any hex length and the functional forms: it only
+        // matched 6-digit hex until 2026-09-28 (L12), and an `rgba(...)` had got in past it.
         if (/^\s*(\*|\/\/)/.test(line)) continue;
-        const hex = /#[0-9a-fA-F]{6}\b/.exec(line);
+        const hex = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(/.exec(line);
         if (hex) offenders.push(`${file}: ${line.trim().slice(0, 80)}`);
       }
     }

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
   buildOutgoingBody, buildQuotedBlock, composeSubject, headerFor, QUOTE_CONTAINER_ID,
@@ -7,8 +8,8 @@ import { splitQuotedHistory } from '../quoting';
 
 const p = (name: string, address: string) => ({ name, address });
 
-const CUSTOMER = p('Mette Nielsen', 'mette@metalservice.dk');
-const COLLEAGUE = p('Søren Madsen', 'soren@nordbyg.dk');
+const CUSTOMER = p('Mette Nielsen', 'mette@metalservice.example.invalid');
+const COLLEAGUE = p('Søren Madsen', 'soren@nordbyg.example.invalid');
 const CARE = p('Care', 'care@example.invalid');
 const AGENT = p('Simon Jehrbo', 'simon.jehrbo@example.com');
 
@@ -55,8 +56,8 @@ describe('resolveRecipients — R9', () => {
   it('de-duplicates a person who appears twice, keeping the first slot', () => {
     const dupe: OriginalParties = {
       sender: CUSTOMER,
-      to: [p('M. Nielsen', 'METTE@metalservice.dk')],
-      cc: [p('Mette', 'mette@metalservice.dk')],
+      to: [p('M. Nielsen', 'METTE@metalservice.example.invalid')],
+      cc: [p('Mette', 'mette@metalservice.example.invalid')],
     };
     const out = resolveRecipients('replyAll', dupe, OURS);
     expect(out.to).toEqual([CUSTOMER]);   // the sender's name won, not the To or Cc copy
@@ -81,7 +82,7 @@ describe('R12 — the closed loop', () => {
   const NEW = '<p>Tak for din henvendelse.</p>';
   const ORIGINAL_BODY = '<div><p>Hej Kvadrat team,</p><p>Kan I bekræfte?</p></div>';
   const header = {
-    from: 'Mette Nielsen <mette@metalservice.dk>',
+    from: 'Mette Nielsen <mette@metalservice.example.invalid>',
     sent: '20-01-2026 15:42',
     to: 'Care <care@example.invalid>',
     subject: 'Forespørgsel på ordrestatus',
@@ -99,11 +100,27 @@ describe('R12 — the closed loop', () => {
     expect(split.matchedBy).toBe('divRplyFwdMsg');
   });
 
-  it('keeps the original body untouched inside the quote', () => {
-    // Not parsed, not re-serialised, not re-sanitised: every transformation is a chance to alter
-    // a business document.
+  it('keeps a clean original body byte-identical inside the quote', () => {
+    // Sanitised once, and sanitising well-formed mail must not alter it: every transformation is
+    // a chance to alter a business document.
     const quoted = buildQuotedBlock(header, ORIGINAL_BODY);
     expect(quoted).toContain(ORIGINAL_BODY);
+  });
+
+  it('sanitises the original body — it is the sender\'s raw HTML (C1, 2026-09-28)', () => {
+    // The body arrives exactly as Dataverse stores it, and S12 measured that the platform
+    // sanitises nothing. Before this, Reply → expand quote ran the sender's script as the agent.
+    const hostile = '<p>Hej</p><img src=x onerror="alert(1)"><script>alert(2)</script>'
+      + '<a href="javascript:alert(3)">link</a><style>body{display:none}</style>'
+      + '<form action="https://evil.example"><input type="password"></form>';
+    const quoted = buildQuotedBlock(header, hostile);
+    expect(quoted).toContain('<p>Hej</p>');
+    expect(quoted).not.toMatch(/onerror|<script|javascript:|<style|<form|<input/i);
+  });
+
+  it('still round-trips after sanitising a hostile body', () => {
+    const quoted = buildQuotedBlock(header, '<p>x</p><img src=x onerror="alert(1)">');
+    expect(roundTrips(NEW, quoted)).toBe(true);
   });
 
   it('round-trips a quote that ALREADY contains a quote', () => {
@@ -217,7 +234,7 @@ describe('headerFor', () => {
       { sender: CUSTOMER, to: [CARE, COLLEAGUE], cc: [] },
       when,
     );
-    expect(h.from).toBe('Mette Nielsen <mette@metalservice.dk>');
+    expect(h.from).toBe('Mette Nielsen <mette@metalservice.example.invalid>');
     expect(h.to).toContain('; ');
     expect(h.sent).toBe('formatted(2026-01-20T14:42:00Z)');
     expect(h.cc).toBeUndefined();

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { isSanitiserAvailable, sanitiseEmailBody } from '../sanitise';
+import { splitQuotedHistory } from '../quoting';
 
 // The adversarial half of this suite is the exact payload S12 pushed through Dataverse on
 // 2026-09-11 and got back byte-identical. Every block below therefore represents something that
@@ -12,9 +13,9 @@ describe('the sanitiser is actually running', () => {
   });
 
   it('passes nothing through unchanged', () => {
-    expect(sanitiseEmailBody(null)).toEqual({ html: '', modified: false });
-    expect(sanitiseEmailBody(undefined)).toEqual({ html: '', modified: false });
-    expect(sanitiseEmailBody('')).toEqual({ html: '', modified: false });
+    expect(sanitiseEmailBody(null)).toEqual({ html: '', modified: false, blockedImages: 0 });
+    expect(sanitiseEmailBody(undefined)).toEqual({ html: '', modified: false, blockedImages: 0 });
+    expect(sanitiseEmailBody('')).toEqual({ html: '', modified: false, blockedImages: 0 });
   });
 });
 
@@ -100,8 +101,22 @@ describe('keeps what our own features depend on', () => {
   // If any of these fails, R4, R12, R21, R3 or R5 breaks — and it breaks looking like a
   // heuristic bug rather than a sanitiser bug.
   it('KEEPS id, because the quote split matches div#divRplyFwdMsg', () => {
-    const out = sanitiseEmailBody('<div id="divRplyFwdMsg">quoted</div>').html;
-    expect(out).toContain('id="divRplyFwdMsg"');
+    // Prefixed for display (L10) — the split matches on substring, so it still finds it.
+    const shown = sanitiseEmailBody('<div id="divRplyFwdMsg">quoted</div>').html;
+    expect(shown).toContain('id="user-content-divRplyFwdMsg"');
+    expect(splitQuotedHistory(`<p>new</p>${shown}`).matchedBy).toBe('divRplyFwdMsg');
+    // Verbatim for HTML going out.
+    const sent = sanitiseEmailBody('<div id="divRplyFwdMsg">quoted</div>', { isolateIds: false }).html;
+    expect(sent).toContain('id="divRplyFwdMsg"');
+  });
+
+  it('isolates a sender id that would shadow a host global (L10)', () => {
+    const out = sanitiseEmailBody('<a id="Xrm" name="opener" href="https://example.invalid">x</a>').html;
+    expect(out).not.toMatch(/id="Xrm"|name="opener"/);
+  });
+
+  it('drops aria attributes a sender could use to mislead a screen reader (L10)', () => {
+    expect(sanitiseEmailBody('<p aria-hidden="true" aria-label="Safe">x</p>').html).not.toContain('aria-');
   });
 
   it('KEEPS class, because the quote split matches .gmail_quote', () => {

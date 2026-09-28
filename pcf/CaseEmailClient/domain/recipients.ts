@@ -78,9 +78,9 @@ export function partyNavFor(entity: PartyEntity): string {
  * `id: "{B5E30418-23F2-F011-8406-0022489CF5DD}"` — braced **and** upper-cased. Passing that
  * straight into an `@odata.bind` is the obvious thing and the wrong thing.
  */
-export function bareId(id: string): string {
-  return id.replace(/^\{|\}$/g, '').toLowerCase();
-}
+import { bareId } from './guid';
+
+export { bareId };
 
 /** A record the agent picked, or that an address resolved to. */
 export interface ResolvedParty {

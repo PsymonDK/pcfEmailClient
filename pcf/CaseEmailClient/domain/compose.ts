@@ -1,5 +1,6 @@
 import type { EmailRow } from './threading';
 import { splitQuotedHistory } from './quoting';
+import { sanitiseEmailBody } from './sanitise';
 import { stripTrackingToken } from './threading';
 
 /**
@@ -122,12 +123,18 @@ export interface QuoteHeader {
 }
 
 /**
- * The quoted block: an attribution header plus the original message's body, **verbatim**.
+ * The quoted block: an attribution header plus the original message's body, **sanitised once**.
  *
- * "Verbatim" is the whole point. `originalBodyHtml` is passed through untouched — not parsed, not
- * re-serialised, not sanitised again — because every transformation is a chance to alter a
- * business document, and because re-serialising is precisely what makes quoted chains degrade
- * into soup after a few rounds.
+ * `originalBodyHtml` is the raw `description` exactly as Dataverse returns it — written by
+ * someone outside the organisation, and S12 measured that the platform sanitises nothing. It is
+ * sanitised HERE, once, and never transformed again: from this point the block is the opaque,
+ * verbatim string R12 depends on, so the round trip is still byte-exact.
+ *
+ * **Why here and not at the call site.** Until 2026-09-28 this comment said "not sanitised
+ * again" — but the body had never been sanitised the first time. The reading pane sanitises
+ * inside `BodyFrame` and nothing else did, so Reply → expand quote rendered the sender's HTML into
+ * the host document with the agent's session behind it, and the same HTML went out in the reply
+ * under the queue's identity. Doing it inside the builder means no caller can forget.
  */
 export function buildQuotedBlock(header: QuoteHeader, originalBodyHtml: string): string {
   const rows = [
@@ -145,7 +152,8 @@ export function buildQuotedBlock(header: QuoteHeader, originalBodyHtml: string):
     `<div id="${QUOTE_CONTAINER_ID}">`
     + '<hr style="display:inline-block;width:98%" tabindex="-1">'
     + `<div style="font-size:11pt">${headerHtml}</div>`
-    + originalBodyHtml
+    // Remote images kept: this is the customer's own message going back to them.
+    + sanitiseEmailBody(originalBodyHtml, { allowRemoteImages: true, isolateIds: false }).html
     + '</div>'
   );
 }

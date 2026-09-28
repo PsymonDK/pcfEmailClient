@@ -1,64 +1,35 @@
 import * as React from 'react';
 import { buildThreads, type EmailRow, type Thread } from '../domain/threading';
-import { resolveLayout, composeHeight, LIST_WIDTH } from '../domain/layout';
-import {
-  buildOutgoingBody, buildQuotedBlock, composeSubject, headerFor, resolveRecipients,
-  type ComposeMode, type Recipient,
-} from '../domain/compose';
+import { resolveLayout, composeHeight } from '../domain/layout';
+import { type ComposeMode } from '../domain/compose';
 import {
   DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
-  type AncestorCase, type Attachment, type MessageParties, type Party,
+  type AncestorCase, type MessageParties,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
 import { browserDownloadIo, downloadAttachment } from '../data/attachments';
-import { fetchReadState, markRead as persistRead, type ReadStateApiLike, type ReadStateMap } from '../data/readState';
-import {
-  collapsedOlderCount, isUnread, messageToOpen, worthPersisting,
-} from '../domain/unread';
+import { fetchReadState, markRead as persistRead, type ReadStateMap } from '../data/readState';
+import { collapsedOlderCount, isUnread, messageToOpen, worthPersisting } from '../domain/unread';
 import { initialExpansion } from '../domain/listRows';
 import {
-  EMPTY_FILTER, filterThreads, isFilterActive, participantOptions,
+  buildParticipantIndex, EMPTY_FILTER, filterThreads, isFilterActive, participantOptions,
   type ParticipantIndex, type ThreadFilter,
 } from '../domain/filter';
-import { ThreadList, type ThreadSummary } from './ThreadList';
+import { ThreadList } from './ThreadList';
+import { useSender } from './useSender';
+import { useCompose, type Notice } from './useCompose';
+import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
-import { Compose, type TemplateOutcome } from './Compose';
-import { fetchSignatureFor } from '../data/signature';
-import { discardDraft, findExistingDraft, saveDraft, type DraftApiLike } from '../data/draft';
-import { describeSaved, worthSaving } from '../domain/draft';
-import {
-  admitFiles, blockProgress, DEFAULT_INLINE_CEILING, sizeWarning,
-  type PendingAttachment, type Rejection,
-} from '../domain/attachments';
-import {
-  fetchInlineCeiling, fileToBytes, removeAttachment as removeAttachmentRow, reuseAttachment,
-  uploadAttachment,
-} from '../data/attachmentUpload';
-import { fetchCaseQueue, fetchQueueById } from '../data/caseQueue';
-import { fetchSettings } from '../data/settings';
-import {
-  fetchAgentIdentity, fetchOrgApprovalPolicy, preflightCandidate, type OrgApprovalPolicy,
-} from '../data/preflight';
-import {
-  pickSetting, resolveSender, selfAddresses, type SenderCandidate,
-} from '../domain/sender';
-import { sendBlockedBy, type PreflightVerdict } from '../domain/preflight';
-import { blockingReasonBeforeSend, reportFor, type SendReport } from '../domain/send';
-import {
-  recipientFromParty, unresolvedAddresses, withoutDuplicates, type ResolutionOutcome,
-} from '../domain/recipients';
-import {
-  enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity, resolveXrmUtility,
-} from '../data/recipients';
-import { issueSend, pollUntilSettled, readSendStatus } from '../data/send';
-import {
-  fetchCaseTemplates, instantiateTemplate, resolveXrmExecute, type EmailTemplate,
-} from '../data/templates';
+import { Compose } from './Compose';
+import { type DraftApiLike } from '../data/draft';
+import { describeSaved } from '../domain/draft';
+import { sizeWarning } from '../domain/attachments';
+import { ourAddresses as ourAddressesFor } from '../domain/sender';
+import { sendBlockedBy } from '../domain/preflight';
+import { resolveXrmUtility } from '../data/recipients';
 import { initialBodyWithSignature } from '../domain/signature';
-import { sanitiseEmailBody } from '../domain/sanitise';
-import { splitQuotedHistory } from '../domain/quoting';
-import type { EditorHandle } from './Editor';
-import { formatWhen, T } from './tokens';
+import { T } from './tokens';
+import { ErrorBoundary } from './parts';
 import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
 
 /**
@@ -96,6 +67,11 @@ export interface RestorableState {
   /** Issue #4. Conversations expanded in the list, and the single message being read. */
   expandedThreadKeys?: string[];
   selectedMessageId?: string;
+  /**
+   * The compose that was open, so a session switch does not close it (M11). Its text is not
+   * here: it is on the draft row, which is re-read and re-checked on restore.
+   */
+  compose?: { mode: ComposeMode; activityId: string; emailId?: string };
 }
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
@@ -122,7 +98,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
 
   const [rows, setRows] = React.useState<EmailRow[]>([]);
   const [parties, setParties] = React.useState<Map<string, MessageParties>>(new Map());
-  const [threads, setThreads] = React.useState<Thread[]>([]);
+  /** Derived, not stored: a second copy of the rows is one more thing to keep in step. */
+  const threads = React.useMemo<Thread[]>(() => buildThreads(rows), [rows]);
   const [loading, setLoading] = React.useState(true);
   const [listError, setListError] = React.useState<ReturnType<typeof agentFacingMessage>>();
 
@@ -154,54 +131,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   /** True once the first load has chosen what to open, so it never overrides the agent later. */
   const landed = React.useRef(false);
 
-  /** R9/R10 — the open compose surface, or nothing. One at a time, docked in the reading pane. */
-  const [compose, setCompose] = React.useState<ComposeDraft>();
-  const [composeContentHeight, setComposeContentHeight] = React.useState(0);
-  /** R10: compose never shrinks back while open. Reset when it closes. */
-  const composeHighWater = React.useRef(0);
-  const editorRef = React.useRef<EditorHandle>(null);
-  /** True once the AGENT has changed the body. Not set by our own seeding — see `seeding`. */
-  const bodyTouched = React.useRef(false);
-  /** Guards `bodyTouched` while we write the signature in ourselves. */
-  const seeding = React.useRef(false);
 
-  /**
-   * Live mirrors of state the autosave reads.
-   *
-   * `flushDraft` is called from a debounce, an interval and an unmount, and must not be rebuilt
-   * on every keystroke — a new identity would restart the interval each time and the periodic
-   * save would never fire. So it depends only on `caseId` and reads everything else through
-   * these, which are updated on every render.
-   */
-  const composeRef = React.useRef<ComposeDraft>();
-  /** Live mirror of the attachment list, for callbacks that must not depend on it. */
-  const attachmentsRef = React.useRef<PendingAttachment[]>([]);
-  const inlineBytesRef = React.useRef(0);
-  const signatureRef = React.useRef('');
-  const senderRef = React.useRef<SenderCandidate>();
-
-  /**
-   * R15 signature and R14 templates — fetched once per case, not per compose-open.
-   *
-   * Both are conveniences: each resolves its own failure to "empty" rather than throwing, so a
-   * missing signature or an unreachable template list costs a nicety and never the reply.
-   */
-  const [signatureHtml, setSignatureHtml] = React.useState('');
-  const [templates, setTemplates] = React.useState<EmailTemplate[]>([]);
-
-  /**
-   * Who outgoing mail goes out as (R17), and whether it can actually leave (R18).
-   *
-   * Resolved once per case, in one batched state object so the compose surface never renders
-   * against a half-resolved sender. Until it resolves there is one candidate — the agent — with
-   * no verdict, which `sendBlockedBy` reports as "checking": Send stays disabled, which is the
-   * only safe state to be in before pre-flight has answered.
-   */
-  const [senderState, setSenderState] = React.useState<SenderState>(() => ({
-    candidates: [FALLBACK_SENDER],
-    chosenId: FALLBACK_SENDER.id,
-    verdicts: new Map<string, PreflightVerdict>(),
-  }));
 
   /**
    * The durable rows this agent already has (R6), keyed by message id.
@@ -214,12 +144,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   /** Set once if a read-state write fails, so the agent is told but not nagged per message. */
   const readStateWarned = React.useRef(false);
   /** Transient notice for a failed download. Not persisted — it is about one click. */
-  const [notice, setNotice] = React.useState<{ headline: string; detail: string }>();
+  /**
+   * `tone: 'info'` for good news. Success used to arrive in the danger styling with
+   * `role="alert"`, so "Sent" looked — and was announced — like an error (L11).
+   */
+  const [notice, setNotice] = React.useState<Notice>();
 
   // Bodies are cached for the control's lifetime and deliberately NOT persisted: they are large
   // and re-fetchable, and putting them in setControlState would bloat every session switch.
   const bodyCache = React.useRef(new Map<string, string>());
-  const inFlight = React.useRef(new Set<string>());
+  const bodyRequests = React.useRef(new Map<string, Promise<string | undefined>>());
 
   // ── sizing ─────────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -242,8 +176,22 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const webApiRef = React.useRef(webApi);
   webApiRef.current = webApi;
 
+  /**
+   * Loads can overlap — Refresh, the include-parent toggle, the reloads after a send — and nothing
+   * cancelled the older one, so a slow answer could land after a newer one and overwrite it (M12).
+   * Each load takes a number, and only the latest may write.
+   */
+  const loadSeq = React.useRef(0);
+  /**
+   * The first load has finished, READ STATE INCLUDED. The landing waits for this: run on the
+   * rows alone, it chose "the newest unread message" before anything was known to be read (M12).
+   */
+  const [loaded, setLoaded] = React.useState(false);
+
   const load = React.useCallback(async () => {
     const webApi = webApiRef.current;
+    const seq = ++loadSeq.current;
+    const latest = () => seq === loadSeq.current;
     if (!caseId) { setLoading(false); return; }
     setLoading(true);
     setListError(undefined);
@@ -262,14 +210,17 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           ancestors = [];
         }
       }
+      if (!latest()) return;
       setAncestorCases(ancestors);
 
       const caseIds = [caseId, ...ancestors.map((a) => a.caseId)];
       const fetched = await fetchCaseEmails(webApi, caseIds);
+      if (!latest()) return;
       setRows(fetched);
-      setThreads(buildThreads(fetched));
       // Recipients are a second, batched query rather than an $expand on the list.
-      setParties(await fetchParties(webApi, fetched.map((r) => r.activityid)));
+      const fetchedParties = await fetchParties(webApi, fetched.map((r) => r.activityid));
+      if (!latest()) return;
+      setParties(fetchedParties);
 
       // R6 — durable read state, one page for this case and this agent. Deliberately AFTER the
       // list is in state: this query must never be able to delay the mail appearing, and it
@@ -277,6 +228,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       // "everything looks unread" instead of as a case with no mail on it.
       if (userId) {
         const { read, error } = await fetchReadState(webApi, caseId, userId);
+        if (!latest()) return;
         readRows.current = read;
         // UNION with whatever `setControlState` restored, never a replacement. A mark made seconds
         // ago whose write has not landed yet must not be undone by the server's older answer.
@@ -289,143 +241,74 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           });
         }
       }
+      setLoaded(true);
     } catch (e) {
+      if (!latest()) return;
       const normalised = e instanceof DataverseError
         ? e.normalised
         : { message: String(e), raw: e };
       setListError(agentFacingMessage(normalised, 'list'));
       setRows([]);
-      setThreads([]);
     } finally {
-      setLoading(false);
+      if (latest()) setLoading(false);
     }
   }, [caseId, userId, includeParent]);
 
+
   React.useEffect(() => { void load(); }, [load]);
 
-  // Templates. Per-org, not per-case, and a failure here must not touch the mail list's own
-  // error handling.
-  React.useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const tpl = await fetchCaseTemplates(webApiRef.current);
-      if (!cancelled) setTemplates(tpl.templates);
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  // R17/R18/R15/R14 — who mail goes out as, whether it can leave, its signature, the templates.
+  const {
+    senderState, setSenderState, chosenSender, signatureHtml, templates, orgPolicyRef,
+  } = useSender(caseId, userId, webApiRef);
 
-  /**
-   * Resolve the sender, then pre-flight every candidate (R17/R18).
-   *
-   * Per case, because the queue is a property of the case. One `setSenderState` at the end: a
-   * partially-applied sender would let compose open against a From line that is about to change.
-   */
-  React.useEffect(() => {
-    if (!caseId || !userId) return undefined;
-    let cancelled = false;
 
-    void (async () => {
-      const api = webApiRef.current;
-      const bareUser = userId.replace(/^\{|\}$/g, '');
-
-      const [queueResult, settingsResult, policyResult, user] = await Promise.all([
-        fetchCaseQueue(api, caseId),
-        fetchSettings(api),
-        fetchOrgApprovalPolicy(api),
-        fetchAgentIdentity(api, bareUser),
-      ]);
-      if (cancelled) return;
-
-      // The settings table is the likeliest thing to be missing in a fresh environment — the
-      // read privilege has to be granted explicitly — and its failure mode is silent (zero rows,
-      // not an error). Log it so a support call has something to go on.
-      if (settingsResult.error) {
-        console.warn('Email client settings unreadable; sending as the agent.', settingsResult.error);
-      }
-
-      const setting = pickSetting(
-        settingsResult.rows,
-        // An explicit override queue is configuration about THIS case's sender, so the row that
-        // names it is still chosen by the case's own queue.
-        queueResult.queue?.candidate.id,
-      );
-      const queue = setting?.overrideQueueId
-        && setting.overrideQueueId !== queueResult.queue?.candidate.id
-        ? ((await fetchQueueById(api, setting.overrideQueueId)) ?? queueResult.queue)
-        : queueResult.queue;
-      if (cancelled) return;
-
-      const { chosen, candidates } = resolveSender(setting, queue?.candidate, user.candidate);
-
-      const verdicts = new Map<string, PreflightVerdict>();
-      await Promise.all(candidates.map(async (c) => {
-        const facts = c.kind === 'queue' && queue
-          ? { approvalState: queue.approvalState, mailboxId: queue.mailboxId }
-          : user.facts;
-        verdicts.set(c.id, await preflightCandidate(api, c, policyResult.policy, facts));
-        // Held for the send-time recipient check, which needs `allowUnresolved` before it has
-        // any reason to re-read the org row.
-        orgPolicyRef.current = policyResult.policy;
-      }));
-      if (cancelled) return;
-
-      setSenderState({ candidates, chosenId: chosen.id, verdicts });
-    })();
-
-    return () => { cancelled = true; };
-  }, [caseId, userId]);
-
-  const chosenSender = React.useMemo(
-    () => senderState.candidates.find((c) => c.id === senderState.chosenId)
-      ?? senderState.candidates[0] ?? FALLBACK_SENDER,
-    [senderState],
-  );
-
-  /**
-   * The signature belongs to the SENDER, not to the agent (R15).
-   *
-   * Keyed on the chosen sender, which is the whole fix: the previous version keyed on `userId`
-   * and so signed queue mail with the agent's own signature. It only ever looked right because
-   * this environment has exactly one signature record, owned by the agent AND pointed at by the
-   * queue.
-   */
-  React.useEffect(() => {
-    if (!userId) return undefined;
-    let cancelled = false;
-    void (async () => {
-      const sig = await fetchSignatureFor(webApiRef.current, chosenSender, userId);
-      if (!cancelled) setSignatureHtml(sig.html);
-    })();
-    return () => { cancelled = true; };
-  }, [chosenSender, userId]);
-
-  // ── persist what survives a teardown ───────────────────────────────────────
-  //
-  // `onStateChange` is held in a ref and deliberately NOT in the dependency array.
-  //
-  // It reaches us as a fresh closure on every `updateView`, and the callback calls
-  // `setControlState`, which makes the platform call `updateView` again. Depending on its identity
-  // therefore closes a loop: effect → setControlState → updateView → new closure → effect. That
-  // hung the published app solid on 2026-09-11 until it was found. The ref keeps the latest
-  // callback without making its identity a trigger.
-  const onStateChangeRef = React.useRef(onStateChange);
-  onStateChangeRef.current = onStateChange;
-
-  React.useEffect(() => {
-    onStateChangeRef.current({
-      selectedThreadKey: selectedKey,
-      expandedMessageIds: [...states.entries()].filter(([, s]) => s.expanded).map(([id]) => id),
-      readMessageIds: [...readIds],
-      includeParent,
-      expandedThreadKeys: [...expandedThreadKeys],
-      selectedMessageId,
-    });
-  }, [selectedKey, states, readIds, includeParent, expandedThreadKeys, selectedMessageId]);
 
   // Deliberately the UNFILTERED threads. A filter that hides the thread you are reading should
   // not also close it — you would lose your place for having narrowed the list beside it. The
   // reading pane keeps showing it; the list simply stops listing it, and the chips say why.
   const selected = threads.find((t) => t.key === selectedKey);
+
+  /**
+   * Lazy body fetch — on expand only, never in the list query.
+   *
+   * Resolves to the body, or `undefined` if it would not load. A second caller while the fetch
+   * is in flight gets the SAME promise: returning early instead, as this used to, meant Reply
+   * clicked straight after opening a message read an empty cache and quoted nothing (M10).
+   */
+  const ensureBody = React.useCallback((activityId: string): Promise<string | undefined> => {
+    if (bodyCache.current.has(activityId)) return Promise.resolve(bodyCache.current.get(activityId));
+    const pending = bodyRequests.current.get(activityId);
+    if (pending) return pending;
+
+    const webApi = webApiRef.current;
+    const request = (async (): Promise<string | undefined> => {
+      setStates((prev) => withState(prev, activityId, (s) => ({ ...s, loadingBody: true, bodyError: undefined })));
+      try {
+        // The attachment list failing is not the body failing: it gets its own line (L11).
+        const [body, attachments] = await Promise.all([
+          fetchBody(webApi, activityId),
+          fetchAttachments(webApi, activityId).catch(() => undefined),
+        ]);
+        bodyCache.current.set(activityId, body);
+        setStates((prev) => withState(prev, activityId, (s) => ({
+          ...s, body, attachments, attachmentsError: attachments === undefined, loadingBody: false,
+        })));
+        return body;
+      } catch (e) {
+        const normalised = e instanceof DataverseError ? e.normalised : { message: String(e), raw: e };
+        // Scoped to this message. One body that will not load must never blank the thread.
+        setStates((prev) => withState(prev, activityId, (s) => ({
+          ...s, loadingBody: false, bodyError: agentFacingMessage(normalised, 'body').detail,
+        })));
+        return undefined;
+      } finally {
+        bodyRequests.current.delete(activityId);
+      }
+    })();
+    bodyRequests.current.set(activityId, request);
+    return request;
+  }, []);
 
   // Open the newest UNREAD message on selection; if all are read, the newest. Older messages
   // collapse into one row rather than being listed individually.
@@ -460,7 +343,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       return next;
     });
     void ensureBody(activityId);
-  }, [threads, readIds]);
+  }, [threads, readIds, ensureBody]);
 
   /** Selecting the conversation itself: lands on the message worth reading. */
   const selectThread = React.useCallback((key: string) => {
@@ -487,32 +370,6 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     // always has. Collapsing changes nothing about the pane.
     if (key !== selectedKey) selectThread(key);
   }, [selectedKey, selectThread]);
-
-  /** Lazy body fetch — on expand only, never in the list query. */
-  const ensureBody = React.useCallback(async (activityId: string) => {
-    const webApi = webApiRef.current;
-    if (bodyCache.current.has(activityId) || inFlight.current.has(activityId)) return;
-    inFlight.current.add(activityId);
-    setStates((prev) => withState(prev, activityId, (s) => ({ ...s, loadingBody: true, bodyError: undefined })));
-    try {
-      const [body, attachments] = await Promise.all([
-        fetchBody(webApi, activityId),
-        fetchAttachments(webApi, activityId),
-      ]);
-      bodyCache.current.set(activityId, body);
-      setStates((prev) => withState(prev, activityId, (s) => ({
-        ...s, body, attachments, loadingBody: false,
-      })));
-    } catch (e) {
-      const normalised = e instanceof DataverseError ? e.normalised : { message: String(e), raw: e };
-      // Scoped to this message. One body that will not load must never blank the thread.
-      setStates((prev) => withState(prev, activityId, (s) => ({
-        ...s, loadingBody: false, bodyError: agentFacingMessage(normalised, 'body').detail,
-      })));
-    } finally {
-      inFlight.current.delete(activityId);
-    }
-  }, []);
 
   /**
    * A message clicked in the READING PANE.
@@ -601,37 +458,11 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     [ancestorCases],
   );
 
-  /**
-   * Name and address of everyone on each message, for the filter to match against.
-   *
-   * Built once per parties load rather than per keystroke — this is the only allocation in the
-   * filter path that is not O(threads), and rebuilding it on every character typed would make
-   * search feel slow on exactly the busy cases where it matters.
-   */
-  const participantIndex = React.useMemo<ParticipantIndex>(() => {
-    const searchable = new Map<string, string[]>();
-    const people = new Map<string, string[]>();
-    for (const [activityId, p] of parties) {
-      const strings: string[] = [];
-      const names: string[] = [];
-      for (const party of [p.sender, ...p.to, ...p.cc, ...p.bcc]) {
-        if (!party) continue;
-        // Free text matches names AND addresses, so searching a domain finds the thread.
-        if (party.name) strings.push(party.name);
-        if (party.address) strings.push(party.address);
-        // The panel lists PEOPLE: their name, or their address when they have no name. Listing
-        // both made one person two entries in the dropdown.
-        const display = party.name || party.address;
-        if (display) names.push(display);
-      }
-      searchable.set(activityId, strings);
-      people.set(activityId, names);
-    }
-    return {
-      searchable: (id) => searchable.get(id),
-      people: (id) => people.get(id),
-    };
-  }, [parties]);
+  /** Built once per parties load, not per keystroke — see `buildParticipantIndex`. */
+  const participantIndex = React.useMemo<ParticipantIndex>(
+    () => buildParticipantIndex(parties),
+    [parties],
+  );
 
   const visibleThreads = React.useMemo(
     () => filterThreads(threads, participantIndex, readIds, filter),
@@ -643,6 +474,60 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     [threads, participantIndex],
   );
 
+
+  /** Every address that is *us* — the union rule lives, tested, in `domain/sender.ts`. */
+  const ourAddresses = React.useMemo(
+    () => ourAddressesFor(senderState.candidates, rows, (id) => parties.get(id)?.sender?.address),
+    [senderState.candidates, rows, parties],
+  );
+
+  // ── compose (R9–R17) — see ui/useCompose.ts ────────────────────────────────
+  const {
+    compose, setCompose, composeContentHeight, setComposeContentHeight, composeHighWater,
+    editorRef, bodyTouched, seeding, latestHtml, attachments, rejections, inlineBytes,
+    sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
+    scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
+    changeSender, resolveTemplate,
+  } = useCompose({
+    caseId, userId, webApiRef, rows, parties, ourAddresses, ensureBody, load, setNotice,
+    senderState, setSenderState, chosenSender, signatureHtml, orgPolicyRef,
+  });
+
+  // ── persist what survives a teardown ───────────────────────────────────────
+  //
+  // `onStateChange` is held in a ref and deliberately NOT in the dependency array.
+  //
+  // It reaches us as a fresh closure on every `updateView`, and the callback calls
+  // `setControlState`, which makes the platform call `updateView` again. Depending on its identity
+  // therefore closes a loop: effect → setControlState → updateView → new closure → effect. That
+  // hung the published app solid on 2026-09-11 until it was found. The ref keeps the latest
+  // callback without making its identity a trigger.
+  const onStateChangeRef = React.useRef(onStateChange);
+  onStateChangeRef.current = onStateChange;
+
+  // The compose fields effects key on, as primitives: the draft object itself changes on every
+  // keystroke-driven save, and an effect keyed on it would re-run with each one.
+  const composeMode = compose?.mode;
+  const composeActivity = compose?.activityId;
+  const composeEmailId = compose?.emailId;
+
+  React.useEffect(() => {
+    onStateChangeRef.current({
+      selectedThreadKey: selectedKey,
+      expandedMessageIds: [...states.entries()].filter(([, s]) => s.expanded).map(([id]) => id),
+      readMessageIds: [...readIds],
+      includeParent,
+      expandedThreadKeys: [...expandedThreadKeys],
+      selectedMessageId,
+      compose: composeMode && composeActivity
+        ? { mode: composeMode, activityId: composeActivity, emailId: composeEmailId }
+        : undefined,
+    });
+  }, [
+    selectedKey, states, readIds, includeParent, expandedThreadKeys, selectedMessageId,
+    composeMode, composeActivity, composeEmailId,
+  ]);
+
   /**
    * First load: open the conversation holding the message worth landing on, and select it.
    *
@@ -652,9 +537,31 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
    * entirely when `setControlState` already restored a choice.
    */
   React.useEffect(() => {
-    if (landed.current || threads.length === 0) return;
+    if (landed.current || !loaded || threads.length === 0) return;
     landed.current = true;
-    if (restored?.selectedThreadKey || (restored?.expandedThreadKeys?.length ?? 0) > 0) return;
+
+    // M11 — a teardown used to close compose and collapse every message. Put back what was open.
+    if (restored?.compose) {
+      const { mode, activityId, emailId } = restored.compose;
+      void openComposeRef.current?.(mode, activityId, emailId);
+    }
+    if (restored?.selectedThreadKey || (restored?.expandedThreadKeys?.length ?? 0) > 0) {
+      const onCase = new Set(rows.map((r) => r.activityid));
+      const reopen = (restored?.expandedMessageIds ?? []).filter((id) => onCase.has(id));
+      if (reopen.length > 0) {
+        setStates((prev) => {
+          const next = new Map(prev);
+          for (const id of reopen) {
+            const row = rows.find((r) => r.activityid === id);
+            const unread = row ? isUnread(row, readIds) : false;
+            next.set(id, { ...(next.get(id) ?? blankState(!unread)), expanded: true, unread });
+          }
+          return next;
+        });
+        for (const id of reopen) void ensureBody(id);
+      }
+      return;
+    }
     const first = threads.find((t) => messageToOpen(t.messages, readIds) !== undefined);
     const target = first ? messageToOpen(first.messages, readIds) : undefined;
     if (!first || !target) return;
@@ -671,674 +578,35 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     // proves too eager, the fix is to land WITHOUT selecting rather than to weaken the dwell rule.
     openMessage(first.key, target.activityid);
     setSelectedMessageId(undefined);
-  }, [threads, readIds, restored, openMessage]);
+  }, [loaded, threads, rows, readIds, restored, openMessage, ensureBody, openComposeRef]);
 
   /**
-   * Every address that is *us*.
-   *
-   * This used to be inferred from the senders of outgoing mail already on the case, which was
-   * empty on a case nobody had replied to yet and wrong on one where an earlier reply went out
-   * from a different queue. It is now the resolved sending identities themselves — the
-   * authoritative answer, and the one pre-flight is already fetching.
+   * The record under the control changed. Everything keyed to the old case goes, and an open
+   * compose is settled first — against ITS case, which it carries, not the new one.
    */
-  const ourAddresses = React.useMemo(() => {
-    // The resolved sending identities — authoritative, and what pre-flight already fetched.
-    const out = new Set(selfAddresses(senderState.candidates));
-
-    /*
-     * PLUS the senders of outgoing mail already on this case.
-     *
-     * An earlier version REPLACED the derived set with the resolved one and called the
-     * derivation interim. That lost information, and the loss was visible: measured 2026-09-25
-     * on CAS-01020, whose queue could not be resolved, so Care was not a candidate, so replying
-     * put **the service queue itself in To** — the mail loop this exclusion exists to prevent.
-     *
-     * The two disagree in both directions, so neither alone is enough. The resolved set knows
-     * who we are about to send *as*, including on a case that has never been replied to. The
-     * derived set knows every address this case has actually sent *from*, including a queue we
-     * cannot resolve today and one that has since been reconfigured. Union.
-     */
-    for (const row of rows) {
-      if (row.directioncode !== true) continue;
-      const sender = parties.get(row.activityid)?.sender?.address;
-      if (sender) out.add(sender.toLowerCase());
-    }
-    return out;
-  }, [senderState.candidates, rows, parties]);
-
-  /** R9 — open compose against one message. */
-  const openCompose = React.useCallback(async (mode: ComposeMode, activityId: string) => {
-    const message = rows.find((r) => r.activityid === activityId);
-    if (!message) return;
-    const p = parties.get(activityId) ?? { to: [], cc: [], bcc: [] };
-
-    // Bcc is deliberately not read: carrying a hidden recipient forward discloses them.
-    const original = {
-      // The sender matters most of all: on a reply it becomes the To recipient, so its record
-      // identity is what makes the reply deliverable.
-      sender: p.sender ? toRecipient(p.sender) : undefined,
-      // Carry the record identity, do NOT flatten to name+address. This `.map()` used to drop
-      // `partyId` on the floor, which is why every reply wrote an unresolved recipient.
-      to: p.to.map(toRecipient),
-      cc: p.cc.map(toRecipient),
-    };
-    const { to: rawTo, cc: rawCc } = resolveRecipients(mode, original, ourAddresses);
-
-    // The message being answered often carries UNRESOLVED parties — the platform stores whatever
-    // the mail server reported. Resolving here means the reply binds a record even when the
-    // original did not, which is the difference between a deliverable reply and a refused one.
-    // One shared cache: the same address usually appears in both To and Cc.
-    const cache = new Map<string, ResolutionOutcome>();
-    const api = webApiRef.current;
-    const [to, cc] = await Promise.all([
-      enrichRecipients(api, rawTo, cache),
-      enrichRecipients(api, rawCc, cache),
-    ]);
-
-    // The quote needs the original body, which is fetched lazily. Open compose either way — an
-    // agent who clicked Reply should get a cursor, not a spinner — and fill the quote when it
-    // arrives.
-    await ensureBody(activityId);
-    const body = bodyCache.current.get(activityId) ?? '';
-    const quotedBlock = buildQuotedBlock(
-      headerFor(message, original, formatWhen),
-      body,
-    );
-
-    // R16 — resume rather than start again. Without this, closing compose and reopening Reply
-    // creates a SECOND draft row, then a third; the Case fills with duplicates of one unsent
-    // reply. Only a reply resumes: a forward is a new message to new people each time.
-    const existing = caseId && mode !== 'forward'
-      ? await findExistingDraft(webApiRef.current, caseId, activityId)
-      : undefined;
-
-    // Splitting our own stored body back apart is exactly R12's round-trip invariant, which
-    // `roundTrips` tests: what we emitted, we can re-split. The new text goes back in the
-    // editor; the quote stays the opaque string it always was.
-    const resumedNewText = existing
-      ? splitQuotedHistory(existing.bodyHtml).newHtml
-      : undefined;
-
-    composeHighWater.current = 0;
-    bodyTouched.current = existing !== undefined;
-    setRejections([]);
-    /*
-     * Rehydrate the resumed draft's attachments.
-     *
-     * Not cosmetic: the files are already rows on that email, so they WILL be sent. Showing an
-     * empty tray would mean the agent sees no attachments while the customer receives them —
-     * and they could not remove one they cannot see.
-     */
-    if (existing) {
-      const rows = await fetchAttachments(webApiRef.current, existing.emailId);
-      /*
-       * Inline images are NOT attachments, and must not be offered as ones.
-       *
-       * Measured 2026-09-25: saving a draft whose quoted history contains `<img src="cid:…">`
-       * makes the platform create an `activitymimeattachment` for it, reusing the original's
-       * blob. Listing it in the tray would invite an agent to "remove" a file that is actually
-       * part of the quoted message — breaking the image for the customer. It is still on the
-       * wire, so its bytes are tracked separately and counted toward the size limit.
-       */
-      setAttachments(rows.filter((r) => !r.contentId).map((r) => ({
-        key: r.id,
-        filename: r.filename,
-        mimeType: r.mimeType,
-        size: r.fileSize,
-        status: 'done' as const,
-        progress: 100,
-        attachmentId: r.id,
-      })));
-      setInlineBytes(rows
-        .filter((r) => r.contentId)
-        .reduce((sum, r) => sum + r.fileSize, 0));
-    } else if (mode === 'forward') {
-      /*
-       * Forward carries the original's attachments (R13).
-       *
-       * Held as `reusedAttachmentId` and NOT uploaded: `attachmentid` points at the same stored
-       * blob, so the row is created for free at the moment the draft first saves. Re-uploading
-       * would duplicate the bytes and make the agent wait for something the platform already
-       * has. Forwarding a message and silently dropping its attachments is the alternative, and
-       * it is the whole reason people forward mail.
-       */
-      const rows = await fetchAttachments(webApiRef.current, activityId);
-      setInlineBytes(rows.filter((r) => r.contentId).reduce((sum, r) => sum + r.fileSize, 0));
-      setAttachments(rows.filter((r) => !r.contentId)
-        .filter((r) => r.attachmentId)
-        .map((r) => ({
-          key: `fwd-${r.id}`,
-          filename: r.filename,
-          mimeType: r.mimeType,
-          size: r.fileSize,
-          status: 'done' as const,
-          progress: 100,
-          reusedAttachmentId: r.attachmentId,
-        })));
-    } else {
-      setAttachments([]);
-      setInlineBytes(0);
-    }
-    setComposeContentHeight(0);
-    setCompose({
-      mode,
-      activityId,
-      to,
-      cc,
-      emailId: existing?.emailId,
-      resumedHtml: resumedNewText,
-      // `firstNonEmpty`, not `??`: a draft row saved with an empty subject must fall through
-      // to the derived one, and `??` only catches null/undefined.
-      subject: firstNonEmpty(existing?.subject, composeSubject(mode, message.subject)),
-      quotedBlock,
-      // `??` is wrong here: a party with an empty-string name must fall through to the address,
-      // and `??` only catches null/undefined. Written as an explicit chain so the intent is not
-      // mistaken for a missed nullish-coalescing.
-      answeringLabel: firstNonEmpty(
-        original.sender?.name, original.sender?.address, '(unknown sender)',
-      ),
-      senderId: chosenSender.id,
-    });
-  }, [rows, parties, ourAddresses, chosenSender, caseId]);
-
-  /**
-   * Autosave the open draft to Dataverse (R16).
-   *
-   * Debounced while typing, on an interval, and on close — `setControlState` already survives a
-   * session teardown, so this exists for the cases it does not cover: a reload, a crash, a closed
-   * browser. Defence in depth, and the difference between losing a draft and losing one silently.
-   *
-   * `savingRef` serialises the writes. Without it a debounce firing next to the interval sends
-   * two creates and the Case grows a duplicate draft — the characteristic failure of this feature,
-   * and one that looks like data corruption rather than a race.
-   */
-  composeRef.current = compose;
-  signatureRef.current = signatureHtml;
-  senderRef.current = chosenSender;
-
-  const savingRef = React.useRef(false);
-  const draftTimer = React.useRef<ReturnType<typeof setTimeout>>();
-  /** Recipients changed, so the next save must rewrite the party rows as well as the body. */
-  const partiesDirty = React.useRef(false);
-
-  const flushDraft = React.useCallback(async (force = false): Promise<string | undefined> => {
-    const draft = composeRef.current;
-    if (!draft || !caseId || savingRef.current) return draft?.emailId;
-
-    const newHtml = editorRef.current?.getHTML() ?? '';
-    // The quote is always present, so judging by the whole body would save every opened reply.
-    // Only the agent's own text counts.
-    //
-    // `force` overrides that for attachments: an `activitymimeattachment` hangs off an email
-    // row, so a file dropped into an otherwise-empty reply still needs the draft to exist. An
-    // attachment IS content, even when nothing has been typed.
-    if (!force && !worthSaving(newHtml, signatureRef.current)) return draft.emailId;
-
-    const sender = senderRef.current;
-    if (!sender) return draft.emailId;
-
-    savingRef.current = true;
-    const includeParties = partiesDirty.current || draft.emailId === undefined;
-    const outcome = await saveDraft(
-      webApiRef.current,
-      draft.emailId,
-      {
-        caseId,
-        subject: draft.subject,
-        bodyHtml: buildOutgoingBody(newHtml, draft.quotedBlock),
-        sender,
-        to: draft.to,
-        cc: draft.cc,
-        // The link `findExistingDraft` searches on. Omitting it was a real defect, caught only
-        // in the published app: the payload builder supported it, every unit test asserted it,
-        // and the shell simply never passed it — so drafts saved with a null parent and resume
-        // could never find them. A forward has nothing to link to, and nothing to resume.
-        inReplyToId: draft.mode === 'forward' ? undefined : draft.activityId,
-      },
-      includeParties,
-    );
-    savingRef.current = false;
-    if (outcome.ok) partiesDirty.current = false;
-
-    setCompose((c) => {
-      // Compose may have closed, or moved to a different message, while the save was in flight.
-      if (!c || c.activityId !== draft.activityId) return c;
-      return outcome.ok
-        ? {
-          ...c,
-          emailId: outcome.emailId,
-          savedAt: outcome.savedAt?.getTime(),
-          saveError: undefined,
-          draftCreatedHere: (c.draftCreatedHere ?? false) || draft.emailId === undefined,
-        }
-        : { ...c, saveError: outcome.error?.message ?? 'The draft could not be saved.' };
-    });
-
-    return outcome.ok ? outcome.emailId : undefined;
-  }, [caseId]);
-
-  /**
-   * R13 — files on the reply, and the ones that were turned away.
-   *
-   * Held beside the compose draft rather than inside it because uploads finish out of order and
-   * each needs its own progress updates; folding them into `ComposeDraft` would make every
-   * percentage tick rewrite the whole draft object.
-   */
-  const [attachments, setAttachments] = React.useState<PendingAttachment[]>([]);
-  const [rejections, setRejections] = React.useState<Rejection[]>([]);
-  /**
-   * Bytes on the message the tray does not show — inline images the platform materialised from
-   * `cid:` references in the quoted history. Real on the wire, so they count toward the limit.
-   */
-  const [inlineBytes, setInlineBytes] = React.useState(0);
-  attachmentsRef.current = attachments;
-  inlineBytesRef.current = inlineBytes;
-  const inlineCeiling = React.useRef(DEFAULT_INLINE_CEILING);
-  /**
-   * The org's send policy, once read.
-   *
-   * Defaults to the STRICTER reading — approval required, unresolved recipients refused — so a
-   * send attempted before the policy has loaded errs toward blocking rather than toward a
-   * message that quietly never arrives.
-   */
-  const orgPolicyRef = React.useRef<OrgApprovalPolicy>({
-    requireForQueue: true, requireForUser: true, allowUnresolved: false,
-  });
-
+  const shownCase = React.useRef(caseId);
   React.useEffect(() => {
-    void (async () => {
-      inlineCeiling.current = await fetchInlineCeiling(webApiRef.current);
-    })();
-  }, []);
-
-  const patchAttachment = React.useCallback(
-    (key: string, patch: Partial<PendingAttachment>) => {
-      setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
-    },
-    [],
-  );
-
-  /**
-   * Attach dropped or picked files (R13).
-   *
-   * **Uploaded one at a time, deliberately.** Parallel uploads of several large files compete
-   * for the same connection and make every progress bar crawl; sequential means the first file
-   * is attached and safe while the second is still going.
-   */
-  const addFiles = React.useCallback(async (files: File[]): Promise<void> => {
-    const { accepted, rejected } = admitFiles(
-      files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
-      attachmentsRef.current,
-      inlineBytesRef.current,
-    );
-    setRejections(rejected);
-    if (accepted.length === 0) return;
-
-    const queued: PendingAttachment[] = accepted.map((f, i) => ({
-      key: `${Date.now()}-${i}-${f.name}`,
-      filename: f.name,
-      mimeType: f.type,
-      size: f.size,
-      status: 'pending',
-      progress: 0,
-    }));
-    setAttachments((list) => [...list, ...queued]);
-
-    // An attachment row needs an email row to hang off, so the draft has to exist first — even
-    // if the agent has typed nothing at all. `force` is what makes that happen.
-    const emailId = await flushDraft(true);
-    if (!emailId) {
-      for (const q of queued) {
-        patchAttachment(q.key, {
-          status: 'failed',
-          error: 'The draft could not be saved, so there is nothing to attach to.',
-        });
-      }
-      return;
-    }
-
-    for (const q of queued) {
-      const file = files.find((f) => f.name === q.filename && f.size === q.size);
-      if (!file) continue;
-      patchAttachment(q.key, { status: 'uploading', progress: 0 });
-      try {
-        const bytes = await fileToBytes(file);
-        const outcome = await uploadAttachment(
-          webApiRef.current,
-          { emailId, filename: q.filename, mimeType: q.mimeType, bytes },
-          inlineCeiling.current,
-          (sent, total) => patchAttachment(q.key, { progress: blockProgress(sent, total) }),
-        );
-        patchAttachment(q.key, outcome.ok
-          ? { status: 'done', progress: 100, attachmentId: outcome.attachmentId }
-          : { status: 'failed', error: outcome.error?.message ?? 'The upload failed.' });
-      } catch (e) {
-        // Reading the file can fail on its own — a file removed from disk mid-drag, or one the
-        // browser will not read. That is not an upload failure and must not read as one.
-        patchAttachment(q.key, {
-          status: 'failed',
-          error: e instanceof Error ? e.message : 'The file could not be read.',
-        });
-      }
-    }
-  }, [flushDraft, patchAttachment]);
-
-  /**
-   * Add recipients through the platform's own lookup (R9).
-   *
-   * Every recipient added this way names a **real record**, which is the whole point: Dataverse
-   * only reliably delivers to a party bound to a contact, account, user, lead or queue.
-   *
-   * A pick whose record has no email address is refused with a reason rather than added as a
-   * chip that could never receive anything — the same class of quiet failure as the unresolved
-   * party this work exists to fix.
-   */
-  const addRecipients = React.useCallback(async (field: 'to' | 'cc'): Promise<void> => {
-    const picked = await openRecipientLookup();
-    // Cancelling resolves with an empty array rather than rejecting, so this is the normal
-    // "changed my mind" path, not an error.
-    if (picked.length === 0) return;
-
-    const accepted: Recipient[] = [];
-    const refused: string[] = [];
-    for (const p of picked) {
-      const entity = pickedEntity(p);
-      if (!entity) {
-        refused.push(`${p.name} cannot receive email.`);
-        continue;
-      }
-      const address = await fetchPartyAddress(webApiRef.current, entity, p.id);
-      const out = recipientFromParty(p, address);
-      if (out.ok) accepted.push(out.recipient);
-      else refused.push(out.reason);
-    }
-
-    setCompose((c) => {
-      if (!c) return c;
-      const fresh = withoutDuplicates(accepted, [...c.to, ...c.cc]);
-      if (fresh.length === 0) return c;
-      return { ...c, [field]: [...c[field], ...fresh] };
-    });
-    if (accepted.length > 0) {
-      partiesDirty.current = true;
-      scheduleDraftSave();
-    }
-    if (refused.length > 0) {
-      setNotice({ headline: 'Some records were not added', detail: refused.join(' ') });
-    }
-  }, []);
-
-  /**
-   * Take a file back off the reply.
-   *
-   * The Dataverse row is deleted too when there is one. Leaving it would send a file the agent
-   * had visibly removed — the worst possible direction for this to fail in.
-   */
-  const removeAttachment = React.useCallback((key: string) => {
-    const item = attachmentsRef.current.find((a) => a.key === key);
-    setAttachments((list) => list.filter((a) => a.key !== key));
-    setRejections([]);
-    if (item?.attachmentId) void removeAttachmentRow(webApiRef.current, item.attachmentId);
-  }, []);
-
-  /**
-   * Turn carried-over forward attachments into real rows, once there is a draft to hang them on.
-   *
-   * They are shown in the tray the moment Forward is clicked, because the agent needs to see
-   * what will go — but `activitymimeattachment` needs an `objectid`, and on Forward the draft
-   * does not exist yet. So the row is created the first time the draft saves. Guarded by
-   * `attachmentId` so a second save does not attach the same file twice.
-   */
-  React.useEffect(() => {
-    const emailId = compose?.emailId;
-    if (!emailId) return;
-    const pendingReuse = attachmentsRef.current.filter(
-      (a) => a.reusedAttachmentId && !a.attachmentId,
-    );
-    if (pendingReuse.length === 0) return;
-
-    void (async () => {
-      for (const item of pendingReuse) {
-        const outcome = await reuseAttachment(
-          webApiRef.current, emailId, item.reusedAttachmentId!,
-        );
-        patchAttachment(item.key, outcome.ok
-          ? { attachmentId: outcome.attachmentId }
-          : { status: 'failed', error: outcome.error?.message ?? 'Could not carry this file over.' });
-      }
-    })();
-  }, [compose?.emailId, patchAttachment]);
-
-  /**
-   * Send (R17).
-   *
-   * **There is deliberately no "don't really send" switch here.** `IssueSend: false` marks a
-   * message sent without sending it, which is precisely the silent non-delivery this whole
-   * feature exists to prevent — a product that could be configured into it would be worse than
-   * one that cannot. It stays a development tool, used from a probe, never from the UI.
-   *
-   * The order matters, and each step exists because of a measured failure:
-   *
-   * 1. **Save first.** The body in the editor is the message; sending a stale draft row would
-   *    send yesterday's text.
-   * 2. **Re-run pre-flight.** Approval can change between opening compose and pressing Send,
-   *    and Gate 2 decided that a pre-flight which cannot answer counts as *not safe*.
-   * 3. **Issue, then poll.** The 200 means accepted, not delivered.
-   */
-  const [sendReport, setSendReport] = React.useState<SendReport>();
-  const [sending, setSending] = React.useState(false);
-
-  const sendDraft = React.useCallback(async (): Promise<void> => {
-    const draft = composeRef.current;
-    const sender = senderRef.current;
-    if (!draft || !sender || sending) return;
-
-    setSending(true);
-    setSendReport(undefined);
-    try {
-      const blocked = blockingReasonBeforeSend({
-        recipientCount: draft.to.length + draft.cc.length,
-        uploadsInFlight: attachmentsRef.current.some(
-          (a) => a.status === 'uploading' || a.status === 'pending',
-        ),
-        unresolvedAddresses: unresolvedAddresses(draft.to, draft.cc),
-        allowUnresolved: orgPolicyRef.current.allowUnresolved,
-      });
-      if (blocked) {
-        setSendReport({ phase: 'failed', headline: 'Not sent', detail: blocked, confirmed: false });
-        return;
-      }
-
-      const emailId = await flushDraft(true);
-      if (!emailId) {
-        setSendReport({
-          phase: 'failed',
-          headline: 'Not sent',
-          detail: 'The message could not be saved, so it was not sent. Your text is still here.',
-          confirmed: false,
-        });
-        return;
-      }
-
-      const api = webApiRef.current;
-
-      /*
-       * The double-send guard, read from the saved row rather than assumed.
-       *
-       * `blockingReasonBeforeSend` has always refused an already-sent message and has always
-       * been tested for it — but the shell was not passing `statusCode`, so the guard was inert.
-       * Exactly the shape of the `inReplyToId` defect: the rule existed, the caller omitted the
-       * input, and every test still passed. Re-reading the row also catches a message sent from
-       * another tab or by a colleague in the seconds since compose opened.
-       */
-      const currentStatus = await readSendStatus(api, emailId);
-      const alreadyGone = blockingReasonBeforeSend({
-        recipientCount: draft.to.length + draft.cc.length,
-        uploadsInFlight: false,
-        statusCode: currentStatus,
-        // Already checked above; re-checking here would report it twice.
-        unresolvedAddresses: [],
-        allowUnresolved: true,
-      });
-      if (alreadyGone) {
-        setSendReport({
-          phase: 'failed', headline: 'Not sent', detail: alreadyGone, confirmed: false,
-        });
-        return;
-      }
-
-      // Approval is re-checked against the live platform, not the verdict cached when compose
-      // opened. A mailbox can be disabled while an agent is typing.
-      const policy = await fetchOrgApprovalPolicy(api);
-      const facts = sender.kind === 'user'
-        ? await fetchAgentIdentity(api, sender.id).then((r) => r.facts)
-        : await fetchQueueById(api, sender.id).then((q) => (
-          q ? { approvalState: q.approvalState, mailboxId: q.mailboxId } : { approvalState: 0 }
-        ));
-      const verdict = await preflightCandidate(api, sender, policy.policy, facts);
-      if (!verdict.ok) {
-        setSendReport({
-          phase: 'failed', headline: 'Not sent', detail: verdict.reason, confirmed: false,
-        });
-        setSenderState((s) => {
-          const next = new Map(s.verdicts);
-          next.set(sender.id, verdict);
-          return { ...s, verdicts: next };
-        });
-        return;
-      }
-
-      const issued = await issueSend(emailId, true);
-      if (!issued.accepted) {
-        setSendReport({
-          phase: 'failed',
-          headline: 'Not sent',
-          detail: issued.error?.message ?? 'The platform refused the message.',
-          confirmed: false,
-        });
-        return;
-      }
-
-      /*
-       * Accepted — NOT delivered. Compose closes anyway, and here is why that is right.
-       *
-       * The first version held compose open until a confirmed `Sent`. Measured 2026-09-25 on a
-       * real send: a perfectly healthy message took **~2.5 minutes** to move from Pending Send
-       * to Sent, because that is the server-side sync cadence. No agent will watch a panel for
-       * two and a half minutes, so the old behaviour meant they essentially never saw success —
-       * which teaches them to ignore the status line, defeating the point of reporting it.
-       *
-       * Closing is safe because acceptance means the message is already a real row on the case:
-       * nothing the agent wrote can be lost by closing. The status keeps being reported where
-       * it belongs — a `Sending` badge on the thread-list row, which survives navigation,
-       * reload, and the agent going for coffee.
-       *
-       * What is NOT done here is claim delivery. The notice says accepted, and the badge says
-       * Sending until the platform says otherwise.
-       */
-      setCompose(undefined);
-      setAttachments([]);
-      composeHighWater.current = 0;
-      setSendReport(undefined);
-      setNotice({
-        headline: 'Message accepted — sending',
-        detail: 'It is on the case and will show as Sent once it leaves. This usually takes a '
-          + 'couple of minutes.',
-      });
-      void load();
-
-      // Keep watching in the background, and correct the notice to whatever actually happened.
-      const polled = await pollUntilSettled(api, emailId);
-      const report = reportFor(polled.statusCode, polled.exhausted);
-      setNotice(report.confirmed
-        ? { headline: 'Sent', detail: 'The message has left the queue.' }
-        : { headline: report.headline, detail: report.detail ?? '' });
-      void load();
-    } finally {
-      setSending(false);
-    }
-  }, [flushDraft, sending, load]);
-
-  /** Typing restarts the clock; a pause of ~2s commits. */
-  const scheduleDraftSave = React.useCallback(() => {
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => { void flushDraft(); }, 2000);
-  }, [flushDraft]);
-
-  // A periodic save, so a long uninterrupted spell of typing is still protected, and a final one
-  // when compose closes for any reason.
-  React.useEffect(() => {
-    if (!compose) return undefined;
-    const id = setInterval(() => { void flushDraft(); }, 30000);
-    return () => {
-      clearInterval(id);
-      if (draftTimer.current) clearTimeout(draftTimer.current);
-    };
-  }, [compose?.activityId, flushDraft]);
-
-  /**
-   * The agent picked a different From while composing.
-   *
-   * The signature is swapped only while the editor is still untouched. Once they have typed,
-   * rewriting the body to move a signature block risks eating their words — so the signature is
-   * left alone and `signatureStale` puts a note next to Send instead. A stale sign-off the agent
-   * can see beats a silent edit they cannot.
-   */
-  const changeSender = React.useCallback((id: string) => {
-    if (!senderState.candidates.some((c) => c.id === id)) return;
-    setSenderState((s) => ({ ...s, chosenId: id }));
-    setCompose((c) => (c ? { ...c, senderId: id, signatureStale: bodyTouched.current } : c));
-  }, [senderState.candidates]);
-
-  /**
-   * Put the new sender's signature in the editor — but only if the agent has not typed.
-   *
-   * `initialHtml` seeds the editor at construction and nothing re-reads it, so a signature that
-   * arrives later (or changes with the sender) has to be written in. `bodyTouched` is set by the
-   * editor's own change event and suppressed around this write, so a reseed does not mark the
-   * body as edited and then block the next one.
-   */
-  React.useEffect(() => {
-    if (!compose || bodyTouched.current) return;
-    const editor = editorRef.current;
-    if (!editor) return;
-    seeding.current = true;
-    editor.setHTML(initialBodyWithSignature(signatureHtml));
-    seeding.current = false;
-  }, [signatureHtml, compose?.activityId]);
-
-  /**
-   * R14 — resolve a template against this case, server-side.
-   *
-   * `InstantiateTemplate` is an unbound action, so it goes through `Xrm.WebApi.online.execute`;
-   * `context.webAPI` has no `execute`. The result is **sanitised before it is previewed**: it is
-   * HTML heading for the DOM, and the fact that it came from our own org is a reason to trust the
-   * author, not a reason to skip the sanitiser.
-   */
-  const resolveTemplate = React.useCallback(async (templateId: string): Promise<TemplateOutcome> => {
-    const execute = resolveXrmExecute();
-    if (!execute || !caseId) {
-      return {
-        html: '', subject: '', unresolved: [],
-        error: 'Templates are unavailable here — the platform action could not be reached.',
-      };
-    }
-    const { template, error } = await instantiateTemplate(execute, templateId, caseId);
-    if (error || !template) {
-      return {
-        html: '', subject: '', unresolved: [],
-        error: error?.message ?? 'That template could not be resolved.',
-      };
-    }
-    return {
-      html: sanitiseEmailBody(template.html).html,
-      subject: template.subject,
-      unresolved: template.unresolved,
-    };
-  }, [caseId]);
+    if (shownCase.current === caseId) return;
+    shownCase.current = caseId;
+    landed.current = false;
+    setLoaded(false);
+    setSelectedKey(undefined);
+    setSelectedMessageId(undefined);
+    setStates(new Map());
+    setExpandedThreadKeys(new Set());
+    setReadIds(new Set());
+    bodyCache.current.clear();
+    readRows.current = new Map();
+    // Through a ref: `closeCompose` is declared further down, and naming it in the dependency
+    // array reads it during render, before its declaration has run.
+    void closeComposeRef.current?.();
+    setCompose(undefined);
+  }, [caseId, closeComposeRef, setCompose]);
 
   const summaries = React.useMemo<ThreadSummary[]>(
-    () => visibleThreads.map((thread) => toSummary(thread, parties, readIds, ancestorNumbers)),
+    () => visibleThreads.map((thread) => toSummary(
+      thread, (id) => parties.get(id)?.sender?.name, readIds, ancestorNumbers,
+    )),
     [visibleThreads, parties, readIds, ancestorNumbers],
   );
 
@@ -1373,19 +641,21 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           error message, because the agent assumes the file is on its way. */}
       {notice && (
         <div
-          role="alert"
+          role={notice.tone === 'info' ? 'status' : 'alert'}
           style={{
             position: 'absolute', left: '8px', right: '8px', bottom: '8px', zIndex: 2,
             display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px',
-            boxSizing: 'border-box', background: T.dangerBg, border: `1px solid ${T.dangerStroke}`,
+            boxSizing: 'border-box',
+            background: notice.tone === 'info' ? T.bg1 : T.dangerBg,
+            border: `1px solid ${notice.tone === 'info' ? T.stroke1 : T.dangerStroke}`,
             borderRadius: '4px',
           }}
         >
-          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px', marginTop: '2px' }} aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={notice.tone === 'info' ? T.fg2 : T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px', marginTop: '2px' }} aria-hidden="true">
             <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
           </svg>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{notice.headline}</span>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: notice.tone === 'info' ? T.fg1 : T.dangerFg }}>{notice.headline}</span>
             <span style={{ fontSize: '12px', color: T.fg2 }}>{notice.detail}</span>
           </div>
           <span style={{ flexGrow: 1 }} />
@@ -1444,6 +714,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             minWidth: 0, minHeight: 0, gap: '8px',
           }}
         >
+        <ErrorBoundary label="The reading pane">
         <ReadingPane
           thread={selected}
           parties={parties}
@@ -1478,14 +749,20 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             });
           }}
           onDwellRead={markRead}
+          onRetryBody={(id) => { void ensureBody(id); }}
           onCompose={(mode: ComposeMode, id: string) => { void openCompose(mode, id); }}
           loading={loading && !!selectedKey}
           error={listError}
           onRetry={() => void load()}
         />
+        </ErrorBoundary>
 
         {compose && (
+          <ErrorBoundary label="The reply" key={`boundary-${compose.session}`}>
           <Compose
+            // One editor per compose session. `Editor` reads `initialHtml` once, so reusing it for
+            // a different message carried the previous message's text across (H2).
+            key={compose.session}
             ref={editorRef}
             mode={compose.mode}
             answeringLabel={compose.answeringLabel}
@@ -1493,23 +770,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             cc={compose.cc}
             subject={compose.subject}
             quotedBlock={compose.quotedBlock}
+            resumed={compose.resumedHtml !== undefined}
             height={composeHeight(composeContentHeight, composeHighWater.current)}
             onHeightChange={(h) => {
               composeHighWater.current = Math.max(composeHighWater.current, composeHeight(h));
               setComposeContentHeight(h);
             }}
             onClose={() => {
-              // Save on the way out, or clean up after an agent who opened Reply and changed
-              // their mind. A blank draft row left behind clutters the Case with mail nobody
-              // wrote — and the row only exists at all if something was once worth saving.
-              const closing = compose;
-              const newHtml = editorRef.current?.getHTML() ?? '';
-              if (worthSaving(newHtml, signatureHtml)) {
-                void flushDraft();
-              } else if (closing.emailId && closing.draftCreatedHere) {
-                // Only ever a row WE created. An adopted draft stays put — see draftCreatedHere.
-                void discardDraft(webApiRef.current, closing.emailId);
-              }
+              // Save on the way out, or clean up a blank draft this client created. The save
+              // snapshots the editor before compose unmounts, so closing loses nothing.
+              void closeCompose();
               composeHighWater.current = 0;
               setCompose(undefined);
             }}
@@ -1524,7 +794,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
                 ? { ...c, [field]: c[field].filter((r) => r.address !== address) }
                 : c));
               // The next save must rewrite the party rows, not just the body.
-              partiesDirty.current = true;
+              markPartiesDirty();
               scheduleDraftSave();
             }}
             // R18 — Send stays blocked until the sender's mailbox has been pre-flighted, which is
@@ -1542,6 +812,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             onBodyChange={() => {
               if (seeding.current) return;
               bodyTouched.current = true;
+              latestHtml.current = editorRef.current?.getHTML();
               scheduleDraftSave();
             }}
             attachments={attachments}
@@ -1563,6 +834,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             sending={sending}
             sendReport={sendReport}
           />
+          </ErrorBoundary>
         )}
         </div>
       )}
@@ -1570,87 +842,9 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   );
 };
 
-/** First value that is a non-empty string.  cannot express this: '' is not nullish. */
-/**
- * A `data/` party becomes a compose `Recipient`, identity intact.
- *
- * One function so no call site can flatten the record away again — which is precisely how the
- * unresolved-recipient bug got in, as a `.map()` that kept only name and address.
- */
-function toRecipient(p: Party): Recipient {
-  return {
-    name: p.name,
-    address: p.address,
-    partyId: p.partyId,
-    partyEntity: p.partyEntity,
-    partyNav: p.partyNav,
-  };
-}
 
-function firstNonEmpty(...values: (string | undefined)[]): string {
-  for (const v of values) if (v && v.trim().length > 0) return v;
-  return '';
-}
 
-/** The resolved sending identities, and what pre-flight said about each (R17/R18). */
-interface SenderState {
-  /** Everyone the agent may send as, the default first. */
-  candidates: SenderCandidate[];
-  chosenId: string;
-  /** Keyed by candidate id. A missing entry means "not checked yet", which blocks Send. */
-  verdicts: Map<string, PreflightVerdict>;
-}
 
-/**
- * The sender before anything has resolved.
- *
- * Has no address on purpose, so pre-flight blocks Send until the real identities arrive. An
- * optimistic placeholder here would let an agent hit Send against an unverified sender, which is
- * the exact failure R18 exists to prevent.
- */
-const FALLBACK_SENDER: SenderCandidate = {
-  kind: 'user',
-  id: 'pending',
-  displayName: 'Resolving sender…',
-  address: '',
-};
-
-/** An open compose surface. One at a time — a second would have nowhere to dock. */
-interface ComposeDraft {
-  mode: ComposeMode;
-  /** The message being answered, named in the context bar. */
-  activityId: string;
-  to: Recipient[];
-  cc: Recipient[];
-  subject: string;
-  quotedBlock: string;
-  answeringLabel: string;
-  /** Who this goes out as. Chosen when compose opens; changeable while it is open. */
-  senderId: string;
-  /** The editor's signature no longer matches `senderId`, because the agent had already typed. */
-  signatureStale?: boolean;
-  /**
-   * The durable draft row's `activityid`, once one exists (R16).
-   *
-   * **Losing this creates a second draft on the next autosave**, so it is the one field here
-   * whose absence is worse than a stale value. It is deliberately part of the compose state
-   * rather than a ref, so `setControlState` carries it through a session teardown.
-   */
-  emailId?: string;
-  savedAt?: number;
-  /** Set when a save failed. R16's whole point is that a lost draft must not be lost silently. */
-  saveError?: string;
-  /** New text recovered from an existing draft row, seeded into the editor instead of a signature. */
-  resumedHtml?: string;
-  /**
-   * THIS client created the draft row in this sitting.
-   *
-   * Gates the discard-on-close cleanup. A draft we ADOPTED — one the standard email form left
-   * behind, say — is somebody else's unsent work, and emptying the editor before closing must
-   * not delete it. The demo environment already contains such drafts.
-   */
-  draftCreatedHere?: boolean;
-}
 
 const blankState = (read: boolean): MessageState => ({
   loadingBody: false,
@@ -1670,38 +864,6 @@ function withState(
   return next;
 }
 
-function toSummary(
-  thread: Thread,
-  parties: Map<string, MessageParties>,
-  readIds: Set<string>,
-  /** Ticket numbers of ancestor cases, keyed by case id — R8. */
-  ancestorNumbers?: Map<string, string>,
-): ThreadSummary {
-  const names = new Set<string>();
-  for (const m of [...thread.messages].reverse()) {
-    const p = parties.get(m.activityid);
-    if (p?.sender?.name) names.add(p.sender.name);
-  }
-  const last = thread.messages[thread.messages.length - 1];
-  return {
-    thread,
-    // R8. A thread is "borrowed" when ANY of its messages hangs off an ancestor case — a chain
-    // can legitimately span both once someone re-parents an email, and in that case the borrowed
-    // marking is the safer of the two readings: it says "some of this is not from here".
-    parentCaseNumber: ancestorNumbers && ancestorNumbers.size > 0
-      ? thread.messages
-        .map((m) => (m.regardingCaseId ? ancestorNumbers.get(m.regardingCaseId) : undefined))
-        .find((n) => n !== undefined)
-      : undefined,
-    // Only INBOUND messages can be unread: we do not mark our own sent mail unread.
-    unreadCount: thread.messages.filter((m) => isUnread(m, readIds)).length,
-    participants: [...names].slice(0, 3),
-    hasAttachments: thread.messages.some((m) => (m.attachmentcount ?? 0) > 0),
-    // statuscode 1 on an open email is a draft.
-    hasDraft: thread.messages.some((m) => m.statuscode === 1),
-    lastActivity: last?.createdon ?? '',
-  };
-}
 
 /**
  * The one host we cannot serve: no record context. Says what is wrong rather than rendering an

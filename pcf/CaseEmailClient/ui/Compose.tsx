@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { ComposeMode, Recipient } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
 import { isResolved } from '../domain/recipients';
+import { sanitiseEmailBody } from '../domain/sanitise';
 import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
@@ -31,6 +32,8 @@ export interface ComposeProps {
   subject: string;
   /** The inherited chain, already assembled. Rendered read-only; never given to the editor. */
   quotedBlock?: string;
+  /** The editor opens on a resumed draft's text rather than a fresh signature. */
+  resumed?: boolean;
   /** Initial new text — signature (R15) or a restored draft (R16). */
   initialHtml?: string;
   height: number;
@@ -103,12 +106,15 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     onAddRecipients, flagUnresolved,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
-    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate,
+    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
+  const safeQuote = React.useMemo(() => sanitiseEmailBody(quotedBlock).html, [quotedBlock]);
   const [editingSubject, setEditingSubject] = React.useState(false);
-  const [empty, setEmpty] = React.useState(true);
+  // A resumed draft starts with the agent's own text in it, so Send starts enabled (M15). It
+  // used to wait for a keystroke, because the editor reports only changes, never its first state.
+  const [empty, setEmpty] = React.useState(!resumed);
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -328,7 +334,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             disabled={sending}
             onUse={onUseTemplate}
             onInsert={(html) => editorApi.current?.insertHTML(html)}
-            onReplace={(html) => editorApi.current?.setHTML(html)}
+            onReplace={(html) => editorApi.current?.setHTML(html, true)}
             onSubject={onSubjectChange}
           />
         )}
@@ -363,8 +369,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         >
           {/* Named per file. "Too big" with no detail leaves an agent who dropped five files
               unable to tell which one to remove. */}
-          {attachmentRejections.map((r) => (
-            <div key={r.filename}>
+          {attachmentRejections.map((r, i) => (
+            <div key={`${i}-${r.filename}`}>
               <strong>{r.filename}</strong> — {r.reason}
             </div>
           ))}
@@ -391,7 +397,12 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             <div
               // Read-only by construction: no contentEditable, and the string is never handed to
               // the editor. Rendered on the same literal white as any other sender HTML (N7).
-              dangerouslySetInnerHTML={{ __html: quotedBlock }}
+              //
+              // Sanitised AGAIN at render, although `buildQuotedBlock` already sanitises: a
+              // resumed draft's quote comes back out of Dataverse, and a draft saved before
+              // 2026-09-28 carries the sender's raw HTML. Display only — what is sent is still
+              // `quotedBlock`, untouched, so R12's round trip is unaffected.
+              dangerouslySetInnerHTML={{ __html: safeQuote }}
               style={{
                 maxHeight: '120px', overflowY: 'auto', padding: '6px 10px',
                 boxSizing: 'border-box', background: BODY_SURFACE, colorScheme: 'light',
@@ -590,11 +601,11 @@ const RecipientRow: React.FC<{
     {people.length === 0 && (
       <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
     )}
-    {people.map((r) => {
+    {people.map((r, i) => {
       const unknown = flagUnresolved && !isResolved(r);
       return (
         <span
-          key={r.address}
+          key={`${i}-${r.address}`}
           title={unknown
             ? `${r.address} — not a known contact, account, user or queue`
             : r.address}

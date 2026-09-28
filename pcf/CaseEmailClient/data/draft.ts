@@ -1,3 +1,4 @@
+import { bareId } from '../domain/guid';
 import { assertGuid } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { type ReadStateApiLike } from './readState';
@@ -44,7 +45,8 @@ export interface SaveOutcome {
   error?: NormalisedError;
 }
 
-const bare = (id: string) => id.replace(/^\{|\}$/g, '');
+/** Strip braces for a URL. Callers validate with `assertGuid` first. */
+const bare = bareId;
 
 /**
  * Create the draft row.
@@ -90,11 +92,10 @@ export async function updateDraft(
     return { ok: false, error: { message: 'That draft cannot be addressed.', raw: e } };
   }
 
-  const payload = includeParties
-    ? { ...buildDraftUpdate(args), email_activity_parties: buildPartyRows(args) }
-    : buildDraftUpdate(args);
-
   try {
+    const payload = includeParties
+      ? { ...buildDraftUpdate(args), email_activity_parties: buildPartyRows(args) }
+      : buildDraftUpdate(args);
     await webApi.updateRecord('email', bare(emailId), payload);
     return { ok: true, emailId: bare(emailId), savedAt: new Date() };
   } catch (rejection) {
@@ -122,9 +123,10 @@ export interface ExistingDraft {
   bodyHtml: string;
 }
 
-export function buildDraftLookupQuery(caseId: string, inReplyToId: string): string {
+export function buildDraftLookupQuery(caseId: string, inReplyToId: string, ownerId: string): string {
   const c = bare(caseId).toLowerCase();
   const p = bare(inReplyToId).toLowerCase();
+  const o = bare(ownerId).toLowerCase();
   return (
     // `description` IS selected here, deliberately breaking the never-fetch-the-body rule —
     // that rule is about LIST queries, where it costs a blob read per row. This fetches at most
@@ -132,6 +134,9 @@ export function buildDraftLookupQuery(caseId: string, inReplyToId: string): stri
     '?$select=activityid,subject,description'
     + `&$filter=regardingobjectid_incident/incidentid eq ${c}`
     + ` and _parentactivityid_value eq ${p}`
+    // The AGENT's draft, not anybody's. Without this (M2), a second agent opening Reply on the
+    // same message silently resumed — and could send — a colleague's unsent draft.
+    + ` and _ownerid_value eq ${o}`
     + ' and statecode eq 0 and statuscode eq 1'
     + '&$orderby=modifiedon desc&$top=1'
   );
@@ -151,17 +156,53 @@ export async function findExistingDraft(
   webApi: DraftApiLike,
   caseId: string,
   inReplyToId: string,
+  /** The agent. No agent, no resume: composing fresh beats adopting a draft of unknown owner. */
+  ownerId: string | undefined,
 ): Promise<ExistingDraft | undefined> {
+  if (!ownerId) return undefined;
   try {
     assertGuid(caseId, 'caseId');
     assertGuid(inReplyToId, 'inReplyToId');
+    assertGuid(ownerId, 'ownerId');
     const page = await webApi.retrieveMultipleRecords(
-      'email', buildDraftLookupQuery(caseId, inReplyToId), 1,
+      'email', buildDraftLookupQuery(caseId, inReplyToId, ownerId), 1,
     );
     const row = page.entities[0];
     if (!row || typeof row.activityid !== 'string') return undefined;
     return {
       emailId: row.activityid,
+      subject: typeof row.subject === 'string' ? row.subject : '',
+      bodyHtml: typeof row.description === 'string' ? row.description : '',
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One draft by id — reopening the compose that was open when the control was torn down (M11).
+ *
+ * The id came back through `setControlState`, so it is re-checked here rather than trusted: it
+ * must still be an open DRAFT (it may have been sent from elsewhere since) and it must be the
+ * agent's own, the same ownership rule `findExistingDraft` applies.
+ */
+export async function fetchDraftById(
+  webApi: DraftApiLike,
+  emailId: string,
+  ownerId: string | undefined,
+): Promise<ExistingDraft | undefined> {
+  if (!ownerId) return undefined;
+  try {
+    assertGuid(emailId, 'emailId');
+    assertGuid(ownerId, 'ownerId');
+    const row = await webApi.retrieveRecord(
+      'email', bare(emailId), '?$select=activityid,subject,description,statecode,statuscode,_ownerid_value',
+    );
+    const owner = typeof row._ownerid_value === 'string' ? row._ownerid_value.toLowerCase() : '';
+    if (row.statecode !== 0 || row.statuscode !== 1) return undefined;
+    if (owner !== bare(ownerId).toLowerCase()) return undefined;
+    return {
+      emailId: bare(emailId),
       subject: typeof row.subject === 'string' ? row.subject : '',
       bodyHtml: typeof row.description === 'string' ? row.description : '',
     };

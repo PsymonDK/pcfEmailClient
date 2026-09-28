@@ -74,6 +74,8 @@ export const T = {
 export const BODY_SURFACE = '#ffffff';
 /** Text on `BODY_SURFACE`, for the chrome we add around a body (folds, rules). */
 export const BODY_SURFACE_FG = '#242424';
+/** Quoted and folded text on `BODY_SURFACE`. Literal for the same reason as the surface. */
+export const BODY_SURFACE_FG_MUTED = 'rgba(36,36,36,0.72)';
 export const RADIUS = { sm: '2px', md: '4px', lg: '6px', pill: '10000px' } as const;
 
 /** Deterministic avatar colour, so the same person is the same colour everywhere. */

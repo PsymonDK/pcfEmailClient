@@ -1,0 +1,134 @@
+# Code review — 2026-09-28
+
+Whole-repository review for security issues and refactoring, done in four passes (HTML/XSS
+surface, Dataverse data layer, React UI, scripts/config). Every Critical and High finding was
+re-checked against the code before it was listed here. Baseline at the start: 586 tests pass,
+lint and build clean.
+
+Work happens on branch `code-review-fixes`. Fixes go in severity order, Critical → Low. Where a
+refactor removes an issue at its root, the refactor **is** the fix and is recorded against the
+finding; the remaining refactors follow once the security items are done.
+
+**Status:** `open` · `fixed` · `partial` (what remains is said in the log) · `refactor (Rn)`
+(fixed by the refactor named) · `accepted` (risk recorded, not changed) · `deferred` (needs the
+environment or a product decision — reason given)
+
+Paths are relative to `pcf/CaseEmailClient/` unless they start with `scripts/` or `solution/`.
+
+## Critical
+
+| ID | Finding | Where | Status |
+|---|---|---|---|
+| C1 | **Stored XSS through the compose quote.** The raw inbound `description` was embedded in `buildQuotedBlock` unsanitised and rendered with `dangerouslySetInnerHTML` in the Host document (there is no iframe). Any external sender could run script as the agent on Reply → expand quote, and the raw HTML also went out in the reply under the queue's identity. | `ui/EmailClientRoot.tsx` `openCompose`, `domain/compose.ts` `buildQuotedBlock`, `ui/Compose.tsx` | fixed |
+
+## High
+
+| ID | Finding | Where | Status |
+|---|---|---|---|
+| H1 | **Send can go out from a different sender than From shows, and pre-flight checks the wrong one.** `changeSender` never marked parties dirty, so an existing draft row kept its old sender; pre-flight approved the new one. A resumed draft showed re-derived To/Cc while the row kept its stored parties, which are what is sent. | `ui/EmailClientRoot.tsx` `changeSender`, `flushDraft`, resume path | refactor (R2) |
+| H2 | **Opening a second compose reuses the first editor.** `<Compose>` had no `key` and `Editor` reads `initialHtml` once, so Reply on B while A was open wrote A's text into B's draft or discarded A's unsaved text. | `ui/EmailClientRoot.tsx`, `ui/Editor.tsx` | refactor (R2) |
+| H3 | **Overlapping saves.** `flushDraft` returned immediately while a save was in flight, so Send could send a stale body, or report "could not be saved" when the in-flight save was the create. `addFiles` had the same gap. | `ui/EmailClientRoot.tsx` `flushDraft` | refactor (R2) |
+| H4 | **Forward → Send could drop the forwarded attachments.** Reused attachments were created by an effect racing `issueSend`, and counted as `done` before their rows existed. | `ui/EmailClientRoot.tsx` | refactor (R2) |
+| H5 | **No environment guard in scripts.** Every script trusted `DV_ORG`; a shell left pointed at another environment would run reverts (which delete by name) there. | `scripts/**` | refactor (R6) |
+| H6 | **Spike reverts target the shipped product.** `revert-s1` / `revert-s11` delete solution `JHRBCaseEmailClient` and control `jhrb_JHRB.CaseEmailClient` as "leftovers" — now the live product's names. | `scripts/seed/revert-s1.mjs`, `revert-s11.mjs` | fixed |
+| H7 | **`s7-send.mjs` sends real mail on launch** with no `--confirm`, to any address in `DV_TO`. | `scripts/spikes/s7-send.mjs` | refactor (R6) |
+
+## Medium
+
+| ID | Finding | Where | Status |
+|---|---|---|---|
+| M1 | Recipient `$filter` literal not URL-encoded: `+` addresses never resolve, `&`/`#` break the query, `%27` could rewrite the filter. | `data/recipients.ts` `addressFilter` | fixed |
+| M2 | `findExistingDraft` has no owner filter — a second agent silently resumes and sends a colleague's draft. | `data/draft.ts` | fixed |
+| M3 | Double-send guard fails open: an unreadable status counts as "not sent". | `data/send.ts`, `domain/send.ts` | refactor (R2) |
+| M4 | Remote images load automatically (tracking pixels, agent IP/read time); the CSS `url(` filter is a substring check bypassed by `u\rl(`, `\75 rl(`, `image-set()`. | `domain/sanitise.ts`, `ui/BodyFrame.tsx` | fixed |
+| M5 | Sanitised HTML is cut with regex/`indexOf` (quote split, notice strip) and the pieces rendered without re-sanitising — a cut inside an attribute value yields live markup on engines that do not escape `<` in attributes. | `ui/BodyFrame.tsx`, `domain/quoting.ts`, `domain/noise.ts` | refactor (R2) |
+| M6 | Bearer token kept on disk in `.tok` (gitignored; no secrets in history). | `scripts/**` | refactor (R6) |
+| M7 | `npm audit`: 22 moderate, all GHSA-cp6q-959q-f8rh in `@tiptap/core` < 3.30.4 (fix only in v3, which does not build here). `dompurify` 3.4.16 available. | `pcf/package.json` | accepted |
+| M8 | A removed attachment can still be sent: delete result ignored; removing mid-upload or mid-reuse deletes nothing and the row appears afterwards. | `ui/EmailClientRoot.tsx` | fixed |
+| M9 | Compose locked ~30 s after a send (`setSending(false)` in `finally` after the poll); the double-click guard is state, not a ref. | `ui/EmailClientRoot.tsx` `sendDraft` | refactor (R2) |
+| M10 | Reply can quote an empty body: `ensureBody` returns early while a fetch is in flight, and a failed fetch silently quotes `''`. | `ui/EmailClientRoot.tsx` `ensureBody`, `openCompose` | fixed |
+| M11 | Session teardown loses the last ~2 s of typing (debounce cleared without saving); `destroy()` does nothing; restored expanded messages are never used. | `ui/EmailClientRoot.tsx`, `index.ts` | fixed |
+| M12 | Loads can land out of order (no sequence guard), and the first landing runs before read state arrives. | `ui/EmailClientRoot.tsx` `load` | fixed |
+| M13 | Dwell timer restarts on every parent render (inline callback in effect deps), so steady re-rendering stops R6 marking read. | `ui/ReadingPane.tsx` | fixed |
+| M14 | Index-based row lookup (`querySelectorAll(...)[i]`, focus stored as an index) against the CLAUDE.md rule; a stale `focusIndex` makes Space throw. | `ui/ReadingPane.tsx`, `ui/ThreadList.tsx` | fixed |
+| M15 | TipTap `setContent` does not emit `update`: "Replace all" template never autosaves and a later signature reseed can overwrite it; `empty` starts `true` so a resumed draft keeps Send disabled. | `ui/Editor.tsx`, `ui/Compose.tsx` | fixed |
+| M16 | Script safety: `revert-deploy` deletes its ids file even after failed steps; `create-case-form` has no exists check and no solution header; `.catch(() => null)` turns a 401 into "nothing to do"; non-spike seed/spike scripts write to the environment without `--confirm`. | `scripts/**` | fixed |
+
+## Low
+
+| ID | Finding | Where | Status |
+|---|---|---|---|
+| L1 | A Failed (8) send cannot be retried although the report says it can. | `domain/send.ts` | refactor (R2) |
+| L2 | Duplicate settings rows resolve arbitrarily; the header promises "ambiguous → agent". | `domain/sender.ts`, `data/settings.ts` | fixed |
+| L3 | `mailboxstatus` fetched but ignored by pre-flight. | `data/preflight.ts` | deferred — needs a live reading |
+| L4 | `assertGuid` loose (`{guid` passes) and ~12 hand-rolled brace strips; some ids reach URLs unvalidated. | `data/**` | refactor (R4) |
+| L5 | Signature HTML and `xsl:value-of` values are not sanitised/escaped (safe today only via TipTap's schema); `Editor` comment on `protocols` is wrong. | `domain/signature.ts`, `ui/Editor.tsx` | fixed |
+| L6 | `resolveAddress`: transient failure on one table falls through to the next; "ambiguous" reported as "not a known record"; a picked own queue not checked against `ourAddresses`. | `data/recipients.ts` | partial |
+| L7 | Downloads trust the sender's MIME type. | `data/attachments.ts` | fixed |
+| L8 | `isDuplicateKey` treats any message containing "duplicate" as success. | `data/readState.ts` | fixed |
+| L9 | Two quick `addFiles` calls can together exceed the 25 MB cap. | `ui/EmailClientRoot.tsx` | fixed |
+| L10 | Sender `id`/`name` kept in the host document (DOM clobbering); `ALLOW_ARIA_ATTR`; senders can spoof the "added by your organisation" fold. | `domain/sanitise.ts`, `domain/noise.ts` | fixed |
+| L11 | Smaller UI defects: body-error Retry collapses instead of retrying; success notices use danger styling + `role="alert"`; `openCompose` has no error handling; `ensureBody` fails the body when only attachments fail; colliding React keys; no error boundary. | `ui/**` | fixed |
+| L12 | Colour literal `rgba(...)` in `BodyFrame`; the guard test only matches 6-digit hex. | `ui/BodyFrame.tsx`, `ui/__tests__/theme.test.ts` | fixed |
+| L13 | Inline `statuscode === n` checks instead of `EMAIL_STATUS`; hard-coded `'Care'` / `'Us'` fallback names. | `ui/ThreadList.tsx`, `ui/ReadingPane.tsx` | fixed |
+| L14 | Dead code / stale comments: `recipientEntity`/`recipientLookup` unused, `fetchUserFacts` unused, `issueSend` default comment, `readState.ts` header, `firstFocusable`, `sendableAttachmentIds`, `ComposeDraft.senderId`. | various | fixed |
+| L15 | Test fixtures use real registrable domains (`metalservice.dk`, `nordbyg.dk`). | `domain/__tests__/**` | fixed |
+| L16 | Scripts hygiene: absolute local path in `settings-role-ids.json`; `.gitignore` misses `.caseid` / `*-created.json`; inconsistent `.tok` paths. | `scripts/**`, `.gitignore` | fixed |
+| L17 | `README.md` still says "no product implementation yet". | `README.md` | fixed |
+
+## Refactors
+
+| ID | Refactor | Status |
+|---|---|---|
+| R1 | Tooling gates: `eslint-plugin-react-hooks`, `typecheck` over all source (`tsconfig.json` + test config), `no-unused-vars` back on, coverage over `data/` too. | fixed |
+| R2 | Extract untested logic from `EmailClientRoot.tsx` into tested modules: `ourAddresses`, `toSummary`, draft-args assembly, send orchestration (`data/sendFlow.ts`). | fixed |
+| R3 | Split `EmailClientRoot.tsx` into hooks (`useCaseMail`, `useReadState`, `useComposeDraft`, `useSend`, …). | partial |
+| R4 | One `toGuid()` for brace-stripping + validation; shared string/paging/party-role helpers in `data/`. | fixed |
+| R5 | Shared UI parts: `ErrorPanel`, `RemovableChip`, button styles, icons. | partial |
+| R6 | `scripts/lib/dv.mjs`: env guard, in-process token, fetch wrapper, `withSettle`, recipient allowlist — instead of 18 copies. | fixed |
+| R7 | Solution packaging: tables, role and form exist only in the environment, `Customizations.xml` is empty. | deferred — needs the environment |
+
+## Log
+
+Newest last. One line per change, naming the IDs it closes.
+- **C1** — `buildQuotedBlock` sanitises the original body itself, so no caller can build a raw quote; `Compose` re-sanitises at render for drafts saved before the fix (display only — the sent string is unchanged, R12 still byte-exact). New guard test `ui/__tests__/htmlSinks.test.ts` fails if any `dangerouslySetInnerHTML` renders an expression not on its allowlist.
+- **H1–H4, M3, M9, L1** — refactor R2 (first half). Send orchestration moved out of the untested component into `data/sendFlow.ts` (`runSend`, 12 tests asserting the order save → re-read → pre-flight → issue). Pre-send save always writes parties, as the sender being pre-flighted (H1); `changeSender` and resume mark parties dirty, and a resumed draft shows its STORED To/Cc. Saves go through `domain/serialQueue.ts` and snapshot at call time, so a forced save waits for and follows an in-flight one (H3). `<Compose key={session}>` and `closeCompose` settle the open compose before another replaces it (H2). Forward carry-over runs inside the save, and `blockingReasonAfterSave` refuses a forwarded file without a row (H4). Double-send guard fails closed (M3); `sendingRef` + release on acceptance, poll detached (M9); Failed (8) is retryable (L1). `draftArgsFrom` moved to `domain/draft.ts` with tests.
+- **M2** — `findExistingDraft` filters `_ownerid_value` to the agent; no agent id, no resume.
+- **M8, L9** — the attachments ref is authoritative and state mirrors it (`updateAttachments`), so the size cap and removals see current data; a failed delete puts the file back as `failed` (which blocks Send); a file removed mid-upload/mid-carry-over has its row deleted when it lands. Files map back to their own `File` by identity, not name+size.
+- **M10** — `ensureBody` shares the in-flight promise and resolves to the body; Reply refuses to open (with a notice) rather than quote nothing. `openCompose` now reports failures instead of silently doing nothing (part of L11) and ignores superseded opens.
+- **M11 (partial)** — pending debounce is saved on unmount; `latestHtml` covers a save after the editor has gone. Still open: restoring an open compose and expanded messages after a teardown.
+- **H5, H6, H7, M6, M16, L16, R6** — `scripts/lib/dv.mjs` (env guard exits unless the org is the demo org; token from `DV_TOKEN` or `az`, no `.tok` fallback; one fetch wrapper where only an explicit 404 means absent; `runSteps` dry-run by default; `guardRecipient`). All 18 scripts migrated. `revert-s1`/`revert-s11` no longer touch the product's solution or control. `s7-send` and `r18-approval-probe` need `--confirm` and a guarded recipient; Test B removed. `revert-deploy`/`cleanup` keep their ids file unless every step succeeded; `create-case-form` refuses a duplicate form and uses the solution header; `seed`/`s6` dry-run by default. `.gitignore` covers `.caseid` and spike outputs; absolute path removed from `settings-role-ids.json`. `r8-parent-link.mjs` moved to `spikes/`. Verified offline only (`node --check`, pure-helper checks) — no script was run against the environment.
+- **M5** — the body pipeline moved out of `BodyFrame` into `domain/bodyPipeline.ts` (`prepareBody`) and now re-sanitises every piece after the split and the notice strip. Tests parse each piece as `innerHTML` would and assert nothing executable — both attribute-smuggling payloads from the review are covered.
+- **M4** — remote (`http(s)`) images are held back by default, with a per-message "Show pictures" offer; every image gets `referrerpolicy="no-referrer"`. CSS values are an allow-list: any backslash, or any function other than `rgb/rgba/hsl/hsla`, drops the declaration (`u\rl(`, `\75 rl(`, `image-set()` covered). The OUTGOING quote keeps remote images — it is the customer's own message going back to them; only the compose preview blocks them.
+- **M1** — recipient filter literal is URL-encoded after OData quote-doubling; non-address input never queries. New `data/__tests__/recipients.test.ts` checks what the server sees after one URL decode (`+`, `&`, `#`, `'`, `%27`).
+- **M7 (accepted)** — `dompurify` bumped to 3.4.16. GHSA-cp6q-959q-f8rh (`@tiptap/core` < 3.30.4) stays: the only fix is TipTap 3, which does not build under pcf-scripts (CLAUDE.md, S13). Exposure is low — `parseHTML` maps only declared attributes and the inherited quote never enters the editor. Revisit if a 2.x backport ships. The remaining dev-only findings (vitest mocker) need vitest 5, a breaking upgrade.
+- **M11** — the open compose is persisted through `setControlState` as `{mode, activityId, emailId}` and reopened after a teardown; the draft is re-read with `fetchDraftById`, which re-checks it is still an open draft owned by the agent. Restored expanded messages are re-expanded and their bodies fetched.
+- **M12** — loads carry a sequence number and only the latest may write; the first landing waits for `loaded` (read state included); `threads` is derived with `useMemo`. A change of case resets per-case state and settles the open compose against the case it carries (`ComposeDraft.caseId`), never the new one.
+- **M13** — the dwell timer reads its callback from a ref; the observer is no longer rebuilt on every parent render.
+- **M14** — `ReadingPane` and `ThreadList` store focus as an id and look elements up by `data-message-id` / `data-row-id`; Space on an empty thread no longer throws.
+- **M15** — "Replace all" from a template counts as an edit (`setContent(html, true)`), so it autosaves and a signature reseed cannot overwrite it; a resumed draft opens with Send enabled. The `Editor` comment that claimed `protocols` narrows TipTap's defaults is corrected (part of L5).
+- **L12** — the `rgba(...)` in `BodyFrame` is now `BODY_SURFACE_FG_MUTED` in `tokens.ts`; the guard test matches any hex length and `rgb/rgba/hsl/hsla(`.
+- **L2** — `pickSetting` treats two rows for one queue, or two default rows, as no configuration (send as the agent), as the module header always promised.
+- **L3 (deferred)** — `mailboxstatus` is still read and not enforced. It reflects the mailbox as a whole, incoming included, so gating Send on it without a live reading of the Care mailbox risks blocking the one sender that works. Needs a measurement, then a decision.
+- **L4** — refactor R4 (first part): `domain/guid.ts` (`bareId`, `isGuid`, `toGuid`) replaces all 23 hand-rolled `/^\{|\}$/g` strips; `assertGuid` delegates to it, so `{guid` no longer passes. Every id that goes into a URL or `@odata.bind` is validated (`readSendStatus`, `fetchOutgoingStatus`, `fetchSignatureFor`, `senderParty`, `caseId`/`inReplyToId` binds, template ids, queue lookups). `updateDraft` builds its payload inside the `try`, so a bad id is a failed save rather than a throw. A platform-stated `partyNav` must look like a party navigation property (`partyid_*`) before it becomes a property name.
+- **L5** — `xsl:value-of` values are HTML-escaped; fetched signature HTML is sanitised (pictures and ids kept — it is our own outgoing sign-off).
+- **L6 (partial)** — only a privilege failure (403 / `0x80040220`) lets the address search move to the next table; anything else stops at "unresolved" rather than binding a later table's record. Not changed: a picked queue is not checked against `ourAddresses` — CLAUDE.md records that picking a queue deliberately is allowed by design. Still open: an ambiguous match is reported to the agent as "not a known record"; saying "matches several records" needs the outcome carried to the chip.
+- **L7** — downloads are always `application/octet-stream`.
+- **L8** — `isDuplicateKey` matches the key's own wording only, not any message containing "duplicate".
+- **L10** — displayed HTML has sender `id`/`name` prefixed (`SANITIZE_NAMED_PROPS`, `isolateIds`); outgoing HTML is left verbatim. `ALLOW_ARIA_ATTR` is off. The notice fold says what it holds ("security banners and mail tips") instead of vouching that the organisation added it.
+- **L11** — body-error Retry refetches (it collapsed the message); an attachment-list failure no longer fails the body; success notices are neutral with `role="status"`; list keys cannot collide; `ErrorBoundary` around the reading pane and compose. `openCompose` error handling was done under M10.
+- **L13** — status badges use `EMAIL_STATUS` / `isInFlight`; the reading pane's badge tone comes from the status code, not a substring of the localised label; the hard-coded `'Care'` fallback is `'Us'`, as in the list.
+- **L14** — removed `fetchUserFacts`, `sendableAttachmentIds`, `ComposeDraft.senderId`/`draftCreatedHere`, the unused `firstFocusable` import; corrected the `issueSend` comment. Kept `recipientEntity`/`recipientLookup`: documented configuration awaiting its feature. The `readState.ts` header turned out to be accurate.
+- **L15** — fixtures use `*.example.invalid`.
+- **L17** — README rewritten for the product as it is.
+- **R1** — `eslint-plugin-react-hooks` (rules-of-hooks + exhaustive-deps), `no-unused-vars` on (`_` prefix exempts), `npm run typecheck` now `tsc -p tsconfig.json && tsc -p tsconfig.test.json`, coverage over `data/`, `@types/node` explicit. The full typecheck caught a real crash on its first run: a hook dependency array reading `closeCompose` before its declaration. Lint is clean with zero warnings; deliberate omissions are commented where they are.
+- **R2** — also extracted, with tests: `ourAddresses` (the union rule) into `domain/sender.ts`, `toSummary`/`ThreadSummary` into `domain/threadSummary.ts`, `buildParticipantIndex` into `domain/filter.ts`. (Send orchestration and `draftArgsFrom` were done under H1–H4.)
+- **R3 (partial)** — `EmailClientRoot.tsx` is 1,725 → ~950 lines: the compose surface (draft, save queue, attachments, recipients, send) is `ui/useCompose.ts`, and sender/signature/templates resolution is `ui/useSender.ts`. The root now reads load → sender → reading → filter → compose → persistence → render. Not done: the further `useCaseMail` / `useReadState` / `useReadingSelection` split the review proposed — lower value now that the risky, stateful part is isolated, and each move is untested UI code.
+- **R4** — `domain/guid.ts` (see L4); `data/coerce.ts` `asString` replaces four identical helpers; one `fetchAllPages` pager for the list and read state; one `toCaseQueue` mapping for both queue routes; one `PARTY_ROLE` table (`domain/draft.ts`, re-exported by `data/`). A raw NUL byte in `domain/filter.ts` (a join separator) is now the equivalent `\u0000` escape, so tools stop treating the file as binary.
+- **R5 (partial)** — `ErrorPanel` in `parts.tsx` replaces `ListError` and `PaneError`; `ErrorBoundary` added (L11). Not done: a shared chip / link-button / icon set — cosmetic duplication, no defect behind it.
+- **R7 (deferred)** — the tables, role and form exist only in the environment; bringing them into `solution/src` needs `pac solution sync` against the demo org, which is an environment action to run with you.
+- **CLAUDE.md** — test count, the typecheck paragraph (it now covers all source), the display-vs-send sanitising rule, and the scripts' environment guard updated to match.
+
+## Verification
+
+Final state, run from `pcf/`: `npm test` **650 passed** (586 at the start), `npm run typecheck` clean over all source, `npm run lint` clean with no warnings, `npm run build` succeeded, production build succeeded (bundle 159 KiB gzipped). Nothing was deployed and no script was run against the environment — every behaviour change here is verified by unit tests and the type gate only. The flows most worth checking in the published app before merging: Reply → expand quote on a hostile message (C1); change From on a saved draft, then Send (H1); Reply on B while A is open (H2); Forward → Send immediately (H4); a session switch with compose open (M11).

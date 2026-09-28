@@ -1,8 +1,6 @@
 import * as React from 'react';
-import { sanitiseEmailBody } from '../domain/sanitise';
-import { splitQuotedHistory } from '../domain/quoting';
-import { stripInjectedNotices, type Notice } from '../domain/noise';
-import { BODY_SURFACE, BODY_SURFACE_FG, RADIUS, T } from './tokens';
+import { prepareBody } from '../domain/bodyPipeline';
+import { BODY_SURFACE, BODY_SURFACE_FG, BODY_SURFACE_FG_MUTED, RADIUS, T } from './tokens';
 
 /**
  * Renders one message body. The highest-risk component in the inventory, for two reasons.
@@ -11,9 +9,9 @@ import { BODY_SURFACE, BODY_SURFACE_FG, RADIUS, T } from './tokens';
  * holding the agent's authenticated Dynamics session. Measured 2026-09-11 (S12): Dataverse stores
  * it verbatim — 17 of 17 hostile probes survived a round-trip byte-identical — so sanitising is
  * entirely ours to do. Nothing reaches `dangerouslySetInnerHTML` here without passing through
- * `sanitiseEmailBody` first, and the pipeline order is fixed:
+ * `prepareBody` (domain/bodyPipeline.ts), whose order is fixed:
  *
- *     sanitise  →  split quoted history  →  strip injected notices  →  render
+ *     sanitise  →  split quoted history  →  strip injected notices  →  re-sanitise each piece
  *
  * **Containment.** Sanitising stops script. It does nothing about a 1400px-wide Outlook table, a
  * 96px heading, or a sender who sets white text — so the container resets typography, caps widths,
@@ -31,64 +29,58 @@ export interface BodyFrameProps {
   onToggleNotices: () => void;
 }
 
-interface Prepared {
-  newHtml: string;
-  quotedHtml: string;
-  notices: Notice[];
-  foldableCount: number;
-  quoteDepthLabel: string;
-}
-
-function prepare(rawHtml: string): Prepared {
-  // 1. Sanitise FIRST. This is the only order in which hostile markup never reaches code that
-  //    indexes into the string, and it also normalises malformed sender HTML so the heuristics
-  //    below see well-formed markup.
-  const safe = sanitiseEmailBody(rawHtml).html;
-
-  // 2. Split the inherited quote off. Displayed, never re-serialised.
-  const split = splitQuotedHistory(safe);
-
-  // 3. Strip what the sender did not write, from the NEW text only — a quoted chain's own
-  //    banners are part of the quote and are not ours to edit.
-  const cleaned = stripInjectedNotices(split.newHtml);
-
-  return {
-    newHtml: cleaned.html,
-    quotedHtml: split.quotedHtml,
-    notices: cleaned.notices,
-    foldableCount: cleaned.foldableCount,
-    quoteDepthLabel: describeQuote(split.quotedHtml),
-  };
-}
-
-function describeQuote(quotedHtml: string): string {
-  if (!quotedHtml) return '';
-  // Count the header blocks rather than the nesting depth: "3 earlier messages" is what an agent
-  // understands, and it is what the design's fold label says.
-  const headers =
-    (quotedHtml.match(/divRplyFwdMsg/gi) ?? []).length ||
-    (quotedHtml.match(/gmail_quote/gi) ?? []).length ||
-    (quotedHtml.match(/-{2,}\s*original message/gi) ?? []).length ||
-    1;
-  return headers === 1 ? '1 earlier message' : `${headers} earlier messages`;
-}
-
 export const BodyFrame: React.FC<BodyFrameProps> = (props) => {
   const { rawHtml, quoteExpanded, noticesExpanded, onToggleQuote, onToggleNotices } = props;
 
+  // M4 — remote pictures wait for the agent. Per message and not persisted: it is a decision
+  // about this sender, this time, and the next message deserves the same default.
+  const [showPictures, setShowPictures] = React.useState(false);
+
   // Re-running the pipeline on every render would re-parse the whole body; memoise on the input.
-  const prepared = React.useMemo(() => prepare(rawHtml), [rawHtml]);
+  const prepared = React.useMemo(
+    () => prepareBody(rawHtml, { allowRemoteImages: showPictures }),
+    [rawHtml, showPictures],
+  );
   const foldable = prepared.notices.filter((n) => n.foldable);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+
+      {prepared.blockedImages > 0 && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px', maxWidth: '820px', minHeight: '28px',
+            padding: '0 10px', boxSizing: 'border-box', background: T.bg3, borderRadius: RADIUS.md,
+            fontSize: '12px', color: T.fg2,
+          }}
+        >
+          <span>
+            {prepared.blockedImages === 1 ? '1 picture' : `${prepared.blockedImages} pictures`} from
+            the internet {prepared.blockedImages === 1 ? 'was' : 'were'} not loaded, so the sender
+            cannot see when this was opened.
+          </span>
+          <span style={{ flexGrow: 1 }} />
+          <button
+            type="button"
+            onClick={() => setShowPictures(true)}
+            style={{
+              border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+              font: 'inherit', fontSize: '12px', color: T.link,
+            }}
+          >
+            Show pictures
+          </button>
+        </div>
+      )}
 
       {/* R21 — injected notices, folded behind the platform's own View more idiom */}
       {foldable.length > 0 && (
         <div>
           <Fold
             tone="warn"
-            label={`${foldable.length} ${foldable.length === 1 ? 'notice' : 'notices'} added by your organisation`}
+            // Says what the fold holds, not who added it: a sender can write text that looks like a
+            // security banner, and this label must not vouch for it (L10).
+            label={`${foldable.length} ${foldable.length === 1 ? 'notice' : 'notices'} folded — security banners and mail tips`}
             expanded={noticesExpanded}
             onToggle={onToggleNotices}
           />
@@ -195,7 +187,8 @@ const Fold: React.FC<{
  */
 const Contained: React.FC<{ html: string; muted?: boolean }> = ({ html, muted }) => (
   <div
-    // Safe: `html` has already been through sanitiseEmailBody. Nothing else may call this.
+    // Safe: `html` is a piece of `prepareBody`'s output, each piece sanitised as it will be
+    // parsed. Nothing else may call this.
     dangerouslySetInnerHTML={{ __html: html }}
     style={{
       // Reset the sender's inherited context so their CSS starts from ours, not from Dynamics'.
@@ -207,7 +200,7 @@ const Contained: React.FC<{ html: string; muted?: boolean }> = ({ html, muted })
       // messages unreadable, and inverting would rewrite invoices and test reports. Frozen
       // decision in docs/design/01-design-decisions.md; Outlook and Gmail both do this.
       background: BODY_SURFACE,
-      color: muted ? 'rgba(36,36,36,0.72)' : BODY_SURFACE_FG,
+      color: muted ? BODY_SURFACE_FG_MUTED : BODY_SURFACE_FG,
       // Keeps the white from sitting flush against the dark card edge.
       padding: '2px 0',
       colorScheme: 'light',

@@ -14,7 +14,8 @@ export default defineConfig({
     environment: 'node',
     include: ['CaseEmailClient/**/*.test.ts?(x)'],
     coverage: {
-      include: ['CaseEmailClient/domain/**/*.ts'],
+      // data/ too: the send sequence, pre-flight and uploads live there (R1).
+      include: ['CaseEmailClient/domain/**/*.ts', 'CaseEmailClient/data/**/*.ts'],
       reporter: ['text', 'html'],
     },
   },

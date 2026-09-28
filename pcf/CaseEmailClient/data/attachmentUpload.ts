@@ -1,3 +1,4 @@
+import { bareId } from '../domain/guid';
 import { assertGuid } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { resolveXrmExecute, type XrmExecute } from './templates';
@@ -48,7 +49,8 @@ export interface UploadOutcome {
 /** Reported per block so a 40 MB upload is not a frozen spinner. */
 export type ProgressFn = (sentBlocks: number, totalBlocks: number) => void;
 
-const bare = (id: string) => id.replace(/^\{|\}$/g, '');
+/** Strip braces for a URL. Callers validate with `assertGuid` first. */
+const bare = bareId;
 
 /** The `Target` every upload message needs: which email this attaches to. */
 function targetFor(req: UploadRequest): Record<string, unknown> {

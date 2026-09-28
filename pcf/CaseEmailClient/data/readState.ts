@@ -1,4 +1,5 @@
-import { assertGuid, type WebApiLike } from './emailQueries';
+import { bareId } from '../domain/guid';
+import { assertGuid, fetchAllPages, type WebApiLike } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 
 /**
@@ -103,7 +104,7 @@ export function buildReadStatePayload(
  */
 function bareGuid(value: string, what: string): string {
   assertGuid(value, what);
-  return value.replace(/^\{|\}$/g, '').toLowerCase();
+  return bareId(value);
 }
 
 // ── fetch ────────────────────────────────────────────────────────────────────
@@ -123,16 +124,14 @@ export async function fetchReadState(
 ): Promise<{ read: ReadStateMap; error?: NormalisedError }> {
   const read: ReadStateMap = new Map();
   try {
-    let options: string | undefined = buildReadStateQuery(caseId, userId);
-    while (options) {
-      const page = await webApi.retrieveMultipleRecords(READ_STATE_ENTITY, options, pageSize);
-      for (const row of page.entities) {
-        const emailId = asGuid(row._jhrb_emailid_value);
-        const rowId = asGuid(row.jhrb_emailreadstateid);
-        if (!emailId || !rowId) continue;
-        read.set(emailId, { rowId, readOn: asDate(row.jhrb_readon) });
-      }
-      options = page.nextLink ? page.nextLink.slice(page.nextLink.indexOf('?')) : undefined;
+    const rows = await fetchAllPages(
+      webApi, READ_STATE_ENTITY, buildReadStateQuery(caseId, userId), pageSize,
+    );
+    for (const row of rows) {
+      const emailId = asGuid(row._jhrb_emailid_value);
+      const rowId = asGuid(row.jhrb_emailreadstateid);
+      if (!emailId || !rowId) continue;
+      read.set(emailId, { rowId, readOn: asDate(row.jhrb_readon) });
     }
     return { read };
   } catch (rejection) {
@@ -166,7 +165,7 @@ export async function markRead(
   args: { emailId: string; userId: string; caseId: string; readOn?: Date },
   known?: ReadStateMap,
 ): Promise<MarkReadOutcome> {
-  const existing = known?.get(args.emailId.replace(/^\{|\}$/g, '').toLowerCase());
+  const existing = known?.get(bareId(args.emailId));
   if (existing) return { ok: true, rowId: existing.rowId, alreadyRead: true };
 
   try {
@@ -187,14 +186,16 @@ export async function markRead(
  */
 function isDuplicateKey(error: NormalisedError): boolean {
   if (error.status === 412) return true;
-  return /duplicate|already exists|entity key .*violated/i.test(error.message);
+  // The key's own wording only. A bare /duplicate/ also matched unrelated failures — a duplicate
+  // detection rule, say — and reported them as success, so the row was never written (L8).
+  return /already exists|entity key .* (?:requires|violated)/i.test(error.message);
 }
 
 // ── coercion ─────────────────────────────────────────────────────────────────
 
 function asGuid(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const bare = value.replace(/^\{|\}$/g, '').toLowerCase();
+  const bare = bareId(value);
   return bare.length > 0 ? bare : undefined;
 }
 

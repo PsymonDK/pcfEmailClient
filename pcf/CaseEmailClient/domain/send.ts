@@ -26,6 +26,7 @@
  */
 
 import { describeUnresolved } from './recipients';
+import type { PendingAttachment } from './attachments';
 
 export const EMAIL_STATUS = {
   draft: 1,
@@ -54,7 +55,7 @@ export function isSettled(statusCode: number | undefined): boolean {
 }
 
 /** Still moving through the send pipeline. */
-export function isInFlight(statusCode: number | undefined): boolean {
+export function isInFlight(statusCode: number | null | undefined): boolean {
   return statusCode === EMAIL_STATUS.pendingSend || statusCode === EMAIL_STATUS.sending;
 }
 
@@ -139,15 +140,45 @@ export function reportFor(statusCode: number | undefined, pollsExhausted: boolea
 }
 
 /**
- * Is this draft in a state where sending is even meaningful?
+ * Would sending now leave an attachment behind, or send one the agent cannot see finished?
  *
- * Guards the obvious own-goals: sending with nobody in To, and sending a message the platform
- * has already taken (which would either error or double-send).
+ * `afterSave` is the difference between the two checkpoints. Before the save, a forwarded file
+ * that has not become a row yet is expected — the save is what creates it. After the save it is
+ * not: a carried-over file still without a row means the customer would get the forward without
+ * the attachment the tray showed. That race was real until 2026-09-28 (H4): the reuse ran in an
+ * effect that `issueSend` could beat, and counted as `done` before its row existed.
+ *
+ * A `failed` item blocks too. It is either a file that never uploaded (the agent believes it is
+ * attached) or a remove that did not delete (the agent believes it is gone) — both are the tray
+ * disagreeing with what would be sent.
+ */
+export function attachmentBlocker(
+  items: readonly PendingAttachment[],
+  afterSave: boolean,
+): string | undefined {
+  if (items.some((a) => a.status === 'uploading' || a.status === 'pending')) {
+    return 'Wait for the attachments to finish uploading.';
+  }
+  if (items.some((a) => a.status === 'failed')) {
+    return 'An attachment has a problem. Remove it, or add it again, before sending.';
+  }
+  if (afterSave && items.some((a) => a.reusedAttachmentId && !a.attachmentId)) {
+    return 'A forwarded attachment could not be carried over yet. Try sending again.';
+  }
+  return undefined;
+}
+
+/**
+ * Is this draft in a state where sending is even meaningful? Checked BEFORE the save.
+ *
+ * Guards the obvious own-goals: sending with nobody in To, with files still uploading, or to an
+ * address the org will not deliver to. Whether the platform already took the message is a
+ * question about the saved row, so it is `blockingReasonAfterSave`'s job, not this one's.
  */
 export function blockingReasonBeforeSend(args: {
   recipientCount: number;
-  statusCode?: number;
-  uploadsInFlight: boolean;
+  /** The tray as it stands. Required: a boolean the caller computes is how guards go inert. */
+  attachments: readonly PendingAttachment[];
   /**
    * Addresses that match no record, and whether the org tolerates them.
    *
@@ -160,14 +191,35 @@ export function blockingReasonBeforeSend(args: {
   allowUnresolved: boolean;
 }): string | undefined {
   if (args.recipientCount === 0) return 'Add at least one recipient first.';
-  if (args.uploadsInFlight) return 'Wait for the attachments to finish uploading.';
-  if (args.statusCode !== undefined && args.statusCode !== EMAIL_STATUS.draft) {
-    return 'This message has already been sent.';
-  }
+  const attachments = attachmentBlocker(args.attachments, false);
+  if (attachments) return attachments;
   // Checked last: it is the most specific complaint, and the least useful to show while
   // something more basic is also wrong.
   if (!args.allowUnresolved && args.unresolvedAddresses.length > 0) {
     return describeUnresolved(args.unresolvedAddresses);
   }
   return undefined;
+}
+
+/**
+ * Checked AFTER the save, against the row that is about to be sent.
+ *
+ * **The double-send guard fails CLOSED.** `statusCode` is `undefined` when the row could not be
+ * read, and until 2026-09-28 (M3) that passed as "not sent yet" — so the one moment the guard
+ * could not see was the moment it let the send through. Only Draft (1) and Failed (8) are
+ * sendable: a failed send is still an open row, and `reportFor` tells the agent it "can be edited
+ * and sent again", which was untrue while this refused it (L1).
+ */
+export function blockingReasonAfterSave(args: {
+  statusCode: number | undefined;
+  attachments: readonly PendingAttachment[];
+}): string | undefined {
+  if (args.statusCode === undefined) {
+    return 'Could not confirm this message has not already been sent, so it was not sent. '
+      + 'Try again in a moment.';
+  }
+  if (args.statusCode !== EMAIL_STATUS.draft && args.statusCode !== EMAIL_STATUS.failed) {
+    return 'This message has already been sent.';
+  }
+  return attachmentBlocker(args.attachments, true);
 }

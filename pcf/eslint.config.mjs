@@ -2,6 +2,7 @@ import eslintjs from "@eslint/js";
 import microsoftPowerApps from "@microsoft/eslint-plugin-power-apps";
 import pluginPromise from "eslint-plugin-promise";
 import reactPlugin from "eslint-plugin-react";
+import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import typescriptEslint from "typescript-eslint";
 
@@ -16,6 +17,10 @@ export default [
   pluginPromise.configs["flat/recommended"],
   microsoftPowerApps.configs.paCheckerHosted,
   reactPlugin.configs.flat.recommended,
+  // Rules of hooks, and effect dependencies. Added 2026-09-28 (R1): several of that review's React
+  // bugs — a stale closure over the first render, a timer rebuilt every render — are exactly what
+  // exhaustive-deps reports. Refs used deliberately to escape a dependency are commented in place.
+  reactHooks.configs["recommended-latest"],
   {
     plugins: {
       "@microsoft/power-apps": microsoftPowerApps,
@@ -35,7 +40,9 @@ export default [
     },
 
     rules: {
-      "@typescript-eslint/no-unused-vars": "off",
+      // On since 2026-09-28 (R1): with it off, dead code accumulated unnoticed. A leading underscore
+      // marks a parameter that is unused on purpose.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
     settings: {
       react: {

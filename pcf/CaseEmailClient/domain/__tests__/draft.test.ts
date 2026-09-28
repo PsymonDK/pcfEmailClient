@@ -4,6 +4,7 @@ import {
   buildDraftUpdate,
   buildPartyRows,
   describeSaved,
+  draftArgsFrom,
   DRAFT_STATECODE,
   DRAFT_STATUSCODE,
   PARTY_CC,
@@ -251,7 +252,7 @@ describe('recipientParty — resolved recipients are BOUND, not just addressed',
   });
 
   it('composes a nav property only when none was supplied', () => {
-    const { partyNav, ...noNav } = contact;
+    const { partyNav: _partyNav, ...noNav } = contact;
     expect(Object.keys(recipientParty(noNav, PARTY_TO))).toContain('partyid_contact@odata.bind');
   });
 
@@ -286,5 +287,28 @@ describe('recipientParty — resolved recipients are BOUND, not just addressed',
     expect(Object.keys(recipientParty(wrong, PARTY_TO))).toEqual(
       ['addressused', 'participationtypemask'],
     );
+  });
+});
+
+describe('draftArgsFrom — what a save writes, from what is on screen', () => {
+  const snapshot = {
+    mode: 'reply' as const,
+    activityId: 'aaaa0000-0000-0000-0000-000000000001',
+    subject: 'RE: Ordre',
+    to: [{ name: 'Kunde', address: 'kunde@example.com' }],
+    cc: [],
+    quotedBlock: '<div id="divRplyFwdMsg">quote</div>',
+  };
+
+  it('links a reply to the message it answers, so resume can find it', () => {
+    const out = draftArgsFrom(snapshot, '<p>Svar</p>', CARE, 'case-1');
+    expect(out.inReplyToId).toBe(snapshot.activityId);
+    expect(out.bodyHtml).toBe('<p>Svar</p><div id="divRplyFwdMsg">quote</div>');
+    expect(out.sender).toBe(CARE);
+  });
+
+  it('links a forward to nothing — it is a new message to new people', () => {
+    expect(draftArgsFrom({ ...snapshot, mode: 'forward' }, '', AGENT, 'case-1').inReplyToId)
+      .toBeUndefined();
   });
 });

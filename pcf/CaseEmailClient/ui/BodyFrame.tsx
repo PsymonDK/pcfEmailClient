@@ -22,6 +22,8 @@ import { BODY_SURFACE, BODY_SURFACE_FG, BODY_SURFACE_FG_MUTED, RADIUS, T } from 
 export interface BodyFrameProps {
   /** Raw `email.description`, exactly as stored. */
   rawHtml: string;
+  /** Content-ID → data URL for inline images, once fetched. */
+  inlineImages?: ReadonlyMap<string, string>;
   /** Collapsed by default per Gate 2; the fold state is the caller's to remember. */
   quoteExpanded: boolean;
   noticesExpanded: boolean;
@@ -30,7 +32,7 @@ export interface BodyFrameProps {
 }
 
 export const BodyFrame: React.FC<BodyFrameProps> = (props) => {
-  const { rawHtml, quoteExpanded, noticesExpanded, onToggleQuote, onToggleNotices } = props;
+  const { rawHtml, inlineImages, quoteExpanded, noticesExpanded, onToggleQuote, onToggleNotices } = props;
 
   // M4 — remote pictures wait for the agent. Per message and not persisted: it is a decision
   // about this sender, this time, and the next message deserves the same default.
@@ -38,8 +40,8 @@ export const BodyFrame: React.FC<BodyFrameProps> = (props) => {
 
   // Re-running the pipeline on every render would re-parse the whole body; memoise on the input.
   const prepared = React.useMemo(
-    () => prepareBody(rawHtml, { allowRemoteImages: showPictures }),
-    [rawHtml, showPictures],
+    () => prepareBody(rawHtml, { allowRemoteImages: showPictures, inlineImages }),
+    [rawHtml, showPictures, inlineImages],
   );
   const foldable = prepared.notices.filter((n) => n.foldable);
 

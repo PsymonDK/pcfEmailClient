@@ -1,3 +1,4 @@
+import { cidReferences, normaliseCid } from '../domain/inlineImages';
 import { isInFlight } from '../domain/send';
 import * as React from 'react';
 import type { EmailRow, Thread } from '../domain/threading';
@@ -25,6 +26,8 @@ export interface MessageState {
   attachments?: Attachment[];
   /** The attachment list would not load. The body still shows — one failure, not two (L11). */
   attachmentsError?: boolean;
+  /** Content-ID → data URL for the body's inline images, filled in after the body shows. */
+  inlineImages?: ReadonlyMap<string, string>;
   expanded: boolean;
   quoteExpanded: boolean;
   noticesExpanded: boolean;
@@ -444,6 +447,7 @@ const MessageView: React.FC<{
             {state?.body !== undefined && !state.loadingBody && !state.bodyError && (
               <BodyFrame
                 rawHtml={state.body}
+                inlineImages={state.inlineImages}
                 quoteExpanded={state.quoteExpanded}
                 noticesExpanded={state.noticesExpanded}
                 onToggleQuote={onToggleQuote}
@@ -456,9 +460,18 @@ const MessageView: React.FC<{
                 The attachments on this message couldn&apos;t be listed.
               </span>
             )}
-            {state?.attachments && state.attachments.length > 0 && (
-              <AttachmentList attachments={state.attachments} onDownload={onDownloadAttachment} />
-            )}
+            {(() => {
+              // Inline images the body shows are part of the message, not files: Outlook does not
+              // list them either. One the body does NOT reference stays listed, so nothing that
+              // will reach the customer is ever hidden.
+              const shown = cidReferences(state?.body ?? '');
+              const files = (state?.attachments ?? []).filter(
+                (a) => !(a.contentId && shown.has(normaliseCid(a.contentId))),
+              );
+              return files.length > 0
+                ? <AttachmentList attachments={files} onDownload={onDownloadAttachment} />
+                : null;
+            })()}
           </div>
         )}
       </div>

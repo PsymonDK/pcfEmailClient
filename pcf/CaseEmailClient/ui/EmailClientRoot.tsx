@@ -4,10 +4,13 @@ import { resolveLayout, composeHeight } from '../domain/layout';
 import { type ComposeMode } from '../domain/compose';
 import {
   DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
-  type AncestorCase, type MessageParties,
+  type AncestorCase, type Attachment, type MessageParties,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
-import { browserDownloadIo, downloadAttachment } from '../data/attachments';
+import {
+  browserDownloadIo, downloadAttachment, fetchInlineImage, INLINE_IMAGE_CEILING,
+} from '../data/attachments';
+import { cidReferences, normaliseCid } from '../domain/inlineImages';
 import { fetchReadState, markRead as persistRead, type ReadStateMap } from '../data/readState';
 import { collapsedOlderCount, isUnread, messageToOpen, worthPersisting } from '../domain/unread';
 import { initialExpansion } from '../domain/listRows';
@@ -274,6 +277,26 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const selected = threads.find((t) => t.key === selectedKey);
 
   /**
+   * Fetch the bytes of the inline images this body actually shows, and hand them to the pane.
+   * Only referenced, raster, reasonably sized rows are fetched — never every attachment.
+   */
+  const loadInlineImages = React.useCallback(async (
+    api: DraftApiLike, activityId: string, body: string, attachments: readonly Attachment[],
+  ): Promise<void> => {
+    const wanted = cidReferences(body);
+    const rows = attachments.filter((a) => a.contentId && wanted.has(normaliseCid(a.contentId))
+      && a.fileSize <= INLINE_IMAGE_CEILING);
+    if (rows.length === 0) return;
+    const resolved = await Promise.all(rows.map(async (a) => [
+      normaliseCid(a.contentId ?? ''), await fetchInlineImage(api, a.id),
+    ] as const));
+    const images = new Map(resolved.filter((r): r is readonly [string, string] => !!r[1]));
+    if (images.size > 0) {
+      setStates((prev) => withState(prev, activityId, (s) => ({ ...s, inlineImages: images })));
+    }
+  }, []);
+
+  /**
    * Lazy body fetch — on expand only, never in the list query.
    *
    * Resolves to the body, or `undefined` if it would not load. A second caller while the fetch
@@ -298,6 +321,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         setStates((prev) => withState(prev, activityId, (s) => ({
           ...s, body, attachments, attachmentsError: attachments === undefined, loadingBody: false,
         })));
+        // Inline images after the body is on screen: the text must never wait for a logo.
+        void loadInlineImages(webApi, activityId, body, attachments ?? []);
         return body;
       } catch (e) {
         const normalised = e instanceof DataverseError ? e.normalised : { message: String(e), raw: e };
@@ -312,7 +337,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     })();
     bodyRequests.current.set(activityId, request);
     return request;
-  }, []);
+  }, [loadInlineImages]);
 
   // Open the newest UNREAD message on selection; if all are read, the newest. Older messages
   // collapse into one row rather than being listed individually.

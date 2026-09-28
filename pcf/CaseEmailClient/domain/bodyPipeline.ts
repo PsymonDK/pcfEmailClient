@@ -1,6 +1,7 @@
 import { sanitiseEmailBody } from './sanitise';
 import { splitQuotedHistory } from './quoting';
 import { stripInjectedNotices, type Notice } from './noise';
+import { resolveCidImages } from './inlineImages';
 
 /**
  * One message body, from the raw stored HTML to the pieces the reading pane renders.
@@ -32,18 +33,26 @@ export interface PreparedBody {
 
 export function prepareBody(
   rawHtml: string,
-  options: { allowRemoteImages?: boolean } = {},
+  options: {
+    allowRemoteImages?: boolean;
+    /** Content-ID → raster `data:` URL, from the message's own attachment rows. */
+    inlineImages?: ReadonlyMap<string, string>;
+  } = {},
 ): PreparedBody {
   const first = sanitiseEmailBody(rawHtml, options);
 
+  // Inline images resolved AFTER sanitising, with data URLs the sanitiser itself would keep —
+  // so the re-sanitise below leaves them in place. See domain/inlineImages.ts.
+  const resolved = options.inlineImages ? resolveCidImages(first.html, options.inlineImages) : first.html;
+
   // Displayed, never re-serialised into anything that is sent.
-  const split = splitQuotedHistory(first.html);
+  const split = splitQuotedHistory(resolved);
 
   // Strip what the sender did not write, from the NEW text only — a quoted chain's own banners
   // are part of the quote and are not ours to edit.
   const cleaned = stripInjectedNotices(split.newHtml);
 
-  const again = (html: string): string => sanitiseEmailBody(html, options).html;
+  const again = (html: string): string => sanitiseEmailBody(html, { allowRemoteImages: options.allowRemoteImages }).html;
   return {
     newHtml: again(cleaned.html),
     quotedHtml: again(split.quotedHtml),

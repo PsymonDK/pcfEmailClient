@@ -91,7 +91,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   });
 
   const rootRef = React.useRef<HTMLDivElement>(null);
-  const [rootTop, setRootTop] = React.useState(0);
+  /** Unmeasured until the first layout — the claim is the floor until then (N4). */
+  const [rootTop, setRootTop] = React.useState<number>();
   const [viewportHeight, setViewportHeight] = React.useState(
     typeof window === 'undefined' ? 800 : window.innerHeight,
   );
@@ -156,7 +157,10 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const bodyRequests = React.useRef(new Map<string, Promise<string | undefined>>());
 
   // ── sizing ─────────────────────────────────────────────────────────────────
-  React.useEffect(() => {
+  // A LAYOUT effect: it runs after the DOM is placed but before the browser paints, so the first
+  // frame the host ever sees already carries the real claim. See `resolveLayout` for why an
+  // oversized first frame is not harmless in CSW.
+  React.useLayoutEffect(() => {
     const measure = () => {
       setRootTop(Math.round(rootRef.current?.getBoundingClientRect().top ?? 0));
       setViewportHeight(window.innerHeight);

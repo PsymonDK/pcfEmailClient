@@ -43,6 +43,13 @@ describe('resolveLayout — the form-tab case, which is both real placements', (
     expect(reading({ viewportHeight: 400, rootTop: 380 }).claimedHeight).toBe(MIN_HEIGHT);
     expect(reading({ viewportHeight: 100, rootTop: 90 }).claimedHeight).toBe(MIN_HEIGHT);
   });
+
+  it('claims the FLOOR, not the viewport, before the root has been measured (N4)', () => {
+    // Measured in CSW 2026-09-28: a first frame claiming nearly the whole viewport made the tab
+    // taller than the form, UCI scrolled it into view, and the sticky header then covered the
+    // control's top — the list's first rows, the Reply buttons and "Show pictures".
+    expect(reading({ viewportHeight: 995, rootTop: undefined }).claimedHeight).toBe(MIN_HEIGHT);
+  });
 });
 
 describe('resolveLayout — the custom-page fallback', () => {

@@ -40,8 +40,11 @@ export interface HostSize {
   allocatedWidth: number;
   /** `window.innerHeight`. */
   viewportHeight: number;
-  /** The control root's distance from the top of the viewport. */
-  rootTop: number;
+  /**
+   * The control root's distance from the top of the viewport — or `undefined` before it has been
+   * measured, in which case the claim is the floor (see `resolveLayout`).
+   */
+  rootTop: number | undefined;
 }
 
 export interface ResolvedLayout {
@@ -66,9 +69,15 @@ export interface ResolvedLayout {
 export function resolveLayout(size: HostSize): ResolvedLayout {
   const hostProvidedHeight = size.allocatedHeight > 0;
 
+  // Before the root has been measured, claim the FLOOR, never the viewport (N4, 2026-09-28). The
+  // first render used to claim with rootTop = 0 — nearly the whole viewport — and in CSW that made
+  // the freshly shown tab taller than the form, so UCI scrolled it into view and switched the
+  // header into its sticky overlay, which then sat on top of the control's first ~240px for good.
   const claimedHeight = hostProvidedHeight
     ? size.allocatedHeight
-    : Math.max(MIN_HEIGHT, Math.floor(size.viewportHeight - size.rootTop - BOTTOM_GUTTER));
+    : size.rootTop === undefined
+      ? MIN_HEIGHT
+      : Math.max(MIN_HEIGHT, Math.floor(size.viewportHeight - size.rootTop - BOTTOM_GUTTER));
 
   return {
     height: hostProvidedHeight ? '100%' : `${claimedHeight}px`,

@@ -271,3 +271,58 @@ describe('the real captured conversation — regression', () => {
     expect(a).not.toContain('crm:');
   });
 });
+
+describe('a reply that arrives with a NEW conversation hash — CAS-01130-T1M1W1, 2026-09-28', () => {
+  // The four real rows, verbatim where it matters. The customer's reply came back with a fresh
+  // Thread-Index (a different root and hash), so hash grouping split the conversation in two.
+  // The platform still correlated it: correlatedactivityid points at our reply.
+  const ORIGINAL = row({
+    activityid: '17ad866d', subject: 'Hjælp til selvhjælp', createdon: '2026-09-28T10:36:20Z',
+    baseconversationindexhash: 1225932897,
+    conversationindex: '0101DD4F34632A96D3F8DF7C934B98FA22AE14BB721EB6E3CBCF31',
+    correlatedactivityid: '06f3e0ba', parentactivityid: '06f3e0ba',
+  });
+  const AUTO_ACK = row({
+    activityid: 'e8ddf285', directioncode: true, statuscode: 3, createdon: '2026-09-28T10:37:01Z',
+    subject: 'New Case With Number: CAS-01130-T1M1W1 Created CRM:0100015',
+    baseconversationindexhash: 87964286,
+    conversationindex: '018DDA78785ABE44FAA3EE7FCBB70C795BDD4F354C28',
+    parentactivityid: '17ad866d',
+  });
+  const OUR_REPLY = row({
+    activityid: '9c6d2ccd', directioncode: true, statuscode: 3, createdon: '2026-09-28T10:39:04Z',
+    subject: 'RE: Hjælp til selvhjælp CRM:0100016',
+    baseconversationindexhash: 1225932897,
+    conversationindex: '0101DD4F34632A96D3F8DF7C934B98FA22AE14BB721EB6E3CBCF31DD4F35966D',
+    parentactivityid: '17ad866d',
+  });
+  const THEIR_REPLY = row({
+    activityid: '5a51e3ff', createdon: '2026-09-28T10:40:25Z',
+    subject: 'Re: Hjælp til selvhjælp CRM:0100016',
+    baseconversationindexhash: -699962655,
+    conversationindex: '0101DD4F35A2EA80DD65F40E7942B22DB47288B07F6BB6E3CD1100',
+    correlatedactivityid: '9c6d2ccd', parentactivityid: '9c6d2ccd',
+  });
+  const threads = buildThreads([ORIGINAL, AUTO_ACK, OUR_REPLY, THEIR_REPLY]);
+  const conversation = threads.find((t) => t.messages.some((m) => m.activityid === '17ad866d'))!;
+
+  it('joins the correlated reply to the conversation it answers', () => {
+    expect(conversation.messages.map((m) => m.activityid)).toEqual(['17ad866d', '9c6d2ccd', '5a51e3ff']);
+    expect(conversation.groupedBy).toBe('correlation');
+  });
+
+  it('keeps the automatic acknowledgement apart — it has a parent link, not a correlation', () => {
+    expect(threads).toHaveLength(2);
+    expect(threads.find((t) => t.messages.some((m) => m.activityid === 'e8ddf285'))!.messages)
+      .toHaveLength(1);
+  });
+
+  it('keeps the older conversation\'s key, so a selection made before the reply survives', () => {
+    expect(conversation.key).toBe('h:1225932897');
+  });
+
+  it('orders across two roots by date, and says so', () => {
+    // Lexicographic conversationindex order is meaningless across roots.
+    expect(conversation.orderedByCreatedOnFallback).toBe(true);
+  });
+});

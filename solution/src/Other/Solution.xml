@@ -1,35 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.2.26093.131" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.26093.131" OrganizationSchemaType="Full" CRMServerServiceabilityVersion="9.2.26093.00131">
   <SolutionManifest>
-    <!-- Unique Name of Cds Solution-->
     <UniqueName>JHRBCaseEmailClient</UniqueName>
     <LocalizedNames>
-      <!-- Localized Solution Name in language code -->
       <LocalizedName description="Case Email Client" languagecode="1033" />
     </LocalizedNames>
     <Descriptions />
     <Version>1.0</Version>
-    <!-- Solution Package Type: Unmanaged(0)/Managed(1)/Both(2)-->
     <Managed>2</Managed>
     <Publisher>
-      <!-- Unique Publisher Name of Cds Solution -->
       <UniqueName>jhrb</UniqueName>
       <LocalizedNames>
-        <!-- Localized Cds Publisher Name in language code-->
         <LocalizedName description="jhrb" languagecode="1033" />
       </LocalizedNames>
       <Descriptions>
-        <!-- Description of Cds Publisher in language code -->
         <Description description="jhrb" languagecode="1033" />
       </Descriptions>
       <EMailAddress xsi:nil="true"></EMailAddress>
       <SupportingWebsiteUrl xsi:nil="true"></SupportingWebsiteUrl>
-      <!-- Customization Prefix for the Cds Publisher-->
       <CustomizationPrefix>jhrb</CustomizationPrefix>
-      <!-- Derived Option Value Prefix for the Customization Prefix of Cds Publisher -->
       <CustomizationOptionValuePrefix>63249</CustomizationOptionValuePrefix>
       <Addresses>
-        <!-- Address of the Publisher-->
         <Address>
           <AddressNumber>1</AddressNumber>
           <AddressTypeCode>1</AddressTypeCode>
@@ -88,7 +79,485 @@
         </Address>
       </Addresses>
     </Publisher>
-    <RootComponents />
-    <MissingDependencies />
+    <RootComponents>
+      <RootComponent type="1" schemaName="jhrb_emailclientsetting" behavior="0" />
+      <RootComponent type="1" schemaName="jhrb_emailreadstate" behavior="0" />
+      <RootComponent type="1" schemaName="email" behavior="1" />
+      <RootComponent type="1" schemaName="incident" behavior="1" />
+      <RootComponent type="1" schemaName="queue" behavior="1" />
+      <RootComponent type="1" schemaName="systemuser" behavior="1" />
+      <RootComponent type="20" id="{bf5009cc-46b6-f111-aaae-000d3ab16615}" behavior="0" />
+      <RootComponent type="66" schemaName="jhrb_JHRB.CaseEmailClient" behavior="0" />
+    </RootComponents>
+    <MissingDependencies>
+      <MissingDependency>
+        <Required type="1" schemaName="team_fg_krav" displayName="Claim" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="1" schemaName="incident" displayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="1" schemaName="incident" displayName="Case" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="1" schemaName="incident" displayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="1" schemaName="knowledgearticleincident" displayName="Knowledge Article Incident" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="10" schemaName="team_fg_krav_Case_incident" displayName="team_fg_krav_Case_incident" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="caseorigincode" displayName="Origin" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="casetypecode" displayName="Case Type" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_arbejdsgiver_navn" displayName="Arbejdsgiver" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_dataindsamling_status" displayName="Dataindsamling status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_demo_sagsstatus" displayName="Demo statusflow" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_fpi_status" displayName="FPI-status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kontodokumentation_status" displayName="Kontodokumentation status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kravstiller_email" displayName="Kravstiller email" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kravstiller_navn" displayName="Kravstiller navn" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kravstiller_relation" displayName="Kravstiller relation" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kravstiller_telefon" displayName="Kravstiller telefon" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_kravstiller_type" displayName="Kravstiller type" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_lg_specifikation_status" displayName="LG-specifikation status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_loenmodtager_navn" displayName="Lønmodtager" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_loenseddel_status" displayName="Lønseddel-status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_manglende_oplysninger" displayName="Manglende oplysninger" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_mo" displayName="MO" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_overenskomst" displayName="Overenskomst" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_sagstilknytning_status" displayName="Sagstilknytning status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_samlet_beregnet_beloeb" displayName="Samlet beregnet beløb" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_samlet_godkendt_beloeb" displayName="Samlet godkendt beløb" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_samlet_udbetalt_beloeb" displayName="Samlet udbetalt beløb" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_tp_status" displayName="TP-status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="team_fg_vo_status" displayName="VO-status" parentSchemaName="incident" parentDisplayName="Case" solution="Active" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="createdon" displayName="Created On" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="customerid" displayName="Customer" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="description" displayName="Description" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="entitlementid" displayName="Entitlement" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="escalatedon" displayName="Escalated On" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="incidentid" displayName="Case" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="isescalated" displayName="Is Escalated" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="msdyn_precreateattachmentsid" displayName="Pre Create Entity Attachments Id" parentSchemaName="incident" parentDisplayName="Case" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="msdyn_precreatenotesid" displayName="Pre Create Notes Id" parentSchemaName="incident" parentDisplayName="Case" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="ownerid" displayName="Owner" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="parentcaseid" displayName="Parent Case" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="prioritycode" displayName="Priority" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="productid" displayName="Product" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="productserialnumber" displayName="Serial Number" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="statuscode" displayName="Status Reason" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="subjectid" displayName="Subject" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="ticketnumber" displayName="Case Number" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="title" displayName="Case Title" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="10" schemaName="jhrb_incident_jhrb_emailreadstate" displayName="jhrb_incident_jhrb_emailreadstate" parentSchemaName="incident" parentDisplayName="Case" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="title" displayName="Case Title" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="traversedpath" displayName="(Deprecated) Traversed Path" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="Customer service app access" solution="msdynce_Customerservicehub (9.0.5.0056)" id="{3dac4d9e-568c-e611-80d4-00155d42a122}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="CSR Manager" solution="msdynce_Service (9.0.5.56)" id="{6b808003-90bc-4eb4-9c7a-f6d01d803de1}" parentId="{1808b939-dd07-4ca7-aa99-ddd2734378f1}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="Customer Service Representative" solution="msdynce_Service (9.0.5.56)" id="{ad42ef10-6307-49b9-a989-8bd2b4083f97}" parentId="{ecfd0b44-5720-45e3-ae68-417ddb0fb654}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Active fg_kravs" displayName="Active fg_kravs" parentSchemaName="team_fg_krav" parentDisplayName="Claim" solution="Active" id="{0dc3a998-0ed0-4f56-bb15-59a8a88238d1}" />
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Active Product Bundles" displayName="Active Product Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{06377234-f167-47e7-bd5e-f7cc61b82f99}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Active Products Lookup View" displayName="Active Products Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{58afc3c5-8add-4552-98cb-473bc8f75619}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Active Products, Families &amp; Bundles" displayName="Active Products, Families &amp; Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{a066d18a-8a4a-44ee-b78e-9a870dc799dd}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="All Cases" displayName="All Cases" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)" id="{00000000-0000-0000-00aa-000010001030}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="All Product Bundles" displayName="All Product Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{eab4cded-a39f-4b21-b06a-49a45bfa47fd}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="All Products, Families &amp; Bundles" displayName="All Products, Families &amp; Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{44aeb57e-840f-4026-b898-24b261493c3c}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Associated Knowledge Records View" displayName="Associated Knowledge Records View" parentSchemaName="knowledgearticleincident" parentDisplayName="Knowledge Article Incident" solution="msdynce_Service (9.0.5.56)" id="{4ce7d553-9bba-4d8f-b209-899af9d3937c}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Bundle Lookup View" displayName="Bundle Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{dd35464e-bb9d-4575-9270-ba09db4244c1}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Bundle Product Lookup View" displayName="Bundle Product Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{89a80f99-f388-412a-add2-d75c6acd930f}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Draft Product Bundles" displayName="Draft Product Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{fc9c9aa7-16d8-4ef7-a540-2604464efac1}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Draft Products, Families &amp; Bundles" displayName="Draft Products, Families &amp; Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{a6c39ba9-ee07-4587-98a7-c23cb1ef496e}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Kit Product Lookup View" displayName="Kit Product Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{18b841eb-8738-4bcb-9a59-af7f906e73b4}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="PDS Products" displayName="PDS Products" parentSchemaName="product" parentDisplayName="Product" solution="msdyn_CSAdminCenterApp (1.210.3539.5)" id="{a19af1fe-70ff-ef11-bae2-000d3a319f57}">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Product Family Lookup View" displayName="Product Family Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{19d7f2e0-e427-40fb-85e8-53e7cef2b166}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Product Lookup View" displayName="Product Lookup View" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{8ba625b2-6a2a-4735-bab2-0c74ae8442a4}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Products With Price List" displayName="Products With Price List" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{6abca607-018d-4042-a8a7-56a6a1190483}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="ProductsView" displayName="ProductsView" parentSchemaName="product" parentDisplayName="Product" solution="KnowledgeManagement_V2 (9.3.2512.0)" id="{37c33d65-0f5a-e611-80d1-00155db16f89}">
+          <package appName="Power Pages Customer Portal V2" version="9.4.2602.244">PowerPages_CustomerPortal_V2 (9.4.2602.244)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Retired Product Bundles" displayName="Retired Product Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{2f13d083-c17f-46dc-b40e-8a4603c0711c}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Retired Products, Families &amp; Bundles" displayName="Retired Products, Families &amp; Bundles" parentSchemaName="product" parentDisplayName="Product" solution="msdynce_ProductManagement (9.0.4.0066)" id="{04e73647-b32a-406b-8f81-3017311dac20}">
+          <package appName="msdynce_ProductManagement" version="9.0.26091.10001">msdynce_ProductManagementAnchor (9.0.26091.10001)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Valid Entitlements for Cases" displayName="Valid Entitlements for Cases" parentSchemaName="entitlement" parentDisplayName="Entitlement" solution="msdynce_Service (9.0.5.56)" id="{e7ea283b-0490-4956-939b-3325e0798fb8}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="26" schemaName="Web - Products" displayName="Web - Products" parentSchemaName="product" parentDisplayName="Product" solution="CustomerService_V2 (9.3.2512.0)" id="{8e5fb400-bed4-e511-80d5-00155d20df09}">
+          <package appName="Power Pages Customer Portal V2" version="9.4.2602.244">PowerPages_CustomerPortal_V2 (9.4.2602.244)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="61" schemaName="ModernCaseManagement/Incident/msdyn_ModernCaseManagement.js" displayName="ModernCaseManagement/Incident/msdyn_ModernCaseManagement.js" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="61" schemaName="msdyn_CopilotCaseSummaryLibrary.js" displayName="msdyn_CopilotCaseSummaryLibrary.js" solution="msdyn_CSIntelligence (9.2.26083.1046)">
+          <package appName="Service Intelligence Package" version="9.2.26083.1046">msdyn_ServiceIntelligenceAnchor (9.2.26083.1046)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.CSIntelligence.CopilotCaseSummaryControl" displayName="MscrmControls.CSIntelligence.CopilotCaseSummaryControl" solution="msdyn_CSIntelligence (9.2.26083.1046)">
+          <package appName="Service Intelligence Package" version="9.2.26083.1046">msdyn_ServiceIntelligenceAnchor (9.2.26083.1046)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.CustomerService.DueOpenActivitiesControl" displayName="MscrmControls.CustomerService.DueOpenActivitiesControl" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.CustomerService.SelectionTreeViewControl" displayName="MscrmControls.CustomerService.SelectionTreeViewControl" solution="msdynce_ServiceManagementControlsExtension (9.1.26073.1001)">
+          <package appName="msdynce_ServiceLevelAgreement" version="9.0.26085.2000">msdynce_ServiceLevelAgreementAnchor (9.0.26085.2000)</package>
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.DatasetControls.AssociatedGridControl" displayName="MscrmControls.DatasetControls.AssociatedGridControl" solution="msdynce_ServicePatch201911 (9.0.26085.1009)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.FieldControls.AttachmentListControl" displayName="MscrmControls.FieldControls.AttachmentListControl" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.FieldControls.NotesControl" displayName="MscrmControls.FieldControls.NotesControl" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.FieldControls.OptionSetWrapper" displayName="MscrmControls.FieldControls.OptionSetWrapper" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.FieldControls.QueueItemControl" displayName="MscrmControls.FieldControls.QueueItemControl" solution="msdyn_ModernCaseManagement (9.0.26085.2008)">
+          <package appName="ServiceExtended" version="9.0.26085.2008">msdyn_ServiceExtendedAnchor (9.0.26085.2008)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.RichTextEditor.RichTextEditorControl" displayName="MscrmControls.RichTextEditor.RichTextEditorControl" solution="msdyn_RichTextEditor (9.0.26083.1012)">
+          <package appName="msdynce_Activities" version="9.0.26092.260909001">msdynce_EnableUCIByDefault (9.0.26092.260909001)</package>
+          <package appName="msdyn_CustomControlsExtended" version="9.0.26083.1012">msdyn_TimelineExtended (9.0.26083.1012)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="66" schemaName="MscrmControls.SlaTimer.SlaTimerControl" displayName="MscrmControls.SlaTimer.SlaTimerControl" solution="msdynce_ServiceLevelAgreementExtension (9.0.26085.2000)">
+          <package appName="msdynce_ServiceLevelAgreement" version="9.0.26085.2000">msdynce_ServiceLevelAgreementAnchor (9.0.26085.2000)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+    </MissingDependencies>
   </SolutionManifest>
 </ImportExportXml>

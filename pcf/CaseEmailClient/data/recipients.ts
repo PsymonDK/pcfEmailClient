@@ -5,6 +5,10 @@ import {
   type PartyEntity, type ResolutionOutcome,
 } from '../domain/recipients';
 import type { Recipient } from '../domain/compose';
+import {
+  buildSearchQuery, mergeSuggestions, MIN_SEARCH_LENGTH, PER_TABLE, toSuggestions,
+  type RecipientSuggestion,
+} from '../domain/recipientSearch';
 
 /**
  * Finding the record behind a recipient.
@@ -241,4 +245,28 @@ export async function enrichRecipients(
       partyNav: partyNavFor(outcome.party.partyEntity),
     };
   });
+}
+
+/**
+ * Type-ahead suggestions for To/Cc: records whose name or address starts with `text`.
+ *
+ * One query per table, in parallel. A table the agent may not read — or one that errors — costs
+ * its own suggestions and nothing else; a type-ahead that fails outright is worse than one that
+ * shows the contacts it could find.
+ */
+export async function searchRecipients(
+  webApi: WebApiLike,
+  text: string,
+  alreadyOnMessage: Iterable<string>,
+): Promise<RecipientSuggestion[]> {
+  if (text.trim().length < MIN_SEARCH_LENGTH) return [];
+  const results = await Promise.all(LOOKUP_ENTITIES.map(async (entity) => {
+    try {
+      const page = await webApi.retrieveMultipleRecords(entity, buildSearchQuery(entity, text), PER_TABLE);
+      return [entity, toSuggestions(entity, page.entities)] as const;
+    } catch {
+      return [entity, [] as RecipientSuggestion[]] as const;
+    }
+  }));
+  return mergeSuggestions(new Map(results), alreadyOnMessage);
 }

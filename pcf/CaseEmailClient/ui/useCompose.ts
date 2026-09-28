@@ -25,12 +25,13 @@ import { runSend, type SendOutcome } from '../data/sendFlow';
 import { type SenderCandidate } from '../domain/sender';
 import { reportFor, type SendReport } from '../domain/send';
 import {
-  recipientFromParty, withoutDuplicates, type ResolutionOutcome,
+  partyNavFor, recipientFromParty, withoutDuplicates, type ResolutionOutcome,
 } from '../domain/recipients';
 import {
-  enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity,
+  enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity, searchRecipients,
 } from '../data/recipients';
 import { pollUntilSettled } from '../data/send';
+import type { RecipientSuggestion } from '../domain/recipientSearch';
 import { instantiateTemplate, resolveXrmExecute } from '../data/templates';
 import { initialBodyWithSignature } from '../domain/signature';
 import { sanitiseEmailBody } from '../domain/sanitise';
@@ -660,6 +661,50 @@ export function useCompose(args: ComposeArgs) {
    * chip that could never receive anything — the same class of quiet failure as the unresolved
    * party this work exists to fix.
    */
+  /** Every way of adding recipients ends here: de-duplicated, parties dirty, save scheduled. */
+  const addToField = React.useCallback((field: 'to' | 'cc', people: readonly Recipient[]) => {
+    if (people.length === 0) return;
+    setCompose((c) => {
+      if (!c) return c;
+      const fresh = withoutDuplicates([...people], [...c.to, ...c.cc]);
+      if (fresh.length === 0) return c;
+      return { ...c, [field]: [...c[field], ...fresh] };
+    });
+    markPartiesDirty();
+    scheduleDraftSave();
+  }, [markPartiesDirty, scheduleDraftSave]);
+
+  /** Type-ahead search. Stable: the recipient row's search effect depends on its identity. */
+  const searchRecipientSuggestions = React.useCallback((text: string) => {
+    const c = composeRef.current;
+    return searchRecipients(webApiRef.current, text, c ? [...c.to, ...c.cc].map((r) => r.address) : []);
+  }, [webApiRef]);
+
+  const pickRecipient = React.useCallback((field: 'to' | 'cc', s: RecipientSuggestion) => {
+    addToField(field, [{
+      name: s.name, address: s.address, partyId: s.partyId, partyEntity: s.partyEntity,
+      partyNav: partyNavFor(s.partyEntity),
+    }]);
+  }, [addToField]);
+
+  /**
+   * An address typed and entered without picking a suggestion. Resolved exactly like an inherited
+   * one: one matching record binds, two stay unresolved and say so, none stays unresolved — and
+   * the send guard names it. Our own mailbox is refused outright: replying to it loops.
+   */
+  const addTypedAddress = React.useCallback(async (field: 'to' | 'cc', address: string) => {
+    const typed = address.trim().toLowerCase();
+    if (ourAddresses.has(typed)) {
+      setNotice({
+        headline: "That is this case's own mailbox",
+        detail: 'Mail sent to it comes straight back into the case. Pick the customer instead.',
+      });
+      return;
+    }
+    const [r] = await enrichRecipients(webApiRef.current, [{ name: '', address: typed }]);
+    addToField(field, [r]);
+  }, [addToField, ourAddresses, setNotice, webApiRef]);
+
   const addRecipients = React.useCallback(async (field: 'to' | 'cc'): Promise<void> => {
     const picked = await openRecipientLookup();
     // Cancelling resolves with an empty array rather than rejecting, so this is the normal
@@ -680,20 +725,11 @@ export function useCompose(args: ComposeArgs) {
       else refused.push(out.reason);
     }
 
-    setCompose((c) => {
-      if (!c) return c;
-      const fresh = withoutDuplicates(accepted, [...c.to, ...c.cc]);
-      if (fresh.length === 0) return c;
-      return { ...c, [field]: [...c[field], ...fresh] };
-    });
-    if (accepted.length > 0) {
-      markPartiesDirty();
-      scheduleDraftSave();
-    }
+    addToField(field, accepted);
     if (refused.length > 0) {
       setNotice({ headline: 'Some records were not added', detail: refused.join(' ') });
     }
-  }, [setNotice, webApiRef, markPartiesDirty, scheduleDraftSave]);
+  }, [setNotice, webApiRef, addToField]);
 
   /**
    * Take a file back off the reply.
@@ -891,7 +927,7 @@ export function useCompose(args: ComposeArgs) {
     editorRef, bodyTouched, seeding, latestHtml, attachments, rejections, inlineBytes,
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
-    changeSender, resolveTemplate,
+    changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
   };
 }
 

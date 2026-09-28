@@ -516,7 +516,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     editorRef, bodyTouched, seeding, latestHtml, attachments, rejections, inlineBytes,
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
-    changeSender, resolveTemplate,
+    changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
   } = useCompose({
     caseId, userId, webApiRef, rows, parties, ourAddresses, ensureBody, load, setNotice,
     senderState, setSenderState, chosenSender, signatureHtml, orgPolicyRef,
@@ -835,6 +835,9 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
               scheduleDraftSave();
             }}
             onAddRecipients={resolveXrmUtility() ? (field) => void addRecipients(field) : undefined}
+            onSearchRecipients={searchRecipientSuggestions}
+            onPickRecipient={pickRecipient}
+            onTypedAddress={(field, address) => { void addTypedAddress(field, address); }}
             flagUnresolved={!orgPolicyRef.current.allowUnresolved}
             onRemoveRecipient={(field, address) => {
               setCompose((c) => (c

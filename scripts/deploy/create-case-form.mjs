@@ -109,10 +109,6 @@ const newTab =
     `</sections></column></columns>` +
   `</tab>`;
 
-let xml = source.formxml;
-if (!xml.includes('</tabs>')) throw new Error('no </tabs> in the source form xml');
-xml = xml.replace('</tabs>', `${newTab}</tabs>`);
-
 // Bind the PCF to that subgrid. The control name MUST carry the publisher prefix
 // (jhrb_JHRB.CaseEmailClient, not JHRB.CaseEmailClient) or the form silently renders a plain grid.
 // formFactor 0/1/2 = desktop/tablet/phone; register all three so it renders everywhere.
@@ -121,9 +117,20 @@ const customControls = [0, 1, 2]
   .join('');
 const desc = `<controlDescription forControl="${ctrlUnique}">${customControls}</controlDescription>`;
 
-xml = xml.includes('</controlDescriptions>')
-  ? xml.replace('</controlDescriptions>', `${desc}</controlDescriptions>`)
-  : xml.replace('</form>', `<controlDescriptions>${desc}</controlDescriptions></form>`);
+// A SELF-CONTAINED form: the email tab, the source form's header, its display conditions — and
+// nothing else (R7, 2026-09-28). This used to append the tab to a full copy of the main Case
+// form, which carried that form's other tabs, script libraries, events, footer and navigation —
+// in this shared environment, another project's customisations (the Feriegaranti BPF fields,
+// team_fg_* columns). The solution then declared 88 missing dependencies and a managed release
+// could not import into a clean environment.
+const pick = (re) => source.formxml.match(re)?.[0] ?? '';
+const root = pick(/<form[^>]*>/) || '<form>';
+const header = pick(/<header[\s\S]*?<\/header>/);
+const display = pick(/<DisplayConditions[\s\S]*?<\/DisplayConditions>|<DisplayConditions[^>]*\/>/);
+const foreign = header.match(/jhrb_[A-Za-z_]+/g);
+if (foreign) throw new Error(`the source header references other customisations: ${[...new Set(foreign)].join(', ')}`);
+
+const xml = `${root}<tabs>${newTab}</tabs>${header}<controlDescriptions>${desc}</controlDescriptions>${display}</form>`;
 
 console.log(`Built form xml: ${xml.length} bytes (source ${source.formxml.length})`);
 console.log(`  tab id      ${tabId}`);

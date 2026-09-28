@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { ComposeMode, Recipient } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
 import { isResolved } from '../domain/recipients';
+import { entityLabel, MIN_SEARCH_LENGTH, type RecipientSuggestion } from '../domain/recipientSearch';
 import { sanitiseEmailBody } from '../domain/sanitise';
 import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
@@ -48,6 +49,15 @@ export interface ComposeProps {
    * rendered rather than offered and broken.
    */
   onAddRecipients?: (field: 'to' | 'cc') => void | Promise<void>;
+  /**
+   * Type-ahead: records whose name or address starts with the text. Must be a STABLE function —
+   * the row's search effect depends on it.
+   */
+  onSearchRecipients?: (text: string) => Promise<RecipientSuggestion[]>;
+  /** A suggestion was picked — it names a real record. */
+  onPickRecipient?: (field: 'to' | 'cc', suggestion: RecipientSuggestion) => void;
+  /** Enter on a typed address that no suggestion matched: resolve it like a reply would. */
+  onTypedAddress?: (field: 'to' | 'cc', address: string) => void;
   /** Mark recipients that match no record — i.e. this org refuses unresolved parties. */
   flagUnresolved?: boolean;
   /** Who the message goes out as (R17). On a Case this is normally the Case's queue. */
@@ -103,7 +113,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     mode, answeringLabel, to, cc, subject, quotedBlock, initialHtml, height,
     onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
-    onAddRecipients, flagUnresolved,
+    onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
     sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed,
@@ -249,6 +259,9 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         onAdd={onAddRecipients ? () => void onAddRecipients('to') : undefined}
         disabled={sending}
         flagUnresolved={flagUnresolved}
+        onSearch={onSearchRecipients}
+        onPick={(s) => onPickRecipient?.('to', s)}
+        onTypedAddress={(a) => onTypedAddress?.('to', a)}
       />
       {/* Cc appears once it has someone in it, or once the agent asks for it. Rendering it
           unconditionally would spend 30 of the 471 measured vertical pixels on an empty row. */}
@@ -260,6 +273,9 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           onAdd={onAddRecipients ? () => void onAddRecipients('cc') : undefined}
           disabled={sending}
           flagUnresolved={flagUnresolved}
+          onSearch={onSearchRecipients}
+          onPick={(s) => onPickRecipient?.('cc', s)}
+          onTypedAddress={(a) => onTypedAddress?.('cc', a)}
         />
       )}
 
@@ -581,6 +597,16 @@ const SenderRow: React.FC<{
  * which chip is the problem — so it carries a warning border and says why on hover. The Add
  * button beside it is how they fix it.
  */
+/** One plain address — what Enter on typed text may add when no suggestion is chosen. */
+const LOOKS_LIKE_ADDRESS = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
+
+/**
+ * A recipient row: chips, a type-ahead input, and the lookup button.
+ *
+ * The suggestions render IN FLOW under the row rather than floating over it: the row scrolls
+ * horizontally and clips its overflow, and CSW's form containers carry transforms that break
+ * fixed positioning. Compose makes room while the list is open.
+ */
 const RecipientRow: React.FC<{
   label: string;
   people: Recipient[];
@@ -589,74 +615,192 @@ const RecipientRow: React.FC<{
   disabled?: boolean;
   /** When false, an unresolved chip is just informational rather than a blocker. */
   flagUnresolved?: boolean;
-}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved }) => (
-  <div
-    style={{
-      display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 30px', height: '30px',
-      padding: '0 10px', boxSizing: 'border-box', overflowX: 'auto', overflowY: 'hidden',
-      borderBottom: `1px solid ${T.stroke3}`,
-    }}
-  >
-    <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '20px' }}>{label}</span>
-    {people.length === 0 && (
-      <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
-    )}
-    {people.map((r, i) => {
-      const unknown = flagUnresolved && !isResolved(r);
-      return (
-        <span
-          key={`${i}-${r.address}`}
-          title={!unknown
-            ? r.address
-            : r.ambiguousMatches
-              ? `${r.address} — matches more than one record; use the lookup to pick the right one`
-              : `${r.address} — not a known contact, account, user or queue`}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
-            height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
-            background: unknown ? T.warnBg : T.bg3,
-            border: `1px solid ${unknown ? T.warnFg : T.stroke2}`,
-            borderRadius: RADIUS.pill,
-            fontSize: '12px', color: T.fg1, maxWidth: '200px',
-          }}
-        >
-          {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {r.name || r.address}
-          </span>
-          <button
-            type="button"
-            onClick={() => onRemove(r.address)}
-            aria-label={`Remove ${r.name || r.address}`}
-            style={{
-              border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
-              font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
-            }}
-          >
-            ✕
-          </button>
-        </span>
-      );
-    })}
-    {onAdd && (
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={disabled}
-        aria-label={`Add ${label} recipient`}
-        title="Look up a contact, account, user or queue"
+  onSearch?: (text: string) => Promise<RecipientSuggestion[]>;
+  onPick?: (suggestion: RecipientSuggestion) => void;
+  onTypedAddress?: (address: string) => void;
+}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved, onSearch, onPick, onTypedAddress }) => {
+  const [text, setText] = React.useState('');
+  const [suggestions, setSuggestions] = React.useState<RecipientSuggestion[]>([]);
+  const [active, setActive] = React.useState(0);
+  const [open, setOpen] = React.useState(false);
+  /** Only the newest search may answer — typing fast must not show an older query's results. */
+  const searchSeq = React.useRef(0);
+  const listId = `cec-suggest-${label.toLowerCase()}`;
+
+  React.useEffect(() => {
+    if (!onSearch) return undefined;
+    const query = text.trim();
+    if (query.length < MIN_SEARCH_LENGTH) {
+      searchSeq.current += 1;
+      setSuggestions([]);
+      setOpen(false);
+      return undefined;
+    }
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(() => {
+      void onSearch(query).then((found) => {
+        if (seq !== searchSeq.current) return undefined;
+        setSuggestions(found);
+        setActive(0);
+        setOpen(true);
+        return undefined;
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [text, onSearch]);
+
+  const reset = () => { setText(''); setSuggestions([]); setOpen(false); searchSeq.current += 1; };
+  const pick = (s: RecipientSuggestion) => { onPick?.(s); reset(); };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' && open && suggestions.length > 0) {
+      e.preventDefault();
+      setActive((i) => Math.min(suggestions.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp' && open && suggestions.length > 0) {
+      e.preventDefault();
+      setActive((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && suggestions[active]) pick(suggestions[active]);
+      else if (LOOKS_LIKE_ADDRESS.test(text.trim())) { onTypedAddress?.(text.trim()); reset(); }
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const showList = open && text.trim().length >= MIN_SEARCH_LENGTH;
+
+  return (
+    <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column' }}>
+      <div
         style={{
-          flex: '0 0 auto', height: '22px', padding: '0 8px', boxSizing: 'border-box',
-          border: `1px dashed ${T.stroke1}`, borderRadius: RADIUS.pill, background: 'transparent',
-          font: 'inherit', fontSize: '12px', color: disabled ? T.fg4 : T.link,
-          cursor: disabled ? 'default' : 'pointer',
+          display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 30px', height: '30px',
+          padding: '0 10px', boxSizing: 'border-box', overflowX: 'auto', overflowY: 'hidden',
+          borderBottom: `1px solid ${T.stroke3}`,
         }}
       >
-        + Add
-      </button>
-    )}
-  </div>
-);
+        <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '20px' }}>{label}</span>
+        {people.length === 0 && !onSearch && (
+          <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
+        )}
+        {people.map((r, i) => {
+          const unknown = flagUnresolved && !isResolved(r);
+          return (
+            <span
+              key={`${i}-${r.address}`}
+              title={!unknown
+                ? r.address
+                : r.ambiguousMatches
+                  ? `${r.address} — matches more than one record; use the lookup to pick the right one`
+                  : `${r.address} — not a known contact, account, user or queue`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
+                height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
+                background: unknown ? T.warnBg : T.bg3,
+                border: `1px solid ${unknown ? T.warnFg : T.stroke2}`,
+                borderRadius: RADIUS.pill,
+                fontSize: '12px', color: T.fg1, maxWidth: '200px',
+              }}
+            >
+              {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.name || r.address}
+              </span>
+              <button
+                type="button"
+                onClick={() => onRemove(r.address)}
+                aria-label={`Remove ${r.name || r.address}`}
+                style={{
+                  border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
+                  font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          );
+        })}
+        {onSearch && (
+          <input
+            type="text"
+            value={text}
+            disabled={disabled}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={() => setOpen(false)}
+            onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+            placeholder={people.length === 0 ? 'Type a name or address' : ''}
+            role="combobox"
+            aria-label={`Add ${label} recipient by name or address`}
+            aria-autocomplete="list"
+            aria-expanded={showList}
+            aria-controls={listId}
+            aria-activedescendant={showList && suggestions[active] ? `${listId}-${active}` : undefined}
+            style={{
+              flex: '1 0 140px', minWidth: '140px', height: '22px', border: 'none', outline: 'none',
+              background: 'transparent', font: 'inherit', fontSize: '12px', color: T.fg1,
+            }}
+          />
+        )}
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={disabled}
+            aria-label={`Add ${label} recipient`}
+            title="Look up a contact, account, user or queue"
+            style={{
+              flex: '0 0 auto', height: '22px', padding: '0 8px', boxSizing: 'border-box',
+              border: `1px dashed ${T.stroke1}`, borderRadius: RADIUS.pill, background: 'transparent',
+              font: 'inherit', fontSize: '12px', color: disabled ? T.fg4 : T.link,
+              cursor: disabled ? 'default' : 'pointer',
+            }}
+          >
+            + Add
+          </button>
+        )}
+      </div>
+      {showList && (
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={`${label} suggestions`}
+          style={{ borderBottom: `1px solid ${T.stroke3}`, background: T.bg1, padding: '2px 0' }}
+        >
+          {suggestions.length === 0 && (
+            <div style={{ padding: '4px 40px', fontSize: '12px', color: T.fg3 }}>
+              No contact, account, user or queue starts with that.
+              {LOOKS_LIKE_ADDRESS.test(text.trim()) && ' Press Enter to add the address as typed.'}
+            </div>
+          )}
+          {suggestions.map((s, i) => (
+            <div
+              key={`${s.partyEntity}:${s.partyId}`}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // mousedown, not click: a click would first blur the input and close the list.
+              onMouseDown={(e) => { e.preventDefault(); pick(s); }}
+              onMouseEnter={() => setActive(i)}
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: '8px', padding: '3px 10px 3px 40px',
+                fontSize: '12px', cursor: 'pointer', background: i === active ? T.selected : 'transparent',
+              }}
+            >
+              <span style={{ color: T.fg1, fontWeight: 600 }}>{s.name}</span>
+              <span style={{ color: T.fg2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.address}
+              </span>
+              <span style={{ flexGrow: 1 }} />
+              <span style={{ color: T.fg3, flex: '0 0 auto' }}>{entityLabel(s.partyEntity)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * The formatting toolbar.

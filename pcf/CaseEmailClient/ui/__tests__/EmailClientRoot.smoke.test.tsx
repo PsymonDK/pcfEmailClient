@@ -80,6 +80,11 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             }
             return emailRows;
           case 'activityparty': return partyRows;
+          case 'contact':
+            // The type-ahead's query; the address resolver's is an equality filter instead.
+            return options?.includes('startswith(fullname')
+              ? [{ contactid: CONTACT, fullname: 'Simon Jehrbo', emailaddress1: 'simon.jehrbo@example.com' }]
+              : [];
           case 'organization': return [{ requireapprovalforqueueemail: true, requireapprovalforuseremail: true }];
           case 'queueitem': return [{ queueid: {
             queueid: CARE, name: 'Care', emailaddress: 'caredemo@example.invalid',
@@ -175,5 +180,31 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
     expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
     expect(r.stateCalls()).toBeLessThan(60);
+  });
+
+  it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {
+    const r = await renderShell({
+      selectedThreadKey: 'h:-1269871662',
+      compose: { mode: 'reply', activityId: SENT, emailId: DRAFT },
+    });
+    const input = r.host.querySelector<HTMLInputElement>('input[aria-label^="Add To recipient"]');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      // The native setter: React 16 ignores an input event whose value was assigned directly.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'sim');
+      input!.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise<void>((resolve) => { setTimeout(resolve, 400); });
+    });
+    const option = r.host.querySelector('#cec-suggest-to [role=option]');
+    expect(option?.textContent).toContain('simon.jehrbo@example.com');
+    await act(() => {
+      option!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      return Promise.resolve();
+    });
+    const chip = r.host.querySelector('[aria-label="Remove Simon Jehrbo"]');
+    expect(chip).not.toBeNull();
+    expect(r.host.querySelector('#cec-suggest-to [role=option]')).toBeNull();
   });
 });

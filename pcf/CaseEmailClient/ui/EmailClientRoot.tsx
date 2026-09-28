@@ -511,17 +511,34 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const composeActivity = compose?.activityId;
   const composeEmailId = compose?.emailId;
 
+  /**
+   * What `setControlState` handed back at MOUNT, kept as it was (M11).
+   *
+   * The `restored` prop cannot be used for this after the first render. The persist effect below
+   * runs at mount — long before the load finishes — and `index.ts` hands whatever it saves straight
+   * back as `restored`. So by the time the landing effect ran, `restored` already said "no
+   * compose, nothing expanded", and a torn-down session came back with its compose gone. Found in
+   * the published app on 2026-09-28; selection survived only because it is read at mount.
+   */
+  const restoredAtMount = React.useRef(restored);
+
   React.useEffect(() => {
+    // Until the landing has put back what was open, keep saying it WAS open: a second teardown
+    // during a slow load must not lose it either.
+    const pending = landed.current ? undefined : restoredAtMount.current;
+    const expandedNow = [...states.entries()].filter(([, s]) => s.expanded).map(([id]) => id);
     onStateChangeRef.current({
       selectedThreadKey: selectedKey,
-      expandedMessageIds: [...states.entries()].filter(([, s]) => s.expanded).map(([id]) => id),
+      expandedMessageIds: pending && expandedNow.length === 0
+        ? pending.expandedMessageIds
+        : expandedNow,
       readMessageIds: [...readIds],
       includeParent,
       expandedThreadKeys: [...expandedThreadKeys],
       selectedMessageId,
       compose: composeMode && composeActivity
         ? { mode: composeMode, activityId: composeActivity, emailId: composeEmailId }
-        : undefined,
+        : pending?.compose,
     });
   }, [
     selectedKey, states, readIds, includeParent, expandedThreadKeys, selectedMessageId,
@@ -539,15 +556,16 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   React.useEffect(() => {
     if (landed.current || !loaded || threads.length === 0) return;
     landed.current = true;
+    const restoredState = restoredAtMount.current;
 
     // M11 — a teardown used to close compose and collapse every message. Put back what was open.
-    if (restored?.compose) {
-      const { mode, activityId, emailId } = restored.compose;
+    if (restoredState?.compose) {
+      const { mode, activityId, emailId } = restoredState.compose;
       void openComposeRef.current?.(mode, activityId, emailId);
     }
-    if (restored?.selectedThreadKey || (restored?.expandedThreadKeys?.length ?? 0) > 0) {
+    if (restoredState?.selectedThreadKey || (restoredState?.expandedThreadKeys?.length ?? 0) > 0) {
       const onCase = new Set(rows.map((r) => r.activityid));
-      const reopen = (restored?.expandedMessageIds ?? []).filter((id) => onCase.has(id));
+      const reopen = (restoredState?.expandedMessageIds ?? []).filter((id) => onCase.has(id));
       if (reopen.length > 0) {
         setStates((prev) => {
           const next = new Map(prev);
@@ -578,7 +596,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     // proves too eager, the fix is to land WITHOUT selecting rather than to weaken the dwell rule.
     openMessage(first.key, target.activityid);
     setSelectedMessageId(undefined);
-  }, [loaded, threads, rows, readIds, restored, openMessage, ensureBody, openComposeRef]);
+  }, [loaded, threads, rows, readIds, openMessage, ensureBody, openComposeRef]);
 
   /**
    * The record under the control changed. Everything keyed to the old case goes, and an open

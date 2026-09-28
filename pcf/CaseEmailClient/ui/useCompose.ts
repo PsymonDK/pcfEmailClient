@@ -134,6 +134,8 @@ export function useCompose(args: ComposeArgs) {
   const inlineBytesRef = React.useRef(0);
   const signatureRef = React.useRef('');
   const senderRef = React.useRef<SenderCandidate>();
+  /** Whose signature is in the editor, so switching From back again clears the stale note. */
+  const signatureOwner = React.useRef<string>();
   /** Effects key on the session, not the draft object — that changes on every save. */
   const composeSession = compose?.session;
 
@@ -533,6 +535,7 @@ export function useCompose(args: ComposeArgs) {
       if (superseded()) return;
 
       const session = ++sessionCounter.current;
+      signatureOwner.current = senderRef.current?.id;
       composeHighWater.current = 0;
       bodyTouched.current = existing !== undefined;
       latestHtml.current = undefined;
@@ -827,7 +830,9 @@ export function useCompose(args: ComposeArgs) {
   const changeSender = React.useCallback((id: string) => {
     if (!senderState.candidates.some((c) => c.id === id)) return;
     setSenderState((s) => ({ ...s, chosenId: id }));
-    setCompose((c) => (c ? { ...c, signatureStale: bodyTouched.current } : c));
+    // Stale only while the sender differs from the one whose signature is in the editor: after
+    // switching away and back, the sign-off matches again and the note must go.
+    setCompose((c) => (c ? { ...c, signatureStale: bodyTouched.current && id !== signatureOwner.current } : c));
     markPartiesDirty();
     scheduleDraftSave();
   }, [setSenderState, senderState.candidates, markPartiesDirty, scheduleDraftSave]);
@@ -846,6 +851,7 @@ export function useCompose(args: ComposeArgs) {
     if (!editor) return;
     seeding.current = true;
     editor.setHTML(initialBodyWithSignature(signatureHtml));
+    signatureOwner.current = senderRef.current?.id;
     seeding.current = false;
   }, [signatureHtml, composeSession]);
 

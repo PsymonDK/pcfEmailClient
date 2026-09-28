@@ -1,4 +1,4 @@
-# Code review — 2026-09-28
+fixed ||# Code review — 2026-09-28
 
 Whole-repository review for security issues and refactoring, done in four passes (HTML/XSS
 surface, Dataverse data layer, React UI, scripts/config). Every Critical and High finding was
@@ -86,7 +86,7 @@ Paths are relative to `pcf/CaseEmailClient/` unless they start with `scripts/` o
 | R4 | One `toGuid()` for brace-stripping + validation; shared string/paging/party-role helpers in `data/`. | fixed |
 | R5 | Shared UI parts: `ErrorPanel`, `RemovableChip`, button styles, icons. | partial |
 | R6 | `scripts/lib/dv.mjs`: env guard, in-process token, fetch wrapper, `withSettle`, recipient allowlist — instead of 18 copies. | fixed |
-| R7 | Solution packaging: tables, role and form exist only in the environment, `Customizations.xml` is empty. | deferred — needs the environment |
+| R7 | Solution packaging: tables, role and form exist only in the environment, `Customizations.xml` is empty. | partial |
 
 ## Log
 
@@ -168,3 +168,8 @@ sends went out, both from Care to simon.jehrbo@example.com, each announced befor
 | — | An apparent hang (renderer frozen, script injection timing out) turned out to be Chrome throttling and freezing a hidden tab — `visibilityState: hidden`, and the window was confirmed minimised; no long tasks once visible. Not a control defect. | not a bug |
 | — | One forward send was triggered without the test script's click; the script found Send already disabled. A controlled repro (20 s, recipient added, Send untouched) sent nothing, and the only path to `sendDraft` is the button's click handler. Cause not determined. | watch |
 | — | The reply to the API-seeded message got its own thread: seeded rows have no `conversationindex`, so the platform gave the reply a new root. Seed-data artefact (CLAUDE.md), not a product defect. | not a bug |
+- **L6 (completed)** — an address matching two records is kept unresolved but marked `ambiguousMatches`; the send guard takes a required `ambiguousAddresses` and says it "matches more than one record" instead of "not a known record"; the chip tooltip says so too.
+- **L3 (closed by measurement)** — read live 2026-09-28: the agent's mailbox reports `mailboxstatus` = Success with outgoing = Not Run and cannot send; Care reports Success for both. `mailboxstatus` carries no sending signal, so it is no longer fetched and CLAUDE.md no longer lists it. `outgoingemailstatus` stays the gate.
+- **R7 (in progress)** — the environment's `JHRBCaseEmailClient` holds the two custom tables (all subcomponents), the read-state role, the control, and `incident`/`email`/`queue`/`systemuser` as shells (no subcomponents — nothing of those tables ships). The **Case - Email Client form was in no solution**; it has been added (AddSolutionComponent, form only, no required components).
+- **R5 (closed as partial)** — the remaining link-button / chip / icon duplication differs in colour, size and weight at almost every site; merging it is style churn with no defect behind it and no visual test to catch a regression. Left as is.
+- **R7 (partial)** — `solution/src` is now `pac solution sync --packagetype Both` of the environment's solution: both custom tables, their relationships, the role, the four standard tables as shells, and the Email Client form. Verified: Debug builds unmanaged, Release `-p:SolutionPackageType=Managed` builds managed (unmanaged-only source is refused: "Solution package type did not match requested type"). **Remaining blocker:** the form was created as a copy of this environment's customised main Case form and declares **88 missing dependencies** on other projects' components — the Feriegaranti BPF, `team_fg_*` columns, `team_fg_krav_Case_incident`. A managed release would fail to import into a clean environment until the form is reduced to a self-contained one (the Email tab plus standard Case header fields). That changes what agents see on this form, so it waits for a decision.

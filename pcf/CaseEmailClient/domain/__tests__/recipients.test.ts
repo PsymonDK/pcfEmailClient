@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ambiguousAddresses,
   bareId,
   describeUnresolved,
   emailColumnFor,
@@ -105,16 +106,22 @@ describe('isResolved / unresolvedAddresses', () => {
     const out = unresolvedAddresses(
       [resolved(), bare('kunde@example.com')],
       [bare('KUNDE@example.com'), bare('chef@example.com')],
+      [],
     );
     expect(out).toEqual(['kunde@example.com', 'chef@example.com']);
   });
 
   it('is empty when everything names a record', () => {
-    expect(unresolvedAddresses([resolved()], [])).toEqual([]);
+    expect(unresolvedAddresses([resolved()], [], [])).toEqual([]);
   });
 
   it('ignores recipients with no address at all', () => {
-    expect(unresolvedAddresses([bare('   ')], [])).toEqual([]);
+    expect(unresolvedAddresses([bare('   ')], [], [])).toEqual([]);
+  });
+
+  it('counts an unresolved BCC address too — a blind copy must name a record (issue #11)', () => {
+    expect(unresolvedAddresses([resolved()], [], [bare('hemmelig@example.com')])).toEqual(['hemmelig@example.com']);
+    expect(ambiguousAddresses([], [], [{ ...bare('to@example.com'), ambiguousMatches: 2 }])).toEqual(['to@example.com']);
   });
 });
 

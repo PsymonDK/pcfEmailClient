@@ -65,6 +65,17 @@ export interface ResolvedRecipients {
   cc: Recipient[];
 }
 
+/** The three recipient rows compose has. Bcc is never derived from the original (issue #11). */
+export type RecipientField = 'to' | 'cc' | 'bcc';
+
+/**
+ * Everyone on the message, in every field — what duplicate checks and "already on the message"
+ * exclusions must look across. Checking To and Cc alone let the same person be added to Bcc too.
+ */
+export function allRecipients(c: { to: readonly Recipient[]; cc: readonly Recipient[]; bcc: readonly Recipient[] }): Recipient[] {
+  return [...c.to, ...c.cc, ...c.bcc];
+}
+
 /** What the original message's parties looked like. Mirrors `data/emailQueries`' shape. */
 export interface OriginalParties {
   sender?: Recipient;

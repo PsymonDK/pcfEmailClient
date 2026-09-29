@@ -9,6 +9,7 @@ import { BodyFrame } from './BodyFrame';
 import { revealWithin } from './scroll';
 import { MoreMenu, type MenuItem } from './MoreMenu';
 import { readingMenuTargets } from '../domain/readingMenu';
+import { recipientSummary } from '../domain/recipientLine';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
   AttachmentIcon, Avatar, Card, CardHeader, Chevron, DirectionIcon, ErrorPanel, IconButton, Shimmer,
@@ -477,7 +478,7 @@ const MessageView: React.FC<{
                 textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
               }}
             >
-              {recipientSummary(parties)}
+              {recipientSummary(parties, outgoing)}
             </span>
           )}
           {!expanded && (message.attachmentcount ?? 0) > 0 && <AttachmentIcon />}
@@ -611,15 +612,4 @@ const MessageSkeleton: React.FC = () => (
   </div>
 );
 
-/** `To: … · Cc: …`, with overflow collapsed rather than wrapped. */
-function recipientSummary(parties: MessageParties): string {
-  const show = (list: { name: string }[], max = 2): string => {
-    if (list.length === 0) return '';
-    const names = list.slice(0, max).map((p) => p.name);
-    const extra = list.length - names.length;
-    return names.join(', ') + (extra > 0 ? ` +${extra}` : '');
-  };
-  const to = show(parties.to);
-  const cc = show(parties.cc);
-  return [to && `To: ${to}`, cc && `Cc: ${cc}`].filter(Boolean).join(' · ');
-}
+

@@ -915,6 +915,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             answeringLabel={compose.answeringLabel}
             to={compose.to}
             cc={compose.cc}
+            bcc={compose.bcc}
             subject={compose.subject}
             quotedBlock={compose.quotedBlock}
             resumed={compose.resumedHtml !== undefined}

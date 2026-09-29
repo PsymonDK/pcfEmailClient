@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { type EmailRow } from '../domain/threading';
 import {
-  buildQuotedBlock, composeSubject, headerFor, resolveRecipients, type ComposeMode,
-  type Recipient,
+  allRecipients, buildQuotedBlock, composeSubject, headerFor, resolveRecipients, type ComposeMode,
+  type Recipient, type RecipientField,
 } from '../domain/compose';
 import {
   DataverseError, fetchAttachments, fetchParties, type MessageParties, type Party,
@@ -71,6 +71,8 @@ export interface ComposeDraft {
   activityId: string;
   to: Recipient[];
   cc: Recipient[];
+  /** Never inherited from the message being answered — only what the agent adds, or a resumed draft holds. */
+  bcc: Recipient[];
   subject: string;
   quotedBlock: string;
   answeringLabel: string;
@@ -447,6 +449,8 @@ export function useCompose(args: ComposeArgs) {
         enrichRecipients(api, rawTo, cache),
         enrichRecipients(api, rawCc, cache),
       ]);
+      // Bcc is never derived from the message being answered — only a resumed draft brings one.
+      let bcc: Recipient[] = [];
 
       // The quote needs the original body, which is fetched lazily. If it will not load, do NOT
       // open with an empty quote (M10): the reply would go out missing the message it answers,
@@ -494,9 +498,12 @@ export function useCompose(args: ComposeArgs) {
          * removed, say — and the row's set is what gets sent.
          */
         const stored = (await fetchParties(api, [existing.emailId])).get(existing.emailId);
-        if (stored && stored.to.length + stored.cc.length > 0) {
+        if (stored && stored.to.length + stored.cc.length + stored.bcc.length > 0) {
           to = stored.to.map(toRecipient);
           cc = stored.cc.map(toRecipient);
+          // Rehydrated, not dropped: the first save after resume rewrites every party, and a Bcc
+          // left out of compose would be deleted from the row (issue #11, measured 2026-09-29).
+          bcc = stored.bcc.map(toRecipient);
         }
 
         /*
@@ -572,6 +579,7 @@ export function useCompose(args: ComposeArgs) {
         activityId,
         to,
         cc,
+        bcc,
         emailId: existing?.emailId,
         resumedHtml: resumedNewText,
         // `firstNonEmpty`, not `??`: a draft row saved with an empty subject must fall through
@@ -686,11 +694,11 @@ export function useCompose(args: ComposeArgs) {
    * party this work exists to fix.
    */
   /** Every way of adding recipients ends here: de-duplicated, parties dirty, save scheduled. */
-  const addToField = React.useCallback((field: 'to' | 'cc', people: readonly Recipient[]) => {
+  const addToField = React.useCallback((field: RecipientField, people: readonly Recipient[]) => {
     if (people.length === 0) return;
     setCompose((c) => {
       if (!c) return c;
-      const fresh = withoutDuplicates([...people], [...c.to, ...c.cc]);
+      const fresh = withoutDuplicates([...people], allRecipients(c));
       if (fresh.length === 0) return c;
       return { ...c, [field]: [...c[field], ...fresh] };
     });
@@ -701,10 +709,10 @@ export function useCompose(args: ComposeArgs) {
   /** Type-ahead search. Stable: the recipient row's search effect depends on its identity. */
   const searchRecipientSuggestions = React.useCallback((text: string) => {
     const c = composeRef.current;
-    return searchRecipients(webApiRef.current, text, c ? [...c.to, ...c.cc].map((r) => r.address) : []);
+    return searchRecipients(webApiRef.current, text, c ? allRecipients(c).map((r) => r.address) : []);
   }, [webApiRef]);
 
-  const pickRecipient = React.useCallback((field: 'to' | 'cc', s: RecipientSuggestion) => {
+  const pickRecipient = React.useCallback((field: RecipientField, s: RecipientSuggestion) => {
     addToField(field, [{
       name: s.name, address: s.address, partyId: s.partyId, partyEntity: s.partyEntity,
       partyNav: partyNavFor(s.partyEntity),
@@ -716,7 +724,7 @@ export function useCompose(args: ComposeArgs) {
    * one: one matching record binds, two stay unresolved and say so, none stays unresolved — and
    * the send guard names it. Our own mailbox is refused outright: replying to it loops.
    */
-  const addTypedAddress = React.useCallback(async (field: 'to' | 'cc', address: string) => {
+  const addTypedAddress = React.useCallback(async (field: RecipientField, address: string) => {
     const typed = address.trim().toLowerCase();
     if (ourAddresses.has(typed)) {
       setNotice({
@@ -733,7 +741,7 @@ export function useCompose(args: ComposeArgs) {
    * A flagged (unresolved) chip was clicked: open the platform lookup searching for its address,
    * and put the picked record in its place. The chip then names a record and is deliverable.
    */
-  const resolveRecipient = React.useCallback(async (field: 'to' | 'cc', address: string): Promise<void> => {
+  const resolveRecipient = React.useCallback(async (field: RecipientField, address: string): Promise<void> => {
     const [picked] = await openRecipientLookup({ searchText: address, allowMultiSelect: false });
     if (!picked) return; // cancelled: the chip stays as it was
     const entity = pickedEntity(picked);
@@ -745,14 +753,14 @@ export function useCompose(args: ComposeArgs) {
     }
     setCompose((c) => {
       if (!c) return c;
-      const others = field === 'to' ? c.cc : c.to;
+      const others = allRecipients({ ...c, [field]: [] });
       return { ...c, [field]: replaceUnresolved(c[field], others, address, out.recipient) };
     });
     markPartiesDirty();
     scheduleDraftSave();
   }, [markPartiesDirty, scheduleDraftSave, setNotice, webApiRef]);
 
-  const addRecipients = React.useCallback(async (field: 'to' | 'cc'): Promise<void> => {
+  const addRecipients = React.useCallback(async (field: RecipientField): Promise<void> => {
     const picked = await openRecipientLookup();
     // Cancelling resolves with an empty array rather than rejecting, so this is the normal
     // "changed my mind" path, not an error.
@@ -830,7 +838,7 @@ export function useCompose(args: ComposeArgs) {
     let outcome: SendOutcome;
     try {
       outcome = await runSend(
-        { to: draft.to, cc: draft.cc, sender, allowUnresolved: orgPolicyRef.current.allowUnresolved },
+        { to: draft.to, cc: draft.cc, bcc: draft.bcc, sender, allowUnresolved: orgPolicyRef.current.allowUnresolved },
         {
           api: webApiRef.current,
           attachments: () => attachmentsRef.current,

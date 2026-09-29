@@ -116,7 +116,11 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
       return Promise.resolve({});
     },
     createRecord: () => { count('create'); return Promise.resolve({ id: 'c0ffee00-0000-0000-0000-000000000001' }); },
-    updateRecord: () => { count('update'); return Promise.resolve({ id: '' }); },
+    updateRecord: (entity: string, id: string, data: Record<string, unknown>) => {
+      count('update');
+      updates.push({ entity, id, data });
+      return Promise.resolve({ id: '' });
+    },
     deleteRecord: (entity: string, id: string) => {
       count('delete');
       deleted.push(`${entity}:${id}`);
@@ -129,11 +133,13 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
 /** Read state the fake returns, and what was deleted — set per test, reset after each. */
 let readStateRows: Record<string, unknown>[] = [];
 let deleted: string[] = [];
+let updates: { entity: string; id: string; data: Record<string, unknown> }[] = [];
 
 let host: HTMLDivElement | undefined;
 afterEach(() => {
   readStateRows = [];
   deleted = [];
+  updates = [];
   if (host) { ReactDOM.unmountComponentAtNode(host); host.remove(); host = undefined; }
 });
 
@@ -288,6 +294,42 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
+  });
+
+  it('resuming a draft keeps its Bcc: shown in compose, and written back on save (issue #11)', async () => {
+    // Measured 2026-09-29: a party PATCH replaces the whole set, Bcc included, and the first save
+    // after resume always rewrites parties — so a Bcc compose did not know about was deleted.
+    const LEADER = 'c0c0c0c0-0000-4000-8000-000000000004';
+    partyRows.push(party(DRAFT, 4, 'Leder', 'leder@example.invalid', 'systemuser', LEADER));
+    try {
+      const r = await renderShell({
+        selectedThreadKey: 'h:-1269871662',
+        compose: { mode: 'reply', activityId: SENT, emailId: DRAFT },
+      });
+      expect(r.host.querySelector('[aria-label="Remove Leder"]')).not.toBeNull();
+      expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
+
+      await act(async () => {
+        r.host.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+        for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      const partySaves = updates.filter((u) => u.entity === 'email' && u.id === DRAFT && 'email_activity_parties' in u.data);
+      expect(partySaves.length).toBeGreaterThan(0);
+      const last = partySaves[partySaves.length - 1].data.email_activity_parties as Record<string, unknown>[];
+      expect(last).toContainEqual(expect.objectContaining({
+        participationtypemask: 4, 'partyid_systemuser@odata.bind': `/systemusers(${LEADER})`,
+      }));
+    } finally {
+      partyRows.pop();
+    }
+  });
+
+  it('a new reply never carries Bcc, and the Bcc row stays hidden until asked for', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'replyAll', activityId: SENT } });
+    expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).toBeNull();
+    const reveal = Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Bcc')!;
+    await act(() => { reveal.click(); return Promise.resolve(); });
+    expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

@@ -34,6 +34,7 @@ export const PARTY_ROLE = { sender: 1, to: 2, cc: 3, bcc: 4 } as const;
 export const PARTY_SENDER = PARTY_ROLE.sender;
 export const PARTY_TO = PARTY_ROLE.to;
 export const PARTY_CC = PARTY_ROLE.cc;
+export const PARTY_BCC = PARTY_ROLE.bcc;
 
 export interface DraftArgs {
   caseId: string;
@@ -43,6 +44,12 @@ export interface DraftArgs {
   sender: SenderCandidate;
   to: readonly Recipient[];
   cc: readonly Recipient[];
+  /**
+   * Blind copies (issue #11). **Required**, like `inReplyToId`: a party PATCH REPLACES the whole
+   * sender/To/Cc/Bcc set (measured 2026-09-29), so a save that leaves Bcc out does not keep it —
+   * it deletes it. Every caller has to say what Bcc is, even when the answer is `[]`.
+   */
+  bcc: readonly Recipient[];
   /**
    * The message being replied to.
    *
@@ -68,6 +75,7 @@ export interface ComposeSnapshot {
   subject: string;
   to: readonly Recipient[];
   cc: readonly Recipient[];
+  bcc: readonly Recipient[];
   quotedBlock: string;
 }
 
@@ -91,6 +99,7 @@ export function draftArgsFrom(
     sender,
     to: draft.to,
     cc: draft.cc,
+    bcc: draft.bcc,
     inReplyToId: draft.mode === 'forward' ? undefined : draft.activityId,
   };
 }
@@ -163,6 +172,9 @@ export function buildPartyRows(args: DraftArgs): Record<string, unknown>[] {
     senderParty(args.sender),
     ...args.to.filter(usable).map((r) => recipientParty(r, PARTY_TO)),
     ...args.cc.filter(usable).map((r) => recipientParty(r, PARTY_CC)),
+    // Written on EVERY party save, not only when Bcc was edited: the PATCH replaces the whole set,
+    // and leaving Bcc out is what deleted it from resumed drafts (issue #11, measured 2026-09-29).
+    ...args.bcc.filter(usable).map((r) => recipientParty(r, PARTY_BCC)),
   ];
 }
 

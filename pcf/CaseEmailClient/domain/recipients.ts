@@ -113,9 +113,11 @@ export function isResolved(r: Recipient): boolean {
 export function unresolvedAddresses(
   to: readonly Recipient[],
   cc: readonly Recipient[],
+  /** Required: Bcc must name a record too, and an optional list is a guard nobody passes. */
+  bcc: readonly Recipient[],
 ): string[] {
   const seen = new Set<string>();
-  for (const r of [...to, ...cc]) {
+  for (const r of [...to, ...cc, ...bcc]) {
     if (isResolved(r)) continue;
     const a = r.address.trim().toLowerCase();
     if (a) seen.add(a);
@@ -158,9 +160,10 @@ export function describeUnresolved(
 export function ambiguousAddresses(
   to: readonly Recipient[],
   cc: readonly Recipient[],
+  bcc: readonly Recipient[],
 ): string[] {
   const seen = new Set<string>();
-  for (const r of [...to, ...cc]) {
+  for (const r of [...to, ...cc, ...bcc]) {
     if (isResolved(r) || !r.ambiguousMatches) continue;
     const a = r.address.trim().toLowerCase();
     if (a) seen.add(a);

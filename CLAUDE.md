@@ -30,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **650 tests**, lint and typecheck clean.
+helpers — **686 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is

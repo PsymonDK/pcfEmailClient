@@ -23,6 +23,10 @@ export interface EmailRow {
   conversationindex: string | null;
   correlatedactivityid?: string | null;
   parentactivityid?: string | null;
+  /** `_ownerid_value`, lower-cased. Decides whether a draft is the agent's own to continue (N7). */
+  ownerid?: string | null;
+  /** When a draft was last saved — what the pane shows for it instead of "Sent on". */
+  modifiedon?: string;
   attachmentcount?: number | null;
   /** The case this message is regarding. Set from `_regardingobjectid_value`; drives R8. */
   regardingCaseId?: string | null;

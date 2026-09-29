@@ -159,6 +159,16 @@ describe('groupParties', () => {
 });
 
 describe('toEmailRow', () => {
+  it('carries the owner (lower-cased) and modifiedon — N7 needs both for drafts', () => {
+    const mapped = toEmailRow({
+      activityid: MSG, statuscode: 1, createdon: '2026-09-28T11:05:19Z',
+      modifiedon: '2026-09-28T11:27:22Z', _ownerid_value: '4F2D39F5-23CC-F011-8544-6045BDE0FA7E',
+    });
+    expect(mapped.ownerid).toBe('4f2d39f5-23cc-f011-8544-6045bde0fa7e');
+    expect(mapped.modifiedon).toBe('2026-09-28T11:27:22Z');
+    expect(LIST_COLUMNS).toContain('_ownerid_value');
+  });
+
   it('maps a realistic row', () => {
     const mapped = toEmailRow({
       activityid: MSG,

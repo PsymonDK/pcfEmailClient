@@ -237,11 +237,26 @@ export function headerFor(
  */
 export function composeSubject(mode: ComposeMode, originalSubject: string | null): string {
   const base = stripTrackingToken((originalSubject ?? '').trim());
-  const prefix = mode === 'forward' ? 'FW: ' : 'RE: ';
-  // Do not stack prefixes: "RE: RE: RE:" is how a thread's subject becomes unreadable. Matches the
-  // same prefixes `normaliseSubject` strips, so the two stay consistent.
-  if (/^\s*(re|fw|fwd|sv|vs|aw|antw|rif|ang|vb|vl)\s*(\[\d+\])?\s*:/i.test(base)) return base;
-  return prefix + base;
+  const forward = mode === 'forward';
+  /*
+   * Do not stack the SAME prefix: "RE: RE: RE:" is how a thread's subject becomes unreadable. A
+   * different one is added, as Outlook does — forwarding "RE: X" gives "FW: RE: X" (N8). Any
+   * prefix used to count, so a forward of a reply went out as "RE: X".
+   *
+   * Together these are the prefixes `normaliseSubject` strips. "VS" sits with forwards: it is
+   * the Danish and Norwegian forward prefix, which matters more here than Finnish "vastaus".
+   */
+  const same = forward ? FORWARD_PREFIX : REPLY_PREFIX;
+  if (same.test(base)) return base;
+  return (forward ? 'FW: ' : 'RE: ') + base;
+}
+
+const REPLY_PREFIX = /^\s*(re|sv|aw|antw|rif|ang)\s*(\[\d+\])?\s*:/i;
+const FORWARD_PREFIX = /^\s*(fw|fwd|vs|vb|vl)\s*(\[\d+\])?\s*:/i;
+
+/** Does this subject start with a forward prefix? How a stored draft says it was a forward. */
+export function isForwardSubject(subject: string | null): boolean {
+  return FORWARD_PREFIX.test(subject ?? '');
 }
 
 function escapeHtml(s: string): string {

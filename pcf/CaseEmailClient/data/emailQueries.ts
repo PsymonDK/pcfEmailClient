@@ -54,6 +54,8 @@ export const LIST_COLUMNS = [
   '_correlatedactivityid_value',
   '_parentactivityid_value',
   '_regardingobjectid_value',
+  // Whose draft it is (N7): only the agent's own may be continued from the reading pane.
+  '_ownerid_value',
 ] as const;
 
 /**
@@ -338,6 +340,8 @@ export function toEmailRow(raw: Record<string, unknown>): EmailRow {
       ? asString(raw._correlatedactivityid_value)
       : null,
     parentactivityid: raw._parentactivityid_value ? asString(raw._parentactivityid_value) : null,
+    ownerid: raw._ownerid_value ? asString(raw._ownerid_value).toLowerCase() : null,
+    modifiedon: raw.modifiedon ? asString(raw.modifiedon) : undefined,
     attachmentcount: typeof raw.attachmentcount === 'number' ? raw.attachmentcount : null,
     // Which case this message hangs off. Needed by R8: once parent-case mail is mixed into the
     // list, a thread has to know which case it came from in order to be marked as borrowed.

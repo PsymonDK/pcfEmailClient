@@ -4,6 +4,7 @@ import * as React from 'react';
 import type { EmailRow, Thread } from '../domain/threading';
 import type { Attachment, MessageParties } from '../data/emailQueries';
 import type { ComposeMode } from '../domain/compose';
+import type { DraftContinuation } from '../domain/draft';
 import { BodyFrame } from './BodyFrame';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
@@ -53,6 +54,10 @@ export interface ReadingPaneProps {
   onDwellRead: (activityId: string) => void;
   /** R9 entry points. The pane knows which message; the shell knows how to compose against it. */
   onCompose: (mode: ComposeMode, activityId: string) => void;
+  /** N7 — what a draft may offer instead of answering it. `undefined` for a message that is not one. */
+  draftFor: (message: EmailRow) => DraftContinuation | undefined;
+  /** N7 — continue the agent's own draft. */
+  onResumeDraft: (draftId: string) => void;
   loading: boolean;
   error?: { headline: string; reassurance?: string; detail: string };
   onRetry: () => void;
@@ -66,7 +71,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
     thread, parties, states, collapsedOlderCount, onExpandOlder, onToggleMessage,
     onToggleQuote, onToggleNotices, onDownloadAttachment, onDwellRead, loading, error, onRetry,
     onRetryBody,
-    focusMessageId, onCompose,
+    focusMessageId, onCompose, draftFor, onResumeDraft,
   } = props;
 
   const stackRef = React.useRef<HTMLDivElement>(null);
@@ -219,6 +224,8 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
             onReply={() => onCompose('reply', message.activityid)}
             onReplyAll={() => onCompose('replyAll', message.activityid)}
             onForward={() => onCompose('forward', message.activityid)}
+            draft={draftFor(message)}
+            onResumeDraft={() => onResumeDraft(message.activityid)}
           />
         ))}
       </div>
@@ -243,10 +250,13 @@ const MessageView: React.FC<{
   onReply: () => void;
   onReplyAll: () => void;
   onForward: () => void;
+  /** Set when the message is a draft: it is finished, not answered (N7). */
+  draft?: DraftContinuation;
+  onResumeDraft: () => void;
 }> = (props) => {
   const {
     message, parties, state, focused, selected, onToggle, onToggleQuote, onToggleNotices,
-    onReply, onReplyAll, onForward,
+    onReply, onReplyAll, onForward, draft, onResumeDraft,
     onDownloadAttachment, onDwellRead, onRetryBody,
   } = props;
 
@@ -354,11 +364,29 @@ const MessageView: React.FC<{
         {/* metadata line, the form's "Modified on:" idiom */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <span style={{ fontSize: '12px', color: unread ? T.fg1 : T.fg3, fontWeight: unread ? 600 : 400 }}>
-            {outgoing ? 'Sent on' : 'Received on'}: {formatWhen(message.createdon)}
+            {draft
+              ? `Draft saved: ${formatWhen(message.modifiedon ?? message.createdon)}`
+              : `${outgoing ? 'Sent on' : 'Received on'}: ${formatWhen(message.createdon)}`}
           </span>
           {unread && <UnreadDot size={8} />}
           <span style={{ flexGrow: 1 }} />
-          {expanded && (
+          {expanded && draft?.kind === 'resume' && (
+            <button
+              type="button"
+              onClick={onResumeDraft}
+              style={{
+                height: '24px', padding: '0 10px', boxSizing: 'border-box', flex: '0 0 auto',
+                border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, background: 'transparent',
+                font: 'inherit', fontSize: '12px', color: T.link, cursor: 'pointer',
+              }}
+            >
+              Continue draft
+            </button>
+          )}
+          {expanded && draft?.kind === 'otherAgent' && (
+            <span style={{ fontSize: '12px', color: T.fg3 }}>Another agent&apos;s draft</span>
+          )}
+          {expanded && !draft && (
             <>
               <IconButton label="Reply" onClick={onReply}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 5 3 10l5 5" /><path d="M3 10h7a6 6 0 0 1 6 6" /></svg>

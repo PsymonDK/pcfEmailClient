@@ -41,6 +41,7 @@ const emailRows = [
     activityid: DRAFT, subject: 'RE: Test: kodegennemgang', directioncode: true, statecode: 0, statuscode: 1,
     createdon: '2026-09-28T11:05:19Z', baseconversationindexhash: null, conversationindex: null,
     _parentactivityid_value: SENT, _regardingobjectid_value: CASE,
+    _ownerid_value: '4f2d39f5-23cc-f011-8544-6045bde0fa7e', modifiedon: '2026-09-28T11:27:22Z',
   },
 ];
 
@@ -181,6 +182,29 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
     expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
     expect(r.stateCalls()).toBeLessThan(60);
+  });
+
+  it('a draft offers "Continue draft", not Reply or Forward, and continuing reopens THAT row (N7)', async () => {
+    // Found in the published app 2026-09-29: the pane offered Forward on the agent's own unsent
+    // reply, labelled it "Sent on", and forwarding it composed a new message quoting the draft.
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', expandedMessageIds: [DRAFT] });
+    const draftView = r.host.querySelector(`[data-message-id="${DRAFT}"]`);
+    expect(draftView).not.toBeNull();
+    expect(draftView!.textContent).toContain('Draft saved:');
+    expect(draftView!.textContent).not.toContain('Sent on');
+    expect(draftView!.querySelector('button[aria-label="Forward"]')).toBeNull();
+    expect(draftView!.querySelector('button[aria-label="Reply"]')).toBeNull();
+    const cont = Array.from(draftView!.querySelectorAll('button')).find((b) => b.textContent === 'Continue draft');
+    expect(cont).toBeDefined();
+    // The sent reply beside it still offers the normal actions.
+    expect(r.host.querySelector(`[data-message-id="${SENT}"]`)).not.toBeNull();
+
+    await act(async () => {
+      cont!.click();
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
+    expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

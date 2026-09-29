@@ -1,7 +1,7 @@
-import { buildOutgoingBody, type ComposeMode, type Recipient } from './compose';
+import { buildOutgoingBody, isForwardSubject, type ComposeMode, type Recipient } from './compose';
 import type { SenderCandidate } from './sender';
 import { isPartyEntity, partyNavFor, type PartyEntity } from './recipients';
-import { toGuid } from './guid';
+import { bareId, toGuid } from './guid';
 
 /**
  * The shape of a draft email row (R16).
@@ -246,4 +246,50 @@ export function describeSaved(at: Date | undefined, now: Date = new Date()): str
   const hh = String(at.getHours()).padStart(2, '0');
   const mm = String(at.getMinutes()).padStart(2, '0');
   return `Saved ${hh}:${mm}`;
+}
+
+/**
+ * What the reading pane may offer on a message that is still a DRAFT (N7).
+ *
+ * Reply, Reply all and Forward were offered on every expanded message, drafts included — so an
+ * agent could "forward" their own unsent reply, and it was labelled "Sent on" besides. A draft is
+ * not something to answer; it is something to finish. Continuing it reopens compose on the SAME
+ * row against the message it answers, so nothing is duplicated.
+ *
+ * - `resume` — the agent's own draft, answering a message on this case.
+ * - `otherAgent` — somebody else's. Their unsent work is theirs to finish.
+ * - `cannotResume` — no answered message on the case (a draft from the standard email form, say),
+ *   or no user id to prove ownership. Nothing here can give it a quote to sit under.
+ */
+export type DraftContinuation =
+  | { kind: 'resume'; mode: ComposeMode; answeringId: string }
+  | { kind: 'otherAgent' }
+  | { kind: 'cannotResume' };
+
+/** `undefined` when the message is not a draft — the pane then offers its normal actions. */
+export function draftContinuation(
+  message: {
+    statuscode: number | null;
+    subject: string | null;
+    parentactivityid?: string | null;
+    ownerid?: string | null;
+  },
+  idsOnCase: ReadonlySet<string>,
+  userId: string | undefined,
+): DraftContinuation | undefined {
+  if (message.statuscode !== DRAFT_STATUSCODE) return undefined;
+  if (message.ownerid && userId && bareId(message.ownerid) !== bareId(userId)) {
+    return { kind: 'otherAgent' };
+  }
+  const answering = message.parentactivityid ? bareId(message.parentactivityid) : undefined;
+  if (!userId || !message.ownerid || !answering || !idsOnCase.has(answering)) {
+    return { kind: 'cannotResume' };
+  }
+  // Only the kind matters on resume: the recipients shown are the ones stored on the row, and
+  // reply and reply-all differ only in how recipients are derived.
+  return {
+    kind: 'resume',
+    mode: isForwardSubject(message.subject) ? 'forward' : 'reply',
+    answeringId: answering,
+  };
 }

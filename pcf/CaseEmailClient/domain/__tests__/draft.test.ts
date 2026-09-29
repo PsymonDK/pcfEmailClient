@@ -5,6 +5,7 @@ import {
   buildPartyRows,
   describeSaved,
   draftArgsFrom,
+  draftContinuation,
   DRAFT_STATECODE,
   DRAFT_STATUSCODE,
   PARTY_CC,
@@ -310,5 +311,43 @@ describe('draftArgsFrom — what a save writes, from what is on screen', () => {
   it('links a forward to nothing — it is a new message to new people', () => {
     expect(draftArgsFrom({ ...snapshot, mode: 'forward' }, '', AGENT, 'case-1').inReplyToId)
       .toBeUndefined();
+  });
+});
+
+describe('draftContinuation — a draft is finished, not answered (N7)', () => {
+  const ME = '{4F2D39F5-23CC-F011-8544-6045BDE0FA7E}';
+  const SENT = 'a53c3fe5-2abb-f111-aaad-000d3ab16615';
+  const onCase = new Set([SENT]);
+  const draft = {
+    statuscode: DRAFT_STATUSCODE, subject: 'RE: Test', parentactivityid: SENT,
+    ownerid: '4f2d39f5-23cc-f011-8544-6045bde0fa7e',
+  };
+
+  it('is undefined for anything that is not a draft', () => {
+    expect(draftContinuation({ ...draft, statuscode: 3 }, onCase, ME)).toBeUndefined();
+    expect(draftContinuation({ ...draft, statuscode: 8 }, onCase, ME)).toBeUndefined();
+  });
+
+  it("resumes the agent's own draft against the message it answers, ids compared unbraced", () => {
+    expect(draftContinuation(draft, onCase, ME)).toEqual({ kind: 'resume', mode: 'reply', answeringId: SENT });
+    expect(draftContinuation({ ...draft, parentactivityid: SENT.toUpperCase() }, onCase, ME))
+      .toMatchObject({ kind: 'resume', answeringId: SENT });
+  });
+
+  it('a forward draft resumes as a forward — told apart by its stored subject', () => {
+    expect(draftContinuation({ ...draft, subject: 'FW: RE: Test' }, onCase, ME)).toMatchObject({ mode: 'forward' });
+    expect(draftContinuation({ ...draft, subject: 'RE: FW: Test' }, onCase, ME)).toMatchObject({ mode: 'reply' });
+  });
+
+  it("another agent's draft is theirs to finish", () => {
+    expect(draftContinuation({ ...draft, ownerid: '11111111-1111-1111-1111-111111111111' }, onCase, ME))
+      .toEqual({ kind: 'otherAgent' });
+  });
+
+  it('cannot resume without an answered message on the case, an owner, or a user', () => {
+    expect(draftContinuation({ ...draft, parentactivityid: null }, onCase, ME)).toEqual({ kind: 'cannotResume' });
+    expect(draftContinuation(draft, new Set(), ME)).toEqual({ kind: 'cannotResume' });
+    expect(draftContinuation({ ...draft, ownerid: null }, onCase, ME)).toEqual({ kind: 'cannotResume' });
+    expect(draftContinuation(draft, onCase, undefined)).toEqual({ kind: 'cannotResume' });
   });
 });

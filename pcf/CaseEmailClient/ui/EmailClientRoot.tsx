@@ -25,7 +25,7 @@ import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { Compose } from './Compose';
 import { type DraftApiLike } from '../data/draft';
-import { describeSaved } from '../domain/draft';
+import { describeSaved, draftContinuation } from '../domain/draft';
 import { sizeWarning } from '../domain/attachments';
 import { ourAddresses as ourAddressesFor } from '../domain/sender';
 import { sendBlockedBy } from '../domain/preflight';
@@ -104,6 +104,11 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const [parties, setParties] = React.useState<Map<string, MessageParties>>(new Map());
   /** Derived, not stored: a second copy of the rows is one more thing to keep in step. */
   const threads = React.useMemo<Thread[]>(() => buildThreads(rows), [rows]);
+  /** N7 — what the pane offers on a draft. Ids from every row: the answered message may sit in another thread. */
+  const draftFor = React.useMemo(() => {
+    const onCase = new Set(rows.map((r) => r.activityid));
+    return (message: EmailRow) => draftContinuation(message, onCase, userId);
+  }, [rows, userId]);
   const [loading, setLoading] = React.useState(true);
   const [listError, setListError] = React.useState<ReturnType<typeof agentFacingMessage>>();
 
@@ -517,7 +522,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
     changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
-    resolveRecipient,
+    resolveRecipient, resumeDraft,
   } = useCompose({
     caseId, userId, webApiRef, rows, parties, ourAddresses, ensureBody, load, setNotice,
     senderState, setSenderState, chosenSender, signatureHtml, orgPolicyRef,
@@ -799,6 +804,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           onDwellRead={markRead}
           onRetryBody={(id) => { void ensureBody(id); }}
           onCompose={(mode: ComposeMode, id: string) => { void openCompose(mode, id); }}
+          draftFor={draftFor}
+          onResumeDraft={(id) => { void resumeDraft(id); }}
           loading={loading && !!selectedKey}
           error={listError}
           onRetry={() => void load()}

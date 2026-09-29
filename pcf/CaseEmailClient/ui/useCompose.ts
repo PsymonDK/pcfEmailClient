@@ -12,7 +12,7 @@ import type { TemplateOutcome } from './Compose';
 import {
   discardDraft, fetchDraftById, findExistingDraft, saveDraft, type DraftApiLike,
 } from '../data/draft';
-import { draftArgsFrom, worthSaving } from '../domain/draft';
+import { draftArgsFrom, draftContinuation, worthSaving } from '../domain/draft';
 import { createSerialQueue } from '../domain/serialQueue';
 import {
   admitFiles, blockProgress, DEFAULT_INLINE_CEILING, type PendingAttachment, type Rejection,
@@ -408,6 +408,13 @@ export function useCompose(args: ComposeArgs) {
     activityId: string,
     /** Reopen THIS draft — the one that was open before a teardown (M11). */
     resumeEmailId?: string,
+    /**
+     * The agent asked to continue this draft (N7), so if it can no longer be continued — sent or
+     * discarded since the list loaded — say so. Starting a fresh reply instead would be a
+     * different message from the one they clicked. M11 leaves this off: after a teardown a fresh
+     * reply is the best that can be restored.
+     */
+    resumeOnly = false,
   ) => {
     // A second click while the first is still loading wins; the first must not land on top of it.
     const seq = ++openSeq.current;
@@ -465,6 +472,14 @@ export function useCompose(args: ComposeArgs) {
           ? await findExistingDraft(api, caseId, activityId, userId)
           : undefined;
       if (superseded()) return;
+      if (resumeOnly && !existing) {
+        setNotice({
+          headline: "Couldn't continue that draft",
+          detail: 'It is no longer an open draft of yours — it may have been sent or discarded since '
+            + 'the list loaded. Refresh the list to see where it went.',
+        });
+        return;
+      }
 
       // Splitting our own stored body back apart is exactly R12's round-trip invariant: what we
       // emitted, we can re-split. The new text goes back in the editor; the quote stays opaque.
@@ -579,6 +594,15 @@ export function useCompose(args: ComposeArgs) {
   }, [setNotice, webApiRef, rows, parties, ourAddresses, caseId, userId, closeCompose, updateAttachments, markPartiesDirty, ensureBody]);
   const openComposeRef = React.useRef(openCompose);
   openComposeRef.current = openCompose;
+
+  /** N7 — continue the agent's own draft, on the same row, against the message it answers. */
+  const resumeDraft = React.useCallback(async (draftId: string): Promise<void> => {
+    const draft = rows.find((r) => r.activityid === draftId);
+    if (!draft) return;
+    const next = draftContinuation(draft, new Set(rows.map((r) => r.activityid)), userId);
+    if (next?.kind !== 'resume') return;
+    await openCompose(next.mode, next.answeringId, draftId, true);
+  }, [rows, userId, openCompose]);
 
   /**
    * Attach dropped or picked files (R13).
@@ -951,7 +975,7 @@ export function useCompose(args: ComposeArgs) {
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
     changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
-    resolveRecipient,
+    resolveRecipient, resumeDraft,
   };
 }
 

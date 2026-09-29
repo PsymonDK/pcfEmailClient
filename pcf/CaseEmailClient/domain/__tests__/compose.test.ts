@@ -215,9 +215,20 @@ describe('composeSubject', () => {
   });
 
   it('recognises the same prefixes normaliseSubject strips, including Danish', () => {
-    for (const s of ['VS: x', 'AW: x', 'Ang: x', 'VB: x', 'Re[2]: x']) {
+    for (const s of ['AW: x', 'Ang: x', 'Re[2]: x']) {
       expect(composeSubject('reply', s)).toBe(s);
     }
+    for (const s of ['VS: x', 'VB: x', 'Fwd: x']) {
+      expect(composeSubject('forward', s)).toBe(s);
+    }
+  });
+
+  it('adds a DIFFERENT prefix (N8)', () => {
+    // Forwarding a reply went out as "RE: X": any prefix at all suppressed the new one.
+    expect(composeSubject('forward', 'RE: Ordrestatus')).toBe('FW: RE: Ordrestatus');
+    expect(composeSubject('forward', 'SV: Ordrestatus')).toBe('FW: SV: Ordrestatus');
+    expect(composeSubject('reply', 'FW: Ordrestatus')).toBe('RE: FW: Ordrestatus');
+    expect(composeSubject('replyAll', 'VS: Ordrestatus')).toBe('RE: VS: Ordrestatus');
   });
 
   it('handles a null subject', () => {

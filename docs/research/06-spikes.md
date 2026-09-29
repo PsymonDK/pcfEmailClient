@@ -1591,8 +1591,10 @@ it is half the size of the entire reading slice.
   therefore wrong for anything an agent reads.
   **REVERSED 2026-09-29:** the product owner requires that the client never remove a tracking
   token from a subject. `composeSubject` now carries the token forward verbatim and
-  `stripTrackingToken` was deleted. What the platform does on send with a subject that already
-  carries a token is recorded in `docs/review/2026-09-28-code-review.md` once a real send shows it.
+  `stripTrackingToken` was deleted. The premise was wrong as well: per the product owner, when the
+  subject already carries a token the organisation knows, the platform leaves it and appends none.
+  A subject with two tokens is mail that passed through another Dynamics system — each system's
+  token is its own correlation, and neither is ours to remove.
 
 #### Interim, and now replaced — 2026-09-24
 

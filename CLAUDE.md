@@ -269,7 +269,8 @@ bite if forgotten:
   the **Care** queue (`care@example.invalid`, approved, server-side synced).
   **On send the platform rewrites the row:** it assigns `messageid`, `conversationindex` and
   `trackingtoken`, **overwrites `baseconversationindexhash`** (so you cannot force threading by
-  writing it), and **appends the tracking token to the subject** (`… CRM:0100009`) — which is why
+  writing it), and **appends the tracking token to the subject** (`… CRM:0100009`) unless the
+  subject already carries one it knows, in which case it leaves it — which is why
   `normaliseSubject` must strip `[A-Za-z]{2,8}:d{4,12}` tokens. `SendEmail` returning 200 means
   **Pending Send**, not Sent; poll `statuscode` before claiming delivery. Verified 2026-09-10.
 - Attachments: `activitymimeattachment` with `objectid` = the email and `objecttypecode` = `email`.
@@ -605,9 +606,12 @@ lives in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts):
 - **THE CLIENT NEVER REMOVES A TRACKING TOKEN FROM A SUBJECT — a product requirement
   (2026-09-29), not a style choice.** `composeSubject` carries the inherited subject forward
   verbatim, token included; only the RE:/FW: prefix is added. It used to strip the token (the
-  platform appends a fresh one on send, so the worry was two tokens). That was reversed on the
-  product owner's instruction and `stripTrackingToken` was **deleted** so nothing can reach for
-  it again. Do not reintroduce stripping anywhere a subject is written. `normaliseSubject` still
+  platform appends a fresh one on send, so the worry was two tokens). That worry was wrong: **when
+  the subject already carries a token this organisation knows, the platform leaves it and adds
+  none.** Two tokens in one subject are legitimate — mail that passed through **another Dynamics
+  system** carries that system's token as well as ours, and stripping would sever the other
+  system's correlation too (product owner, 2026-09-29). `stripTrackingToken` was **deleted** so
+  nothing can reach for it again. Do not reintroduce stripping anywhere a subject is written. `normaliseSubject` still
   drops tokens, but only to build an in-memory grouping key — it never writes a subject — and the
   thread list hides the token on screen only; neither touches the record.
 

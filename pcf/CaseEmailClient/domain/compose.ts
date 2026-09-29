@@ -232,9 +232,10 @@ export function headerFor(
  * **The tracking token is KEPT, verbatim — a requirement, not a preference (2026-09-29).** The
  * client must never remove a tracking token from a subject: the token is how Dataverse correlates
  * mail with the record, and it is the platform's to manage. Until 2026-09-29 this function
- * stripped the inherited token, on the grounds that the platform appends a fresh one on send;
- * that was reversed on the product owner's instruction, and the helper that did it was deleted
- * so it cannot creep back.
+ * stripped the inherited token, on the grounds that the platform appends a fresh one on send.
+ * It does not: a subject that already carries a token this organisation knows is left as it is.
+ * Two tokens mean the mail passed through another Dynamics system, whose token must survive too.
+ * The helper that stripped it was deleted so it cannot creep back.
  */
 export function composeSubject(mode: ComposeMode, originalSubject: string | null): string {
   const base = (originalSubject ?? '').trim();

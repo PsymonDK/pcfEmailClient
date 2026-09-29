@@ -12,7 +12,10 @@ import {
   browserDownloadIo, downloadAttachment, fetchInlineImage, INLINE_IMAGE_CEILING,
 } from '../data/attachments';
 import { cidReferences, normaliseCid } from '../domain/inlineImages';
-import { fetchReadState, markRead as persistRead, type ReadStateMap } from '../data/readState';
+import {
+  fetchReadState, markRead as persistRead, markUnread as persistUnread, type ReadStateMap,
+} from '../data/readState';
+import { openEmailInForm, resolveXrmNavigation } from '../data/navigation';
 import { collapsedOlderCount, isUnread, messageToOpen, worthPersisting } from '../domain/unread';
 import { initialExpansion } from '../domain/listRows';
 import {
@@ -494,6 +497,76 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     })();
   };
 
+  // ── "More actions" (2026-09-29) ───────────────────────────────────────────
+
+  /**
+   * Mark as unread.
+   *
+   * **The message is also collapsed**, and the selection cleared if it was the selected one. The
+   * dwell timer re-arms on `[expanded, unread]`, so an unread message left open on screen would be
+   * marked read again 1.5 s later and the click would appear to do nothing. Collapsing is also
+   * what the agent means: they are done with it for now.
+   */
+  const markUnread = (activityId: string) => {
+    setReadIds((prev) => {
+      if (!prev.has(activityId)) return prev;
+      const next = new Set(prev);
+      next.delete(activityId);
+      return next;
+    });
+    setStates((prev) => withState(prev, activityId, (s) => ({ ...s, unread: true, expanded: false })));
+    setSelectedMessageId((current) => (current === activityId ? undefined : current));
+    if (!userId) return;
+    void (async () => {
+      const outcome = await persistUnread(webApiRef.current, { emailId: activityId, userId }, readRows.current);
+      if (outcome.ok) {
+        readRows.current.delete(activityId.toLowerCase());
+        return;
+      }
+      setNotice({
+        headline: "Couldn't save that as unread",
+        detail: `${outcome.error?.message ?? 'The change was refused.'} It will look read again next time.`,
+      });
+    })();
+  };
+
+  /** Expand every message in the thread being read, older ones included. Selection is unchanged. */
+  const expandAll = () => {
+    if (!selected) return;
+    setCollapsedOlder(0);
+    setStates((prev) => {
+      const next = new Map(prev);
+      for (const m of selected.messages) {
+        next.set(m.activityid, { ...(next.get(m.activityid) ?? blankState(!isUnread(m, readIds))), expanded: true });
+      }
+      return next;
+    });
+    for (const m of selected.messages) void ensureBody(m.activityid);
+  };
+
+  /** Collapse every message. Collapsing the selected one clears the selection — the same rule as by hand. */
+  const collapseAll = () => {
+    if (!selected) return;
+    setStates((prev) => {
+      const next = new Map(prev);
+      for (const m of selected.messages) {
+        const s = next.get(m.activityid);
+        if (s) next.set(m.activityid, { ...s, expanded: false });
+      }
+      return next;
+    });
+    setSelectedMessageId(undefined);
+  };
+
+  /** Open in the standard email form, as a dialog; reload afterwards — it may have been edited or sent there. */
+  const openInForm = (activityId: string) => {
+    void openEmailInForm(activityId).then((opened) => {
+      if (opened) { void load(); return undefined; }
+      setNotice({ headline: "Couldn't open the email form", detail: 'The host refused to open it. Try again.' });
+      return undefined;
+    });
+  };
+
   // ── R7: filter and search ──────────────────────────────────────────────────
   //
   // The filter lives here because the data it filters does. It is NOT persisted through
@@ -821,6 +894,10 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           onCompose={(mode: ComposeMode, id: string) => { void openCompose(mode, id); }}
           draftFor={draftFor}
           onResumeDraft={(id) => { void resumeDraft(id); }}
+          onOpenInForm={resolveXrmNavigation() ? openInForm : undefined}
+          onMarkUnread={markUnread}
+          onExpandAll={expandAll}
+          onCollapseAll={collapseAll}
           loading={loading && !!selectedKey}
           error={listError}
           onRetry={() => void load()}

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="JHRB" constructor="CaseEmailClient" version="1.24.0"
+  <control namespace="JHRB" constructor="CaseEmailClient" version="1.25.0"
            display-name-key="Case Email Client"
            description-key="Case-scoped email client: threaded reading, in-place reply, attachments, templates and signatures, for the Copilot Service Workspace Case form."
            control-type="virtual">

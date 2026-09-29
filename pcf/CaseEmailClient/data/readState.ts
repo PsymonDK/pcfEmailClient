@@ -43,6 +43,8 @@ export interface ReadStateApiLike extends WebApiLike {
     entityLogicalName: string,
     data: Record<string, unknown>,
   ): Promise<{ id: string }>;
+  /** Mark as unread — removing the agent's own row is what "unread" means here. */
+  deleteRecord(entityLogicalName: string, id: string): Promise<unknown>;
 }
 
 /** What the client knows about one already-read message. */
@@ -174,6 +176,38 @@ export async function markRead(
   } catch (rejection) {
     const error = normaliseWebApiError(rejection);
     if (isDuplicateKey(error)) return { ok: true, alreadyRead: true };
+    return { ok: false, error };
+  }
+}
+
+/**
+ * Records that this agent has NOT read this message — "Mark as unread" (2026-09-29).
+ *
+ * Read state is the presence of the agent's row, so unread is its absence: delete it. The row id
+ * usually comes from `known` (loaded with the case, or remembered after a create). When it does
+ * not — a 412 on create returns no id — one filtered query finds it. No row, or a row already
+ * gone (404), is success: the message is unread either way.
+ */
+export async function markUnread(
+  webApi: ReadStateApiLike,
+  args: { emailId: string; userId: string },
+  known?: ReadStateMap,
+): Promise<{ ok: boolean; error?: NormalisedError }> {
+  try {
+    let rowId = known?.get(bareId(args.emailId))?.rowId;
+    if (!rowId) {
+      const page = await webApi.retrieveMultipleRecords(
+        READ_STATE_ENTITY,
+        `?$select=jhrb_emailreadstateid&$filter=_jhrb_emailid_value eq ${bareGuid(args.emailId, 'emailId')}`
+          + ` and _jhrb_userid_value eq ${bareGuid(args.userId, 'userId')}&$top=1`,
+      );
+      rowId = asGuid(page.entities[0]?.jhrb_emailreadstateid);
+    }
+    if (rowId) await webApi.deleteRecord(READ_STATE_ENTITY, rowId);
+    return { ok: true };
+  } catch (rejection) {
+    const error = normaliseWebApiError(rejection);
+    if (error.status === 404) return { ok: true };
     return { ok: false, error };
   }
 }

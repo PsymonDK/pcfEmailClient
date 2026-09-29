@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  buildReadStatePayload, buildReadStateQuery, fetchReadState, markRead,
+  buildReadStatePayload, buildReadStateQuery, fetchReadState, markRead, markUnread,
   READ_STATE_ENTITY, type ReadStateApiLike, type ReadStateMap,
 } from '../readState';
 import type { WebApiLike } from '../emailQueries';
@@ -178,7 +178,7 @@ describe('markRead', () => {
   const writer = (impl?: () => Promise<{ id: string }>) => {
     const createRecord = vi.fn(impl ?? (() => Promise.resolve({ id: ROW_A })));
     const webApi: ReadStateApiLike = {
-      retrieveMultipleRecords: vi.fn(), retrieveRecord: vi.fn(), createRecord,
+      retrieveMultipleRecords: vi.fn(), retrieveRecord: vi.fn(), createRecord, deleteRecord: vi.fn(),
     };
     return { webApi, createRecord };
   };
@@ -205,7 +205,7 @@ describe('markRead', () => {
     const known: ReadStateMap = new Map([[EMAIL_A, { rowId: ROW_A }]]);
     const { createRecord } = writer();
     const webApi: ReadStateApiLike = {
-      retrieveMultipleRecords: vi.fn(), retrieveRecord: vi.fn(), createRecord,
+      retrieveMultipleRecords: vi.fn(), retrieveRecord: vi.fn(), createRecord, deleteRecord: vi.fn(),
     };
     await markRead(webApi, { emailId: `{${EMAIL_A.toUpperCase()}}`, userId: USER, caseId: CASE }, known);
     expect(createRecord).not.toHaveBeenCalled();
@@ -255,3 +255,53 @@ describe('markRead', () => {
     expect(createRecord).not.toHaveBeenCalled();
   });
 });
+
+// context.webAPI rejects with a plain object, not an Error — the fakes must too.
+/* eslint-disable @typescript-eslint/prefer-promise-reject-errors */
+describe('markUnread — unread is the ABSENCE of the agent row', () => {
+  const api = (
+    entities: Record<string, unknown>[] = [],
+    del: () => Promise<unknown> = () => Promise.resolve({}),
+  ) => {
+    const retrieveMultipleRecords = vi.fn(() => Promise.resolve({ entities }));
+    const deleteRecord = vi.fn(del);
+    const webApi: ReadStateApiLike = {
+      retrieveMultipleRecords, retrieveRecord: vi.fn(), createRecord: vi.fn(), deleteRecord,
+    };
+    return { webApi, retrieveMultipleRecords, deleteRecord };
+  };
+  const knownA = (): ReadStateMap => new Map([[EMAIL_A, { rowId: ROW_A }]]);
+
+  it('deletes the known row without querying', async () => {
+    const { webApi, retrieveMultipleRecords, deleteRecord } = api();
+    const out = await markUnread(webApi, { emailId: EMAIL_A, userId: USER }, knownA());
+    expect(out.ok).toBe(true);
+    expect(retrieveMultipleRecords).not.toHaveBeenCalled();
+    expect(deleteRecord).toHaveBeenCalledWith(READ_STATE_ENTITY, ROW_A);
+  });
+
+  it('finds the row by email AND user when its id is unknown (a 412 on create returns none)', async () => {
+    const { webApi, retrieveMultipleRecords, deleteRecord } = api([{ jhrb_emailreadstateid: ROW_A }]);
+    await markUnread(
+      webApi, { emailId: EMAIL_A, userId: `{${USER.toUpperCase()}}` }, new Map([[EMAIL_A, { rowId: '' }]]),
+    );
+    const query = String((retrieveMultipleRecords.mock.calls[0] as unknown[])[1]);
+    expect(query).toContain(`_jhrb_emailid_value eq ${EMAIL_A}`);
+    expect(query).toContain(`_jhrb_userid_value eq ${USER}`);
+    expect(deleteRecord).toHaveBeenCalledWith(READ_STATE_ENTITY, ROW_A);
+  });
+
+  it('succeeds when there is no row, or it is already gone', async () => {
+    expect((await markUnread(api().webApi, { emailId: EMAIL_B, userId: USER })).ok).toBe(true);
+    const gone = api([], () => Promise.reject({ status: 404, message: 'Does Not Exist' }));
+    expect((await markUnread(gone.webApi, { emailId: EMAIL_A, userId: USER }, knownA())).ok).toBe(true);
+  });
+
+  it('reports a refusal instead of pretending', async () => {
+    const refused = api([], () => Promise.reject({ status: 403, message: 'Principal user is missing prvDeletejhrb_EmailReadState' }));
+    const out = await markUnread(refused.webApi, { emailId: EMAIL_A, userId: USER }, knownA());
+    expect(out.ok).toBe(false);
+    expect(out.error?.message).toContain('prvDelete');
+  });
+});
+/* eslint-enable @typescript-eslint/prefer-promise-reject-errors */

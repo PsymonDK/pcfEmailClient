@@ -81,6 +81,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             }
             return emailRows;
           case 'activityparty': return partyRows;
+          case 'jhrb_emailreadstate': return readStateRows;
           case 'contact':
             // The type-ahead's query; the address resolver's is an equality filter instead.
             return options?.includes("startswith(fullname,'sim")
@@ -116,13 +117,23 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
     },
     createRecord: () => { count('create'); return Promise.resolve({ id: 'c0ffee00-0000-0000-0000-000000000001' }); },
     updateRecord: () => { count('update'); return Promise.resolve({ id: '' }); },
-    deleteRecord: () => { count('delete'); return Promise.resolve({ id: '' }); },
+    deleteRecord: (entity: string, id: string) => {
+      count('delete');
+      deleted.push(`${entity}:${id}`);
+      return Promise.resolve({ id: '' });
+    },
   };
   return { api, calls: () => n };
 }
 
+/** Read state the fake returns, and what was deleted — set per test, reset after each. */
+let readStateRows: Record<string, unknown>[] = [];
+let deleted: string[] = [];
+
 let host: HTMLDivElement | undefined;
 afterEach(() => {
+  readStateRows = [];
+  deleted = [];
   if (host) { ReactDOM.unmountComponentAtNode(host); host.remove(); host = undefined; }
 });
 
@@ -218,6 +229,65 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     expect(text).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
     expect(text).toContain('Forwardmessage from Care');
     expect(text).not.toContain('to Care');
+  });
+
+  it('"More actions" is a real menu: Mark as unread, Expand all, Collapse all, Open in email form', async () => {
+    // It was a button that did nothing from Phase 1b until 2026-09-29.
+    const READ_ROW = '9a9a9a9a-0000-4000-8000-000000000001';
+    readStateRows = [{ jhrb_emailreadstateid: READ_ROW, _jhrb_emailid_value: IN }];
+    const opened: unknown[] = [];
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      Navigation: { navigateTo: (page: unknown) => { opened.push(page); return Promise.resolve(); } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', expandedMessageIds: [IN] });
+      const openMenu = async () => {
+        await act(() => { r.host.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click(); return Promise.resolve(); });
+        return Array.from(r.host.querySelectorAll<HTMLButtonElement>('[role=menu] [role=menuitem]'));
+      };
+      const pick = async (label: string) => {
+        const item = (await openMenu()).find((b) => b.textContent === label)!;
+        expect(item.getAttribute('aria-disabled')).toBeNull();
+        await act(async () => { item.click(); for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); }); });
+      };
+
+      expect((await openMenu()).map((b) => b.textContent))
+        .toEqual(['Open in email form', 'Mark as unread', 'Expand all', 'Collapse all']);
+      await act(() => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); return Promise.resolve(); });
+      expect(r.host.querySelector('[role=menu]')).toBeNull();
+
+      // Expand all opens every message in the thread; Collapse all closes them.
+      await pick('Expand all');
+      const expandedCount = () => r.host.querySelectorAll('[data-message-id] button[aria-expanded="true"]').length;
+      expect(expandedCount()).toBeGreaterThan(1);
+      await pick('Collapse all');
+      expect(expandedCount()).toBe(0);
+
+      // This conversation holds only our own mail, so there is nothing to mark unread — and the
+      // item says why rather than quietly marking some other message.
+      const none = (await openMenu()).find((b) => b.textContent === 'Mark as unread')!;
+      expect(none.getAttribute('aria-disabled')).toBe('true');
+      expect(none.title).toBe('This conversation has no received mail to mark unread.');
+      await act(() => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); return Promise.resolve(); });
+
+      // The incoming message's own conversation: it is read (the row above), so Mark as unread
+      // targets it and deletes this agent's read-state row for it.
+      await act(async () => {
+        r.host.querySelector<HTMLElement>('[data-row-id^="thread:s:"]')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      await pick('Mark as unread');
+      expect(deleted).toEqual([`jhrb_emailreadstate:${READ_ROW}`]);
+      const unreadItem = (await openMenu()).find((b) => b.textContent === 'Mark as unread')!;
+      expect(unreadItem.getAttribute('aria-disabled')).toBe('true');
+      expect(unreadItem.title).toBe('Already unread.');
+      await act(() => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); return Promise.resolve(); });
+
+      await pick('Open in email form');
+      expect(opened[0]).toMatchObject({ pageType: 'entityrecord', entityName: 'email' });
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

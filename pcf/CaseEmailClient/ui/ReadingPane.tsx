@@ -6,6 +6,7 @@ import type { Attachment, MessageParties } from '../data/emailQueries';
 import type { ComposeMode } from '../domain/compose';
 import type { DraftContinuation } from '../domain/draft';
 import { BodyFrame } from './BodyFrame';
+import { revealWithin } from './scroll';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
   AttachmentIcon, Avatar, Card, CardHeader, Chevron, DirectionIcon, ErrorPanel, IconButton, Shimmer,
@@ -85,9 +86,11 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
 
   /** Addressed by id, never by index into `querySelectorAll` — see CLAUDE.md. */
   const scrollToMessage = (activityId: string) => {
-    stackRef.current
-      ?.querySelector(`[data-message-id="${CSS.escape(activityId)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    const stack = stackRef.current;
+    const el = stack?.querySelector(`[data-message-id="${CSS.escape(activityId)}"]`);
+    // The stack only — scrollIntoView would scroll the form too and bring its header down over
+    // the control (N11).
+    if (stack && el) revealWithin(stack, el);
   };
 
   /**

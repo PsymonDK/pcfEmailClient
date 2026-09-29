@@ -1,4 +1,5 @@
 import { EMAIL_STATUS, isInFlight } from '../domain/send';
+import { revealWithin } from './scroll';
 import * as React from 'react';
 import { normaliseSubject } from '../domain/threading';
 import { listView } from '../domain/listState';
@@ -114,9 +115,12 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
     // right and was wrong: group headers are rows in the sequence but carry no `data-list-row`,
     // so every index past the first header pointed at the wrong element and scrolled somewhere
     // arbitrary. Ids cannot drift out of step with the array the way two parallel orders can.
-    listRef.current
-      ?.querySelector(`[data-row-id="${CSS.escape(rowId(target))}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    //
+    // And the LIST only: scrollIntoView scrolls every ancestor, the form's section included,
+    // which is what brought the form header down over the control (N11).
+    const list = listRef.current;
+    const el = list?.querySelector(`[data-row-id="${CSS.escape(rowId(target))}"]`);
+    if (list && el) revealWithin(list, el);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {

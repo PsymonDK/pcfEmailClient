@@ -50,6 +50,20 @@ describe('resolveLayout — the form-tab case, which is both real placements', (
     // control's top — the list's first rows, the Reply buttons and "Show pictures".
     expect(reading({ viewportHeight: 995, rootTop: undefined }).claimedHeight).toBe(MIN_HEIGHT);
   });
+
+  it('fits the measured section exactly, so it cannot scroll (N11)', () => {
+    // Measured in CSW 2026-09-29: viewport 999, root at 452, section bottom 999, and 48 px of the
+    // form's own padding below the control. The 24 px gutter claimed 523 and the section
+    // overflowed by 24 — scrollable, and a scroll brings the header down over the control.
+    expect(reading({ viewportHeight: 999, rootTop: 452 }).claimedHeight).toBe(523);
+    expect(reading({ viewportHeight: 999, rootTop: 452, containerBottom: 999, bottomInset: 48 }).claimedHeight)
+      .toBe(499);
+  });
+
+  it('runs to the section bottom, not the viewport, when the section ends higher', () => {
+    expect(reading({ viewportHeight: 999, rootTop: 400, containerBottom: 950, bottomInset: 10 }).claimedHeight)
+      .toBe(540);
+  });
 });
 
 describe('resolveLayout — the custom-page fallback', () => {

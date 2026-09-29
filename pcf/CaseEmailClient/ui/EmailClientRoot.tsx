@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { buildThreads, type EmailRow, type Thread } from '../domain/threading';
 import { resolveLayout, composeHeight } from '../domain/layout';
+import { measureHost, observeHost, type HostMeasurement } from './hostMeasure';
 import { type ComposeMode } from '../domain/compose';
 import {
   DataverseError, fetchAncestry, fetchAttachments, fetchBody, fetchCaseEmails, fetchParties,
@@ -95,10 +96,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
 
   const rootRef = React.useRef<HTMLDivElement>(null);
   /** Unmeasured until the first layout — the claim is the floor until then (N4). */
-  const [rootTop, setRootTop] = React.useState<number>();
-  const [viewportHeight, setViewportHeight] = React.useState(
-    typeof window === 'undefined' ? 800 : window.innerHeight,
-  );
+  const [host, setHost] = React.useState<HostMeasurement>();
 
   const [rows, setRows] = React.useState<EmailRow[]>([]);
   const [parties, setParties] = React.useState<Map<string, MessageParties>>(new Map());
@@ -168,17 +166,34 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   // A LAYOUT effect: it runs after the DOM is placed but before the browser paints, so the first
   // frame the host ever sees already carries the real claim. See `resolveLayout` for why an
   // oversized first frame is not harmless in CSW.
+  //
+  // Re-measured whenever the form section moves or resizes, not just on window resize (N11): form
+  // chrome loading after the control pushed it down, the stale claim overflowed the section, and
+  // a scrollable section is what lets UCI draw its header over the control.
   React.useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
     const measure = () => {
-      setRootTop(Math.round(rootRef.current?.getBoundingClientRect().top ?? 0));
-      setViewportHeight(window.innerHeight);
+      const next = measureHost(root);
+      // Field by field: a re-measure after our own resize reproduces the same numbers, and a new
+      // object every time would re-render, resize, and re-measure without end.
+      setHost((prev) => (prev
+        && prev.rootTop === next.rootTop && prev.viewportHeight === next.viewportHeight
+        && prev.containerBottom === next.containerBottom && prev.bottomInset === next.bottomInset
+        ? prev : next));
     };
     measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    return observeHost(root, measure);
   }, []);
 
-  const layout = resolveLayout({ allocatedHeight, allocatedWidth, viewportHeight, rootTop });
+  const layout = resolveLayout({
+    allocatedHeight,
+    allocatedWidth,
+    viewportHeight: host?.viewportHeight ?? (typeof window === 'undefined' ? 800 : window.innerHeight),
+    rootTop: host?.rootTop,
+    containerBottom: host?.containerBottom,
+    bottomInset: host?.bottomInset,
+  });
 
   // ── load ───────────────────────────────────────────────────────────────────
   // Same reasoning as `onStateChangeRef`: `context.webAPI` is not promised to be a stable

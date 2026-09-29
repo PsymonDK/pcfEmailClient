@@ -18,7 +18,13 @@
 /** Measured floor, 2026-09-11. Below this the layout is not expected to hold together. */
 export const MIN_HEIGHT = 320;
 
-/** Gap left below the control so it does not collide with the form's own bottom edge. */
+/**
+ * Gap left below the control when the host's own padding below it could not be measured.
+ *
+ * Only a fallback now. Measured 2026-09-29, the form wraps the control in containers with
+ * 26.8 px and 21 px of bottom padding — 48 px against this 24 — so the tab section overflowed by
+ * 24 px, became scrollable, and any scroll brought the header down over the control (N11).
+ */
 export const BOTTOM_GUTTER = 24;
 
 /**
@@ -45,6 +51,17 @@ export interface HostSize {
    * measured, in which case the claim is the floor (see `resolveLayout`).
    */
   rootTop: number | undefined;
+  /**
+   * The visible bottom of the form section that scrolls the control, when there is one. The
+   * claim runs to here rather than to the viewport's bottom: the section, not the window, is
+   * what overflows (N11).
+   */
+  containerBottom?: number;
+  /**
+   * The padding, borders and margins the host puts between the control's bottom and that
+   * section's bottom — measured, so the claim fits exactly and the section cannot scroll.
+   */
+  bottomInset?: number;
 }
 
 export interface ResolvedLayout {
@@ -77,7 +94,9 @@ export function resolveLayout(size: HostSize): ResolvedLayout {
     ? size.allocatedHeight
     : size.rootTop === undefined
       ? MIN_HEIGHT
-      : Math.max(MIN_HEIGHT, Math.floor(size.viewportHeight - size.rootTop - BOTTOM_GUTTER));
+      : Math.max(MIN_HEIGHT, Math.floor(
+        (size.containerBottom ?? size.viewportHeight) - size.rootTop - (size.bottomInset ?? BOTTOM_GUTTER),
+      ));
 
   return {
     height: hostProvidedHeight ? '100%' : `${claimedHeight}px`,

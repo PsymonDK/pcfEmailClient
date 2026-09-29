@@ -7,6 +7,8 @@ import type { ComposeMode } from '../domain/compose';
 import type { DraftContinuation } from '../domain/draft';
 import { BodyFrame } from './BodyFrame';
 import { revealWithin } from './scroll';
+import { MoreMenu, type MenuItem } from './MoreMenu';
+import { readingMenuTargets } from '../domain/readingMenu';
 import { formatSize, formatWhen, RADIUS, T } from './tokens';
 import {
   AttachmentIcon, Avatar, Card, CardHeader, Chevron, DirectionIcon, ErrorPanel, IconButton, Shimmer,
@@ -59,6 +61,12 @@ export interface ReadingPaneProps {
   draftFor: (message: EmailRow) => DraftContinuation | undefined;
   /** N7 — continue the agent's own draft. */
   onResumeDraft: (draftId: string) => void;
+  /** "More actions": open a message in the standard email form. Absent without `Xrm.Navigation`. */
+  onOpenInForm?: (activityId: string) => void;
+  /** "More actions": this agent has not read this message after all. */
+  onMarkUnread: (activityId: string) => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
   loading: boolean;
   error?: { headline: string; reassurance?: string; detail: string };
   onRetry: () => void;
@@ -73,6 +81,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
     onToggleQuote, onToggleNotices, onDownloadAttachment, onDwellRead, loading, error, onRetry,
     onRetryBody,
     focusMessageId, onCompose, draftFor, onResumeDraft,
+    onOpenInForm, onMarkUnread, onExpandAll, onCollapseAll,
   } = props;
 
   const stackRef = React.useRef<HTMLDivElement>(null);
@@ -112,6 +121,45 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
     // Keyed on the id, deliberately not on `visible` (a new array every render) — see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusMessageId, thread?.key, collapsedOlderCount]);
+
+  /**
+   * "More actions" (2026-09-29). It was a button that did nothing from Phase 1b until now — the
+   * exact thing IconButton's own comment warns teaches agents the client is broken.
+   */
+  const menuItems = (): MenuItem[] => {
+    const targets = readingMenuTargets(messages, focusMessageId, {
+      isUnread: (id) => states.get(id)?.unread ?? false,
+      isExpanded: (id) => states.get(id)?.expanded ?? false,
+      collapsedOlder: collapsedOlderCount,
+    });
+    const items: MenuItem[] = [];
+    if (onOpenInForm) {
+      items.push({
+        label: 'Open in email form',
+        onSelect: () => { if (targets.openId) onOpenInForm(targets.openId); },
+        disabledReason: targets.openId ? undefined : 'No message to open.',
+      });
+    }
+    items.push(
+      {
+        label: 'Mark as unread',
+        onSelect: () => { if ('id' in targets.unread) onMarkUnread(targets.unread.id); },
+        disabledReason: 'reason' in targets.unread ? targets.unread.reason : undefined,
+      },
+      {
+        label: 'Expand all',
+        onSelect: onExpandAll,
+        disabledReason: targets.canExpandAll ? undefined : 'Every message is already expanded.',
+        separated: true,
+      },
+      {
+        label: 'Collapse all',
+        onSelect: onCollapseAll,
+        disabledReason: targets.canCollapseAll ? undefined : 'Every message is already collapsed.',
+      },
+    );
+    return items;
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (visible.length === 0) return;
@@ -169,11 +217,7 @@ export const ReadingPane: React.FC<ReadingPaneProps> = (props) => {
           )}
         </div>
         <span style={{ flexGrow: 1 }} />
-        <IconButton label="More actions">
-          <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <circle cx="10" cy="4.5" r="1.3" /><circle cx="10" cy="10" r="1.3" /><circle cx="10" cy="15.5" r="1.3" />
-          </svg>
-        </IconButton>
+        {thread && <MoreMenu label="More actions" items={menuItems()} />}
       </CardHeader>
 
       <div

@@ -9,11 +9,13 @@
 //
 // Idempotent: if a default row already exists it is reported and left alone. Editing live
 // configuration is an administrator's job, not a deployment script's.
-import fs from 'node:fs';
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+import {
+  CONFIRM, api as dvApi, getEnv, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const TABLE = 'jhrb_emailclientsetting';
 const IDS_FILE = `${import.meta.dirname}/settings-row-ids.json`;
@@ -32,25 +34,8 @@ const DEFAULT_ROW = {
   jhrb_recipientlookup: 'customerid',
 };
 
-const api = async (path, method = 'GET', body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) {
-    throw new Error(`${method} ${path} -> ${r.status}: ${String(json?.error?.message ?? txt).replace(/\s+/g, ' ').slice(0, 280)}`);
-  }
-  return { json, id: r.headers.get('OData-EntityId')?.match(/\(([^)]+)\)/)?.[1] };
-};
+// Data rows, not components — no solution header.
+const api = (path, method = 'GET', body) => dvApi(path, { method, body });
 
 console.log(`Target: ${ORG}`);
 console.log(`Table:  ${TABLE}\n`);
@@ -113,8 +98,8 @@ if (!CONFIRM) {
 const created = await api(`${TABLE}s`, 'POST', DEFAULT_ROW);
 console.log(`Created the default row -> ${created.id}`);
 
-fs.writeFileSync(IDS_FILE, JSON.stringify({
+writeIds(IDS_FILE, {
   createdAt: new Date().toISOString(), org: ORG, table: TABLE, rowId: created.id, row: DEFAULT_ROW,
-}, null, 2) + '\n');
-console.log(`Wrote ${IDS_FILE}`);
+});
+console.log('Wrote settings-row-ids.json');
 console.log('\nTo send as the agent instead, set Send from queue to No on this row — no redeploy.');

@@ -241,3 +241,102 @@ export const IconButton: React.FC<{
 export const Shimmer: React.FC<{ width: string; height?: number }> = ({ width, height = 10 }) => (
   <div style={{ width, height: `${height}px`, background: T.stroke3, borderRadius: RADIUS.sm }} />
 );
+
+/**
+ * Contains a render failure to the part that failed (L11).
+ *
+ * Without one, an exception anywhere — the sanitiser on a pathological body, a summary built from
+ * an unexpected row — unmounted the whole control and left the agent looking at an empty tab.
+ * React 16 supports this; it has to be a class.
+ */
+export class ErrorBoundary extends React.Component<
+  { label: string; children?: React.ReactNode },
+  { failed: boolean }
+> {
+  public state = { failed: false };
+
+  public static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  public componentDidCatch(error: unknown): void {
+    console.error(`${this.props.label} failed to render.`, error);
+  }
+
+  public render(): React.ReactNode {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div role="alert" style={{ padding: '12px', fontSize: '13px', color: T.dangerFg }}>
+        {this.props.label} could not be shown.{' '}
+        <button
+          type="button"
+          onClick={() => this.setState({ failed: false })}
+          style={{ border: 'none', background: 'transparent', padding: 0, font: 'inherit', color: T.link, cursor: 'pointer' }}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+}
+
+/**
+ * A load that failed, said plainly, with a retry and the raw platform text one click away.
+ * One component (R5) for the list and the reading pane, which had a copy each.
+ */
+export const ErrorPanel: React.FC<{
+  error: { headline: string; reassurance?: string; detail: string };
+  onRetry: () => void;
+  /** The list and the pane sit it at slightly different insets. */
+  margin: string;
+}> = ({ error, onRetry, margin }) => {
+  const [showDetail, setShowDetail] = React.useState(false);
+  return (
+    <div
+      role="alert"
+      style={{
+        margin, padding: '10px', boxSizing: 'border-box', background: T.dangerBg,
+        border: `1px solid ${T.dangerStroke}`, borderRadius: RADIUS.md,
+        display: 'flex', flexDirection: 'column', gap: '6px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke={T.dangerFg} strokeWidth="1.5" style={{ flex: '0 0 15px' }} aria-hidden="true">
+          <circle cx="10" cy="10" r="7.2" /><path d="M10 6.3v4.6M10 13.2v.4" />
+        </svg>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: T.dangerFg }}>{error.headline}</span>
+      </div>
+      {/* The agent's first question, answered before they ask it. */}
+      {error.reassurance && <span style={{ fontSize: '12px', color: T.fg2 }}>{error.reassurance}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px', height: '26px', padding: '0 10px',
+            boxSizing: 'border-box', borderRadius: RADIUS.md, background: T.bg1,
+            border: `1px solid ${T.stroke1}`, font: 'inherit', fontSize: '12px', cursor: 'pointer',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke={T.fg1} strokeWidth="1.6" aria-hidden="true">
+            <path d="M16 10a6 6 0 1 1-2.2-4.6" /><path d="M16.2 3.6v3h-3" />
+          </svg>
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDetail((v) => !v)}
+          style={{ border: 'none', background: 'transparent', font: 'inherit', fontSize: '12px', color: T.link, cursor: 'pointer' }}
+        >
+          {showDetail ? 'Hide details' : 'Details'}
+        </button>
+      </div>
+      {/* Raw platform text lives here, never in the headline. */}
+      {showDetail && (
+        <code style={{ fontFamily: T.mono, fontSize: '11px', color: T.fg2, wordBreak: 'break-all' }}>
+          {error.detail}
+        </code>
+      )}
+    </div>
+  );
+};

@@ -1,3 +1,4 @@
+import { bareId } from './guid';
 /**
  * Who an outgoing message comes from (R17/R18 groundwork).
  *
@@ -52,7 +53,7 @@ export interface SettingRow {
 }
 
 const norm = (id: string | undefined): string | undefined =>
-  id ? id.replace(/^\{|\}$/g, '').toLowerCase() : undefined;
+  id ? bareId(id) : undefined;
 
 /**
  * The row that governs this Case: queue-specific first, then the default row.
@@ -62,6 +63,11 @@ const norm = (id: string | undefined): string | undefined =>
  *
  * A queue-specific row wins **even when it is listed after the default row**, which is the case the
  * obvious `rows.find(...)` implementation gets wrong.
+ *
+ * **Two rows for the same slot is ambiguous, and ambiguous means no configuration** — which means
+ * send as the agent. Taking the first match (L2, until 2026-09-28) picked whichever the server
+ * happened to return first; the query orders only by `jhrb_isdefault`, so that could change from
+ * one load to the next and change who mail appears to come from.
  */
 export function pickSetting(
   rows: readonly SettingRow[],
@@ -69,10 +75,12 @@ export function pickSetting(
 ): SettingRow | undefined {
   const wanted = norm(queueId);
   if (wanted) {
-    const specific = rows.find((r) => norm(r.queueId) === wanted);
-    if (specific) return specific;
+    const specific = rows.filter((r) => norm(r.queueId) === wanted);
+    if (specific.length > 1) return undefined;
+    if (specific.length === 1) return specific[0];
   }
-  return rows.find((r) => r.isDefault);
+  const defaults = rows.filter((r) => r.isDefault);
+  return defaults.length === 1 ? defaults[0] : undefined;
 }
 
 export interface ResolvedSender {
@@ -146,4 +154,29 @@ export function describeSender(sender: SenderCandidate): string {
   return sender.address
     ? `${sender.displayName} <${sender.address}>`
     : sender.displayName;
+}
+
+/**
+ * Every address that is *us* — excluded from reply recipients so the service mailbox never
+ * mails itself (R9).
+ *
+ * **The UNION of two sources, never one of them.** The resolved sending identities know who we
+ * are about to send *as*, including on a case nobody has replied to yet. The senders of outgoing
+ * mail already on the case know every address this case has actually sent *from*, including a
+ * queue we cannot resolve today. An earlier version replaced the second with the first and called
+ * it a cleanup; measured 2026-09-25 on CAS-01020, whose queue did not resolve, replying then put
+ * the service queue itself in To. Out of the shell (R2) so this rule is finally under test.
+ */
+export function ourAddresses(
+  candidates: readonly SenderCandidate[],
+  rows: readonly { activityid: string; directioncode: boolean | null }[],
+  senderAddressOf: (activityId: string) => string | undefined,
+): Set<string> {
+  const out = new Set(selfAddresses(candidates));
+  for (const row of rows) {
+    if (row.directioncode !== true) continue;
+    const sender = senderAddressOf(row.activityid);
+    if (sender) out.add(sender.trim().toLowerCase());
+  }
+  return out;
 }

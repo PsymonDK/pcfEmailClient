@@ -45,9 +45,13 @@ export const RESOLVE_ORDER: readonly PartyEntity[] = ['contact', 'account', 'sys
  *
  * Queue IS here, unlike `RESOLVE_ORDER` — an agent deliberately picking a queue (to hand a
  * thread to another team) is a real thing, whereas silently resolving an address to one is not.
+ *
+ * Lead joined 2026-09-28: address matching already resolved to leads, so a lead could arrive on a
+ * reply but could not be picked — the same table the standard email form offers. The order is
+ * the type-ahead's too: customers first, then colleagues, then queues.
  */
 export const LOOKUP_ENTITIES: readonly PartyEntity[] = [
-  'contact', 'account', 'systemuser', 'queue',
+  'contact', 'account', 'lead', 'systemuser', 'queue',
 ];
 
 export function isPartyEntity(value: string): value is PartyEntity {
@@ -78,9 +82,9 @@ export function partyNavFor(entity: PartyEntity): string {
  * `id: "{B5E30418-23F2-F011-8406-0022489CF5DD}"` — braced **and** upper-cased. Passing that
  * straight into an `@odata.bind` is the obvious thing and the wrong thing.
  */
-export function bareId(id: string): string {
-  return id.replace(/^\{|\}$/g, '').toLowerCase();
-}
+import { bareId } from './guid';
+
+export { bareId };
 
 /** A record the agent picked, or that an address resolved to. */
 export interface ResolvedParty {
@@ -125,12 +129,43 @@ export function unresolvedAddresses(
  * **Names them.** "Some recipients could not be resolved" leaves the agent hunting; the whole
  * value of blocking is telling them precisely which address to fix.
  */
-export function describeUnresolved(addresses: readonly string[]): string {
+export function describeUnresolved(
+  addresses: readonly string[],
+  /**
+   * Those of `addresses` that matched several records. They get their own sentence: "not a known
+   * record" was untrue for them, and sent the agent looking for a record that exists twice (L6).
+   */
+  ambiguous: readonly string[] = [],
+): string {
   if (addresses.length === 0) return '';
-  const list = addresses.join(', ');
-  const subject = addresses.length === 1 ? 'is not a known record' : 'are not known records';
-  return `${list} ${subject}. This organisation only delivers to recipients that match a `
+  const several = new Set(ambiguous.map((a) => a.toLowerCase()));
+  const unknown = addresses.filter((a) => !several.has(a.toLowerCase()));
+  const matchedMany = addresses.filter((a) => several.has(a.toLowerCase()));
+  const parts: string[] = [];
+  if (unknown.length > 0) {
+    const verb = unknown.length === 1 ? 'is not a known record' : 'are not known records';
+    parts.push(`${unknown.join(', ')} ${verb}.`);
+  }
+  if (matchedMany.length > 0) {
+    const verb = matchedMany.length === 1 ? 'matches' : 'each match';
+    parts.push(`${matchedMany.join(', ')} ${verb} more than one record, so it is not clear who is meant.`);
+  }
+  return `${parts.join(' ')} This organisation only delivers to recipients that match a `
     + 'contact, account, user or queue — use the lookup to pick one.';
+}
+
+/** The unresolved addresses that matched SEVERAL records rather than none (L6). */
+export function ambiguousAddresses(
+  to: readonly Recipient[],
+  cc: readonly Recipient[],
+): string[] {
+  const seen = new Set<string>();
+  for (const r of [...to, ...cc]) {
+    if (isResolved(r) || !r.ambiguousMatches) continue;
+    const a = r.address.trim().toLowerCase();
+    if (a) seen.add(a);
+  }
+  return [...seen];
 }
 
 /**
@@ -180,4 +215,23 @@ export function withoutDuplicates(
     out.push(r);
   }
   return out;
+}
+
+/**
+ * Replace a flagged (unresolved) recipient with the record the agent picked for it, in place —
+ * the chip keeps its position in the row. If that record is already on the message, the flagged
+ * chip simply goes: the same person twice is never what was meant.
+ */
+export function replaceUnresolved(
+  list: readonly Recipient[],
+  others: readonly Recipient[],
+  address: string,
+  replacement: Recipient,
+): Recipient[] {
+  const at = list.findIndex((r) => !isResolved(r) && r.address.trim().toLowerCase() === address.trim().toLowerCase());
+  if (at < 0) return [...list];
+  const key = replacement.address.trim().toLowerCase();
+  const taken = [...others, ...list.filter((_, i) => i !== at)]
+    .some((r) => r.address.trim().toLowerCase() === key);
+  return taken ? list.filter((_, i) => i !== at) : list.map((r, i) => (i === at ? replacement : r));
 }

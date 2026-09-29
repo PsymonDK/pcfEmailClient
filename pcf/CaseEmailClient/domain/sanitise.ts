@@ -120,6 +120,31 @@ const ALLOWED_CSS_PROPS = new Set([
   'text-transform', 'vertical-align', 'white-space', 'width', 'word-break', 'word-wrap',
 ]);
 
+/**
+ * CSS functions allowed in a kept declaration. Colour only.
+ *
+ * An allow-list, because the deny-list it replaced (`value.includes('url(')`) was a substring
+ * check, and CSS has more ways to spell a fetch than that: `u\rl(`, `\75 rl(` and `image-set()`
+ * all loaded a remote image in Chromium 152 (M4, 2026-09-28). A declaration carrying any other
+ * function, or any backslash escape, is dropped whole.
+ */
+const ALLOWED_CSS_FUNCTION = /^(?:rgba?|hsla?)$/;
+
+function cssValueIsSafe(value: string): boolean {
+  if (value.includes('\\')) return false;
+  for (const m of value.matchAll(/([a-z-]*)\s*\(/g)) {
+    if (!ALLOWED_CSS_FUNCTION.test(m[1])) return false;
+  }
+  return true;
+}
+
+/** Per-call options, read by the hook. Set for the duration of one synchronous `sanitize`. */
+interface HookOptions {
+  allowRemoteImages: boolean;
+  blockedImages: number;
+}
+let current: HookOptions = { allowRemoteImages: false, blockedImages: 0 };
+
 let hooksInstalled = false;
 
 function installHooks(): void {
@@ -152,6 +177,18 @@ function installHooks(): void {
       }
     }
 
+    // Remote images are held back unless the agent asked for them (M4). A remote image is a read
+    // receipt: it tells the sender the moment the agent opened the message, from which IP, in
+    // which browser. `cid:` and `data:` images are part of the message and always load.
+    if (node.tagName === 'IMG') {
+      node.setAttribute('referrerpolicy', 'no-referrer');
+      const src = (node.getAttribute('src') ?? '').replace(BLANKS, '');
+      if (/^https?:/i.test(src) && !current.allowRemoteImages) {
+        node.removeAttribute('src');
+        current.blockedImages += 1;
+      }
+    }
+
     // Style attribute: keep the declarations that carry meaning, drop the ones that can escape
     // the message. DOMPurify does not parse CSS property-by-property, so this is ours.
     const style = node.getAttribute('style');
@@ -166,11 +203,9 @@ function installHooks(): void {
           const prop = decl.slice(0, colon).trim().toLowerCase();
           const value = decl.slice(colon + 1).toLowerCase();
           if (!ALLOWED_CSS_PROPS.has(prop)) return false;
-          // A url() would fetch from wherever the sender chose, which is also a read receipt.
-          if (value.includes('url(')) return false;
-          // expression() is an old IE script vector, and free to exclude.
-          if (value.includes('expression(')) return false;
-          return true;
+          // No url(), image-set(), expression() or escapes — see ALLOWED_CSS_FUNCTION. A fetch
+          // from wherever the sender chose is also a read receipt.
+          return cssValueIsSafe(value);
         });
       if (kept.length > 0) node.setAttribute('style', kept.join('; '));
       else node.removeAttribute('style');
@@ -185,6 +220,25 @@ export interface SanitiseResult {
   html: string;
   /** True when the sanitiser changed anything. Diagnostics only; not shown to agents. */
   modified: boolean;
+  /** Remote images held back. Drives the "show pictures" offer. */
+  blockedImages: number;
+}
+
+export interface SanitiseOptions {
+  /**
+   * Keep `http(s):` image sources. Off by default — see the hook. On only when the agent has
+   * asked to see pictures, or when the HTML is going OUT (a quoted original must reach the
+   * customer as it was written; a reply is not the place to strip their logo).
+   */
+  allowRemoteImages?: boolean;
+  /**
+   * Prefix the sender's `id` and `name` values with `user-content-` (DOMPurify's
+   * SANITIZE_NAMED_PROPS). On by default for anything DISPLAYED: rendered into the host document,
+   * a sender's `<a id="Xrm">` shadows a global of that name (DOM clobbering, L10). Off for HTML
+   * going OUT, which must reach the customer as it was written. The quote and banner heuristics
+   * match on substrings, so the prefix does not blind them.
+   */
+  isolateIds?: boolean;
 }
 
 /**
@@ -194,10 +248,14 @@ export interface SanitiseResult {
  * 1400px-wide Outlook table, a 96px heading, or a sender who sets white text. The rendering
  * container handles those separately — see docs/design/03-interaction-spec.md.
  */
-export function sanitiseEmailBody(html: string | null | undefined): SanitiseResult {
-  if (!html) return { html: '', modified: false };
+export function sanitiseEmailBody(
+  html: string | null | undefined,
+  options: SanitiseOptions = {},
+): SanitiseResult {
+  if (!html) return { html: '', modified: false, blockedImages: 0 };
 
   installHooks();
+  current = { allowRemoteImages: options.allowRemoteImages === true, blockedImages: 0 };
 
   const clean = DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
@@ -216,12 +274,14 @@ export function sanitiseEmailBody(html: string | null | undefined): SanitiseResu
     WHOLE_DOCUMENT: false,
     // data-* attributes are not needed by mail and are a needless surface.
     ALLOW_DATA_ATTR: false,
-    ALLOW_ARIA_ATTR: true,
+    // A sender's aria-label / aria-hidden decides what a screen reader announces — or hides (L10).
+    ALLOW_ARIA_ATTR: false,
+    SANITIZE_NAMED_PROPS: options.isolateIds !== false,
     RETURN_DOM: false,
     RETURN_DOM_FRAGMENT: false,
   });
 
-  return { html: clean, modified: clean !== html };
+  return { html: clean, modified: clean !== html, blockedImages: current.blockedImages };
 }
 
 /**

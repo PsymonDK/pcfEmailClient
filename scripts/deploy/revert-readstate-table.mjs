@@ -2,29 +2,24 @@
 //
 //   node scripts/deploy/revert-readstate-table.mjs [--confirm]
 //
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
 // Deleting the table drops its lookups, its key and its rows with it — no need to unwind the
 // relationships first. This is a SHARED environment, so the script refuses to touch anything whose
 // name it did not create.
 import fs from 'node:fs';
+import { CONFIRM, api, getEnv } from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+getEnv();
 const TABLE = 'jhrb_emailreadstate';
 const IDS_FILE = `${import.meta.dirname}/readstate-ids.json`;
 
-const api = async (path, method = 'GET') => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${TOK}`, Accept: 'application/json', 'OData-Version': '4.0' },
-  });
-  const txt = await r.text();
-  if (!r.ok) throw new Error(`${method} ${path} -> ${r.status}: ${txt.replace(/\s+/g, ' ').slice(0, 250)}`);
-  return txt ? JSON.parse(txt) : null;
-};
-
-const found = await api(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId,IsCustomEntity`)
-  .catch(() => null);
+// Only a 404 means "does not exist". A 401/403 throws: an expired token must never read as
+// "nothing to do".
+const found = (await api(
+  `EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId,IsCustomEntity`,
+  { allow404: true },
+))?.json;
 
 if (!found) {
   console.log(`${TABLE} does not exist. Nothing to do.`);
@@ -36,8 +31,14 @@ if (found.IsCustomEntity !== true) {
   process.exit(1);
 }
 
-const rows = await api(`${TABLE}s?$select=${TABLE}id&$top=50`).catch(() => ({ value: [] }));
-console.log(`${TABLE} exists (${found.MetadataId}) with at least ${rows.value.length} row(s).`);
+let rowNote;
+try {
+  const rows = (await api(`${TABLE}s?$select=${TABLE}id&$top=50`)).json.value;
+  rowNote = `at least ${rows.length} row(s)`;
+} catch (e) {
+  rowNote = `rows not countable (${e.message})`;
+}
+console.log(`${TABLE} exists (${found.MetadataId}) with ${rowNote}.`);
 
 if (!CONFIRM) {
   console.log('\nDRY RUN — nothing deleted. Re-run with --confirm.');
@@ -45,9 +46,9 @@ if (!CONFIRM) {
   process.exit(0);
 }
 
-await api(`EntityDefinitions(LogicalName='${TABLE}')`, 'DELETE');
+await api(`EntityDefinitions(LogicalName='${TABLE}')`, { method: 'DELETE' });
 console.log(`Deleted ${TABLE}.`);
 if (fs.existsSync(IDS_FILE)) {
   fs.unlinkSync(IDS_FILE);
-  console.log(`Removed ${IDS_FILE}.`);
+  console.log('Removed readstate-ids.json.');
 }

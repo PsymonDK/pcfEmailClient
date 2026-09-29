@@ -1,8 +1,8 @@
 // Creates the email client's own configuration table, `jhrb_emailclientsetting`.
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/deploy/create-settings-table.mjs [--confirm]
+//   node scripts/deploy/create-settings-table.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
 //
 // Dry run unless --confirm. This is a SCHEMA change to a shared environment.
 //
@@ -17,11 +17,11 @@
 //
 // Shape: one default row governs everything, and a row naming a queue overrides it for that queue.
 // `domain/sender.ts#pickSetting` applies the precedence and is where the rule is tested.
-import fs from 'node:fs';
+import {
+  CONFIRM, api, getEnv, label, publish, withSettle, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const SOLUTION = 'JHRBCaseEmailClient';
 const PREFIX = 'jhrb';
@@ -29,58 +29,10 @@ const TABLE = `${PREFIX}_emailclientsetting`;
 const SCHEMA = `${PREFIX}_EmailClientSetting`;
 const IDS_FILE = `${import.meta.dirname}/settings-ids.json`;
 
-const label = (text) => ({
-  '@odata.type': 'Microsoft.Dynamics.CRM.Label',
-  LocalizedLabels: [{
-    '@odata.type': 'Microsoft.Dynamics.CRM.LocalizedLabel',
-    Label: text,
-    LanguageCode: 1033,
-  }],
-});
-
-const api = async (path, method = 'GET', body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      'MSCRM.SolutionUniqueName': SOLUTION,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) {
-    const message = json?.error?.message ?? txt.slice(0, 400);
-    throw new Error(`${method} ${path} -> ${r.status}: ${String(message).replace(/\s+/g, ' ').slice(0, 300)}`);
-  }
-  return { json, headers: r.headers };
-};
-
-/**
- * Retries a step through the metadata cache lag that follows a table creation.
- *
- * Measured 2026-09-11 while creating `jhrb_emailreadstate`: `POST EntityDefinitions` returns 201
- * and for several seconds afterwards every request touching that table fails with *"was not found
- * in the MetadataCache.LazyDynamicMetadataCache"*, or on the Attributes endpoint with a bare
- * "An unexpected error occurred." The first run created a table and then failed every column.
- */
-const withSettle = async (what, attempt) => {
-  for (let i = 1; i <= 6; i += 1) {
-    try {
-      return await attempt();
-    } catch (e) {
-      const transient = /MetadataCache|unexpected error occurred/i.test(e.message);
-      if (!transient || i === 6) throw e;
-      console.log(`   ${what}: metadata cache not settled, retrying (${i}/5)…`);
-      await new Promise((r) => setTimeout(r, i * 4000));
-    }
-  }
-  throw new Error('unreachable');
-};
+// Every request carries the solution header, so each created component lands in our unmanaged
+// solution rather than loose in Default. (withSettle — the metadata-cache retry — lives in
+// scripts/lib/dv.mjs.)
+const dv = (path, opts = {}) => api(path, { solution: SOLUTION, ...opts });
 
 // ── the definitions ──────────────────────────────────────────────────────────
 
@@ -275,13 +227,15 @@ const created = { createdAt: new Date().toISOString(), org: ORG, table: TABLE, s
 
 // 1. the table
 try {
-  const existing = await api(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId`).catch(() => null);
+  // Only a 404 means "absent". Anything else (an expired token's 401) throws, rather than being
+  // read as "not there" and followed by a create.
+  const existing = await dv(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId`, { allow404: true });
   if (existing?.json?.MetadataId) {
     created.metadataId = existing.json.MetadataId;
     console.log(`1. table ${TABLE} -> already exists (${created.metadataId})`);
   } else {
-    const r = await api('EntityDefinitions', 'POST', entity);
-    created.metadataId = r.headers.get('OData-EntityId')?.match(/\(([^)]+)\)/)?.[1];
+    const r = await dv('EntityDefinitions', { method: 'POST', body: entity });
+    created.metadataId = r.id;
     console.log(`1. created table ${TABLE} -> ${created.metadataId ?? 'ok'}`);
   }
 } catch (e) {
@@ -296,8 +250,10 @@ const EXISTS = /already exists|is not unique within an entity|Duplicate.*key/i;
 created.flags = [];
 for (const f of flags) {
   try {
-    await withSettle(f.LogicalName, () =>
-      api(`EntityDefinitions(LogicalName='${TABLE}')/Attributes`, 'POST', f));
+    await withSettle(
+      () => dv(`EntityDefinitions(LogicalName='${TABLE}')/Attributes`, { method: 'POST', body: f }),
+      f.LogicalName,
+    );
     console.log(`2. created ${f.LogicalName}`);
     created.flags.push(f.LogicalName);
   } catch (e) {
@@ -315,7 +271,7 @@ created.lookups = [];
 for (const l of lookups) {
   const name = l.Lookup.LogicalName;
   try {
-    await withSettle(name, () => api('RelationshipDefinitions', 'POST', l));
+    await withSettle(() => dv('RelationshipDefinitions', { method: 'POST', body: l }), name);
     console.log(`3. created lookup ${name} -> queue`);
     created.lookups.push(name);
   } catch (e) {
@@ -330,16 +286,15 @@ for (const l of lookups) {
 
 // 4. publish
 try {
-  await api('PublishXml', 'POST', {
-    ParameterXml: `<importexportxml><entities><entity>${TABLE}</entity></entities></importexportxml>`,
-  });
+  // Scoped to our own new table, which nobody else customises.
+  await publish({ entities: [TABLE] });
   console.log('4. published');
 } catch (e) {
   console.log(`4. publish FAILED: ${e.message}`);
 }
 
-fs.writeFileSync(IDS_FILE, JSON.stringify(created, null, 2) + '\n');
-console.log(`\nWrote ${IDS_FILE}`);
+writeIds(IDS_FILE, created);
+console.log('\nWrote settings-ids.json');
 console.log('\nSTILL TO DO — the table is useless to agents without both:');
 console.log('  node scripts/deploy/grant-settings-read.mjs --confirm');
 console.log('  node scripts/deploy/seed-settings.mjs --confirm');

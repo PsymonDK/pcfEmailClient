@@ -1,3 +1,4 @@
+import { toGuid } from '../domain/guid';
 import { assertGuid, type WebApiLike } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { prepareTemplate, type PreparedTemplate } from '../domain/templateContent';
@@ -95,9 +96,9 @@ export async function instantiateTemplate(
   // description. `Xrm.WebApi.online.execute` evidently serialises Guid parameters in a shape this
   // action rejects. The raw Web API accepts either, which is why this only shows up in the client.
   const request = {
-    TemplateId: templateId.replace(/^\{|\}$/g, ''),
+    TemplateId: toGuid(templateId, 'templateId'),
     ObjectType: 'incident',
-    ObjectId: caseId.replace(/^\{|\}$/g, ''),
+    ObjectId: toGuid(caseId, 'caseId'),
     getMetadata: () => ({
       boundParameter: null,
       parameterTypes: {

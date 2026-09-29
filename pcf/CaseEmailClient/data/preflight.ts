@@ -1,3 +1,5 @@
+import { asString } from './coerce';
+import { bareId, toGuid } from '../domain/guid';
 import { type WebApiLike } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { evaluateSender, type PreflightVerdict, type SenderApproval } from '../domain/preflight';
@@ -64,33 +66,6 @@ export interface SenderFacts {
 }
 
 /**
- * A user's approval state and mailbox. (A queue's already came back on the queue expand.)
- */
-export async function fetchUserFacts(
-  webApi: WebApiLike,
-  userId: string,
-): Promise<SenderFacts> {
-  try {
-    const user = await webApi.retrieveRecord(
-      'systemuser',
-      userId.replace(/^\{|\}$/g, ''),
-      '?$select=emailrouteraccessapproval,_defaultmailbox_value',
-    );
-    return {
-      approvalState: typeof user.emailrouteraccessapproval === 'number'
-        ? user.emailrouteraccessapproval
-        : 0,
-      mailboxId: typeof user._defaultmailbox_value === 'string'
-        ? user._defaultmailbox_value
-        : undefined,
-    };
-  } catch {
-    // Unknown approval reads as "not approved", so the verdict blocks rather than waves through.
-    return { approvalState: 0 };
-  }
-}
-
-/**
  * A mailbox's outgoing status.
  *
  * `undefined` means we could not read it — which the rule treats as blocking, deliberately. Not
@@ -104,8 +79,11 @@ export async function fetchOutgoingStatus(
   try {
     const mailbox = await webApi.retrieveRecord(
       'mailbox',
-      mailboxId.replace(/^\{|\}$/g, ''),
-      '?$select=outgoingemailstatus,mailboxstatus',
+      toGuid(mailboxId, 'mailboxId'),
+      // `outgoingemailstatus` ONLY. `mailboxstatus` was selected and never used (L3); measured
+      // 2026-09-28 it is no signal for sending: the agent's mailbox reads mailboxstatus = Success
+      // with outgoing = Not Run, and it cannot send. Gating on it would block nothing this doesn't.
+      '?$select=outgoingemailstatus',
     );
     return typeof mailbox.outgoingemailstatus === 'number'
       ? mailbox.outgoingemailstatus
@@ -157,14 +135,14 @@ export async function fetchAgentIdentity(
   webApi: WebApiLike,
   userId: string,
 ): Promise<{ candidate: SenderCandidate; facts: SenderFacts }> {
-  const bare = userId.replace(/^\{|\}$/g, '');
+  const bare = bareId(userId);
   try {
     const user = await webApi.retrieveRecord(
       'systemuser',
       bare,
       '?$select=fullname,internalemailaddress,emailrouteraccessapproval,_defaultmailbox_value',
     );
-    const s = (v: unknown): string => (typeof v === 'string' ? v : '');
+    const s = (v: unknown): string => asString(v);
     return {
       candidate: {
         kind: 'user',

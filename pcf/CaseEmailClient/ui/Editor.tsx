@@ -25,8 +25,16 @@ export interface EditorHandle {
   focus(): void;
   /** Inserts at the cursor — templates and Copilot drafts (R14/R19) land here, not in the quote. */
   insertHTML(html: string): void;
-  /** Replaces the new text wholesale. Used by "Replace" on a template, never by "Insert". */
-  setHTML(html: string): void;
+  /**
+   * Replaces the new text wholesale.
+   *
+   * `asEdit` says whether this counts as the agent editing. TipTap's `setContent` fires no
+   * `update` by default, so "Replace all" from a template used to change the body without
+   * telling anyone: no autosave, the body still counted as untouched, and the next signature
+   * reseed overwrote the template (M15). A template replace passes `true`; our own signature
+   * seeding passes nothing, and stays silent.
+   */
+  setHTML(html: string, asEdit?: boolean): void;
   isEmpty(): boolean;
 }
 
@@ -60,7 +68,7 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
     getHTML: () => editorRef.current?.getHTML() ?? '',
     focus: () => editorRef.current?.commands.focus(),
     insertHTML: (html) => { editorRef.current?.commands.insertContent(html); },
-    setHTML: (html) => { editorRef.current?.commands.setContent(html); },
+    setHTML: (html, asEdit = false) => { editorRef.current?.commands.setContent(html, asEdit); },
     isEmpty: () => editorRef.current?.isEmpty ?? true,
   }), []);
 
@@ -83,8 +91,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
         }),
         Link.configure({
           openOnClick: false,
-          // Matches the sanitiser's allow-list: anything it would strip on the way back in should
-          // not be creatable on the way out.
+          // ADDS to TipTap's own defaults (ftp, tel, callto, sms, cid, xmpp); it does not narrow
+          // them. `isAllowedUri` is what refuses `javascript:`, on parse and on render.
           protocols: ['http', 'https', 'mailto'],
           HTMLAttributes: { rel: 'noopener noreferrer' },
         }),
@@ -108,7 +116,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
       editorRef.current = null;
     };
     // Constructed ONCE. `initialHtml` is read from a ref so changing it does not rebuild the
-    // editor and throw away what the agent has typed.
+    // editor and throw away what the agent has typed; `disabled` is applied by the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // `editable` is a runtime setting, not a construction argument, so it can change without a

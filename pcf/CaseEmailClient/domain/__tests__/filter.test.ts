@@ -50,9 +50,9 @@ const THREADS = [
 ];
 
 const PARTIES = index({
-  a1: ['Mette Nielsen', 'mette@metalservice.dk', 'Care'],
+  a1: ['Mette Nielsen', 'mette@metalservice.example.invalid', 'Care'],
   a2: ['Care', 'care@example.invalid', 'Mette Nielsen'],
-  b1: ['Søren Madsen', 'soren@nordbyg.dk', 'Care'],
+  b1: ['Søren Madsen', 'soren@nordbyg.example.invalid', 'Care'],
 });
 
 const f = (over: Partial<ThreadFilter> = {}): ThreadFilter => ({ ...EMPTY_FILTER, ...over });
@@ -91,7 +91,7 @@ describe('filterThreads', () => {
 
   it('matches on a participant name and on an address', () => {
     expect(run({ text: 'søren' })).toEqual(['t-b']);
-    expect(run({ text: 'metalservice.dk' })).toEqual(['t-a']);
+    expect(run({ text: 'metalservice.example.invalid' })).toEqual(['t-a']);
   });
 
   it('is case-insensitive', () => {

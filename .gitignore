@@ -45,8 +45,15 @@ $RECYCLE.BIN/
 coverage/
 .nyc_output/
 
-# local Dataverse token captured during spikes - never commit
+# local Dataverse token captured during spikes - never commit. The scripts no longer read or write
+# one (scripts/lib/dv.mjs gets the token from DV_TOKEN or `az`), but an old copy may still exist.
 .tok
+
+# Spike/seed run artefacts: the case id a spike works on, and ids of rows a spike run created.
+# Local to one run against one environment - not project history.
+.caseid
+scripts/**/*-created.json
+scripts/**/s7-testb.json
 
 # Design canvas: the seeded/published page is generated from the .dc.html artboards
 # plus canvas.json (see docs/design/artboards/README.md). ~2.7 MB of editor payload.

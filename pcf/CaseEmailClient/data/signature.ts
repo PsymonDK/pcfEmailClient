@@ -1,6 +1,9 @@
+import { asString } from './coerce';
+import { bareId, toGuid } from '../domain/guid';
 import { assertGuid, type WebApiLike } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { extractSignatureHtml } from '../domain/signature';
+import { sanitiseEmailBody } from '../domain/sanitise';
 
 /**
  * The sending identity's email signature (R15).
@@ -19,7 +22,7 @@ import { extractSignatureHtml } from '../domain/signature';
 const SIGNATURE_COLUMNS = ['emailsignatureid', 'title', 'body', 'isdefault'] as const;
 
 export function buildSignatureQuery(userId: string): string {
-  const bare = userId.replace(/^\{|\}$/g, '').toLowerCase();
+  const bare = bareId(userId);
   return (
     `?$select=${SIGNATURE_COLUMNS.join(',')}`
     + `&$filter=_ownerid_value eq ${bare}`
@@ -59,7 +62,7 @@ export async function fetchSignatureHtml(
     // The stylesheet personalises itself from the sender. One extra retrieve, only when there is
     // actually a signature to fill.
     const values = await fetchSignatureValues(webApi, userId);
-    return { html: extractSignatureHtml(typeof row.body === 'string' ? row.body : '', values) };
+    return { html: safeSignature(extractSignatureHtml(typeof row.body === 'string' ? row.body : '', values)) };
   } catch (rejection) {
     return { html: '', error: normaliseWebApiError(rejection) };
   }
@@ -78,10 +81,10 @@ async function fetchSignatureValues(
   try {
     const user = await webApi.retrieveRecord(
       'systemuser',
-      userId.replace(/^\{|\}$/g, ''),
+      toGuid(userId, 'userId'),
       '?$select=firstname,lastname,fullname,jobtitle,internalemailaddress',
     );
-    const s = (v: unknown) => (typeof v === 'string' ? v : '');
+    const s = (v: unknown) => asString(v);
     return {
       'systemuser/firstname': s(user.firstname),
       'systemuser/lastname': s(user.lastname),
@@ -131,12 +134,22 @@ export async function fetchSignatureFor(
   try {
     const row = await webApi.retrieveRecord(
       'emailsignature',
-      sender.signatureId.replace(/^\{|\}$/g, ''),
+      toGuid(sender.signatureId, 'signatureId'),
       '?$select=body',
     );
     const values = await fetchSignatureValues(webApi, actingUserId);
-    return { html: extractSignatureHtml(typeof row.body === 'string' ? row.body : '', values) };
+    return { html: safeSignature(extractSignatureHtml(typeof row.body === 'string' ? row.body : '', values)) };
   } catch (rejection) {
     return { html: '', error: normaliseWebApiError(rejection) };
   }
+}
+
+/**
+ * A signature is HTML another user can edit, heading for the editor and then for the customer.
+ * It was safe only because TipTap's schema happens to drop what it does not know (L5); an Image or
+ * raw-HTML extension, or a signature preview, would have made it a live hole. Sanitised here, once,
+ * with pictures kept — a logo in our own sign-off is not a tracking pixel.
+ */
+function safeSignature(html: string): string {
+  return sanitiseEmailBody(html, { allowRemoteImages: true, isolateIds: false }).html;
 }

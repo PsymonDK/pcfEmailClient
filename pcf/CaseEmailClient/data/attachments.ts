@@ -1,3 +1,5 @@
+import { toGuid } from '../domain/guid';
+import { toImageDataUrl } from '../domain/inlineImages';
 import { assertGuid, buildAttachmentBodyQuery, type WebApiLike } from './emailQueries';
 import { normaliseWebApiError } from './errors';
 
@@ -117,7 +119,11 @@ export const browserDownloadIo: DownloadIo = {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+    // ALWAYS octet-stream, whatever the sender claimed (L7). The type is the sender's word, and a
+    // blob typed text/html or image/svg+xml is one the browser is willing to render. This one is
+    // only ever saved; the filename's extension is all the OS needs.
+    void mimeType;
+    return new Blob([bytes], { type: 'application/octet-stream' });
   },
   createObjectUrl: (blob) => URL.createObjectURL(blob),
   revokeObjectUrl: (url) => URL.revokeObjectURL(url),
@@ -131,3 +137,28 @@ export const browserDownloadIo: DownloadIo = {
     a.remove();
   },
 };
+
+/** Inline images larger than this stay unresolved rather than streaming megabytes as base64. */
+export const INLINE_IMAGE_CEILING = 5 * 1024 * 1024;
+
+/**
+ * One inline image's bytes, as a displayable data URL — or `undefined` if it cannot be shown.
+ *
+ * Never throws: a logo that will not load must not cost the agent the message around it.
+ */
+export async function fetchInlineImage(
+  webApi: WebApiLike,
+  activityMimeAttachmentId: string,
+): Promise<string | undefined> {
+  try {
+    const row = await webApi.retrieveRecord(
+      'activitymimeattachment', toGuid(activityMimeAttachmentId, 'activityMimeAttachmentId'), '?$select=mimetype,body',
+    );
+    return toImageDataUrl(
+      typeof row.mimetype === 'string' ? row.mimetype : '',
+      typeof row.body === 'string' ? row.body : '',
+    );
+  } catch {
+    return undefined;
+  }
+}

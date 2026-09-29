@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<savedqueries xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <savedquery>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>0</CanBeDeleted>
+    <isquickfindquery>0</isquickfindquery>
+    <isprivate>0</isprivate>
+    <isdefault>1</isdefault>
+    <savedqueryid>{287ba42a-5be3-4ce4-bc30-a63a7d277e6e}</savedqueryid>
+    <layoutxml>
+      <grid name="resultset" jump="jhrb_name" select="1" icon="1" preview="1">
+        <row name="result" id="jhrb_emailreadstateid">
+          <cell name="jhrb_name" width="300" />
+          <cell name="createdon" width="125" />
+        </row>
+      </grid>
+    </layoutxml>
+    <querytype>1</querytype>
+    <fetchxml>
+      <fetch version="1.0" mapping="logical">
+        <entity name="jhrb_emailreadstate">
+          <attribute name="jhrb_emailreadstateid" />
+          <attribute name="jhrb_name" />
+          <attribute name="createdon" />
+          <order attribute="jhrb_name" descending="false" />
+        </entity>
+      </fetch>
+    </fetchxml>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <LocalizedNames>
+      <LocalizedName description="Email read state Advanced Find View" languagecode="1033" />
+    </LocalizedNames>
+  </savedquery>
+</savedqueries>

@@ -1,35 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ImportExportXml version="9.1.0.643" SolutionPackageVersion="9.1" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.2.26093.131" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.26093.131" OrganizationSchemaType="Full" CRMServerServiceabilityVersion="9.2.26093.00131">
   <SolutionManifest>
-    <!-- Unique Name of Cds Solution-->
     <UniqueName>JHRBCaseEmailClient</UniqueName>
     <LocalizedNames>
-      <!-- Localized Solution Name in language code -->
       <LocalizedName description="Case Email Client" languagecode="1033" />
     </LocalizedNames>
     <Descriptions />
     <Version>1.0</Version>
-    <!-- Solution Package Type: Unmanaged(0)/Managed(1)/Both(2)-->
     <Managed>2</Managed>
     <Publisher>
-      <!-- Unique Publisher Name of Cds Solution -->
       <UniqueName>jhrb</UniqueName>
       <LocalizedNames>
-        <!-- Localized Cds Publisher Name in language code-->
         <LocalizedName description="jhrb" languagecode="1033" />
       </LocalizedNames>
       <Descriptions>
-        <!-- Description of Cds Publisher in language code -->
         <Description description="jhrb" languagecode="1033" />
       </Descriptions>
       <EMailAddress xsi:nil="true"></EMailAddress>
       <SupportingWebsiteUrl xsi:nil="true"></SupportingWebsiteUrl>
-      <!-- Customization Prefix for the Cds Publisher-->
       <CustomizationPrefix>jhrb</CustomizationPrefix>
-      <!-- Derived Option Value Prefix for the Customization Prefix of Cds Publisher -->
       <CustomizationOptionValuePrefix>63249</CustomizationOptionValuePrefix>
       <Addresses>
-        <!-- Address of the Publisher-->
         <Address>
           <AddressNumber>1</AddressNumber>
           <AddressTypeCode>1</AddressTypeCode>
@@ -88,7 +79,77 @@
         </Address>
       </Addresses>
     </Publisher>
-    <RootComponents />
-    <MissingDependencies />
+    <RootComponents>
+      <RootComponent type="1" schemaName="jhrb_emailclientsetting" behavior="0" />
+      <RootComponent type="1" schemaName="jhrb_emailreadstate" behavior="0" />
+      <RootComponent type="1" schemaName="email" behavior="1" />
+      <RootComponent type="1" schemaName="incident" behavior="1" />
+      <RootComponent type="1" schemaName="queue" behavior="1" />
+      <RootComponent type="1" schemaName="systemuser" behavior="1" />
+      <RootComponent type="20" id="{bf5009cc-46b6-f111-aaae-000d3ab16615}" behavior="0" />
+      <RootComponent type="66" schemaName="jhrb_JHRB.CaseEmailClient" behavior="0" />
+    </RootComponents>
+    <MissingDependencies>
+      <MissingDependency>
+        <Required type="1" schemaName="incident" displayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="1" schemaName="incident" displayName="Case" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="1" schemaName="incident" displayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="ownerid" displayName="Owner" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="prioritycode" displayName="Priority" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="statuscode" displayName="Status Reason" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="ticketnumber" displayName="Case Number" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="2" schemaName="title" displayName="Case Title" parentSchemaName="incident" parentDisplayName="Case" solution="msdynce_Service (9.0.5.56)">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="10" schemaName="jhrb_incident_jhrb_emailreadstate" displayName="jhrb_incident_jhrb_emailreadstate" parentSchemaName="incident" parentDisplayName="Case" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="Customer service app access" solution="msdynce_Customerservicehub (9.0.5.0056)" id="{3dac4d9e-568c-e611-80d4-00155d42a122}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="CSR Manager" solution="msdynce_Service (9.0.5.56)" id="{6b808003-90bc-4eb4-9c7a-f6d01d803de1}" parentId="{1808b939-dd07-4ca7-aa99-ddd2734378f1}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+      <MissingDependency>
+        <Required type="20" displayName="Customer Service Representative" solution="msdynce_Service (9.0.5.56)" id="{ad42ef10-6307-49b9-a989-8bd2b4083f97}" parentId="{ecfd0b44-5720-45e3-ae68-417ddb0fb654}">
+          <package appName="msdynce_Service" version="9.0.26085.1009">msdynce_ServiceAnchor (9.0.26085.1009)</package>
+        </Required>
+        <Dependent type="60" displayName="Case - Email Client" parentDisplayName="Case" id="{729d9197-cdad-f111-aaac-000d3ab163fb}" />
+      </MissingDependency>
+    </MissingDependencies>
   </SolutionManifest>
 </ImportExportXml>

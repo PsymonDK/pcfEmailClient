@@ -230,6 +230,13 @@ describe('markRead', () => {
     expect((await markRead(webApi, { emailId: EMAIL_A, userId: USER, caseId: CASE })).ok).toBe(true);
   });
 
+  it('does NOT treat any message mentioning "duplicate" as success (L8)', async () => {
+    const { webApi } = writer(() =>
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      Promise.reject({ message: 'Duplicate detection rule blocked the operation.' }));
+    expect((await markRead(webApi, { emailId: EMAIL_A, userId: USER, caseId: CASE })).ok).toBe(false);
+  });
+
   it('reports a real failure instead of pretending it saved', async () => {
     const { webApi } = writer(() =>
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors

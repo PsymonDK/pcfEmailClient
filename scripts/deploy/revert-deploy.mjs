@@ -1,10 +1,12 @@
 // Removes everything create-case-form.mjs created, plus the control and its solution.
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/deploy/revert-deploy.mjs [--confirm]
+//   node scripts/deploy/revert-deploy.mjs [--confirm]
 //
-// Dry run unless --confirm.
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
+// Dry run unless --confirm. THIS REMOVES THE PRODUCT from the environment — the form, the
+// JHRBCaseEmailClient solution container and the jhrb_JHRB.CaseEmailClient control — so read the
+// dry-run output before confirming.
 //
 // Order matters, and it is the order the S1/S11 cleanups had to learn the hard way:
 //   1. The form must be UNREGISTERED from the app and the app REPUBLISHED before the form will
@@ -13,85 +15,66 @@
 //   3. The solution is UNMANAGED, so deleting it removes the container only — its components stay
 //      in the environment and have to be deleted explicitly. That is why the control is deleted
 //      here by name rather than left to the solution delete.
+//
+// deployed-ids.json is removed only when EVERY step succeeded. A partial run keeps it, so the
+// next run still knows which form it is cleaning up.
 import fs from 'node:fs';
+import {
+  CONFIRM, api, assertGuid, assertIdsOrg, getEnv, odataString, publish, readIds, runSteps,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 const IDS_FILE = `${import.meta.dirname}/deployed-ids.json`;
 
 const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';
 const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
 const SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClient';
 
-if (!fs.existsSync(IDS_FILE)) {
-  console.log(`No ${IDS_FILE} — nothing recorded as deployed. Nothing to do.`);
+const ids = readIds(IDS_FILE);
+if (!ids) {
+  console.log('No deployed-ids.json — nothing recorded as deployed. Nothing to do.');
   process.exit(0);
 }
-const ids = JSON.parse(fs.readFileSync(IDS_FILE, 'utf8'));
+// The ids in that file are only meaningful in the environment that wrote them.
+assertIdsOrg(ids, ORG);
+const FORM_ID = assertGuid(ids.formId, 'deployed-ids.json formId');
 
-const call = async (path, method, body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  if (!r.ok && r.status !== 404) throw new Error(`${r.status}: ${txt.slice(0, 240)}`);
-  return { status: r.status, txt };
+const publishApp = () => publish({ appModules: [APP_ID] });
+
+/** Deletes every row a filter matches; `null` when it matched nothing. */
+const deleteAll = async (collection, idField, filter) => {
+  const rows = (await api(`${collection}?$select=${idField}&$filter=${filter}`)).json.value ?? [];
+  if (rows.length === 0) return null;
+  let last = null;
+  for (const row of rows) last = await api(`${collection}(${row[idField]})`, { method: 'DELETE', allow404: true });
+  return last;
 };
-
-const publishApp = () =>
-  call('PublishXml', 'POST', {
-    ParameterXml: `<importexportxml><appmodules><appmodule>${APP_ID}</appmodule></appmodules></importexportxml>`,
-  });
 
 const steps = [
   {
-    what: `unregister form ${ids.formId} ("${ids.formName}") from the CSW app`,
+    what: `unregister form ${FORM_ID} ("${ids.formName}") from the CSW app`,
     run: () =>
-      call('RemoveAppComponents', 'POST', {
-        AppId: APP_ID,
-        Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: ids.formId }],
+      api('RemoveAppComponents', {
+        method: 'POST',
+        allow404: true,
+        body: {
+          AppId: APP_ID,
+          Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: FORM_ID }],
+        },
       }),
   },
   { what: 'republish the CSW app (required before the form will delete)', run: publishApp },
   {
-    what: `delete systemform ${ids.formId}`,
-    run: () => call(`systemforms(${ids.formId})`, 'DELETE'),
+    what: `delete systemform ${FORM_ID}`,
+    run: () => api(`systemforms(${FORM_ID})`, { method: 'DELETE', allow404: true }),
   },
   {
     what: `delete solution ${SOLUTION_UNIQUE_NAME} (unmanaged: container only)`,
-    run: async () => {
-      const { txt } = await call(
-        `solutions?$select=solutionid&$filter=uniquename eq '${SOLUTION_UNIQUE_NAME}'`,
-        'GET',
-      );
-      let last = { status: 404 };
-      for (const row of JSON.parse(txt).value ?? []) {
-        last = await call(`solutions(${row.solutionid})`, 'DELETE');
-      }
-      return last;
-    },
+    run: () => deleteAll('solutions', 'solutionid', `uniquename eq ${odataString(SOLUTION_UNIQUE_NAME)}`),
   },
   {
     what: `delete custom control ${CONTROL_NAME} (unmanaged leftovers)`,
-    run: async () => {
-      const { txt } = await call(
-        `customcontrols?$select=customcontrolid&$filter=name eq '${CONTROL_NAME}'`,
-        'GET',
-      );
-      let last = { status: 404 };
-      for (const row of JSON.parse(txt).value ?? []) {
-        last = await call(`customcontrols(${row.customcontrolid})`, 'DELETE');
-      }
-      return last;
-    },
+    run: () => deleteAll('customcontrols', 'customcontrolid', `name eq ${odataString(CONTROL_NAME)}`),
   },
   { what: 'republish the CSW app', run: publishApp },
 ];
@@ -99,22 +82,18 @@ const steps = [
 console.log(`Target: ${ORG}`);
 console.log(`Deployed ${ids.createdAt}\n`);
 
+const allOk = await runSteps(steps, { confirm: CONFIRM });
+
 if (!CONFIRM) {
-  console.log('DRY RUN — nothing changed. Re-run with --confirm.\n');
-  steps.forEach((s, i) => console.log(`  ${i + 1}. would ${s.what}`));
   console.log('\nNote: application tab templates and session templates are NOT covered here — ' +
               'those are created separately and cascade their own parameters.');
   process.exit(0);
 }
 
-for (const [i, s] of steps.entries()) {
-  try {
-    const r = await s.run();
-    console.log(`  ${i + 1}. ${s.what} -> ${r.status === 404 ? 'already gone' : 'ok'}`);
-  } catch (e) {
-    console.log(`  ${i + 1}. ${s.what} -> FAILED: ${String(e.message).slice(0, 220)}`);
-  }
+if (allOk) {
+  fs.rmSync(IDS_FILE, { force: true });
+  console.log('\nDone. Removed deployed-ids.json.');
+} else {
+  console.log('\nSome steps FAILED. deployed-ids.json is kept so a re-run can finish the job.');
+  process.exit(1);
 }
-
-fs.rmSync(IDS_FILE, { force: true });
-console.log(`\nDone. Removed ${IDS_FILE}.`);

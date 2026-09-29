@@ -1345,7 +1345,7 @@ Two things worth knowing:
   link must not cost the agent the case they are actually looking at.
 
 **Verification needed a data change, because no case in this environment has a parent** — R8 was
-literally unverifiable as the data stood. [`r8-parent-link.mjs`](../../scripts/deploy/r8-parent-link.mjs)
+literally unverifiable as the data stood. [`r8-parent-link.mjs`](../../scripts/spikes/r8-parent-link.mjs)
 sets and clears `parentcaseid` on the verification case: one lookup field, on one case, previously
 null. Set → verified (2 threads, all four markings present) → cleared. Confirmed afterwards by
 query: **0 cases environment-wide have a parent, as before.**
@@ -1589,6 +1589,12 @@ it is half the size of the entire reading slice.
   appears in a fixture. `stripTrackingToken` is now exported from `threading.ts`: token only,
   preserving case and prefix, where `normaliseSubject` lower-cases and strips prefixes too and is
   therefore wrong for anything an agent reads.
+  **REVERSED 2026-09-29:** the product owner requires that the client never remove a tracking
+  token from a subject. `composeSubject` now carries the token forward verbatim and
+  `stripTrackingToken` was deleted. The premise was wrong as well: per the product owner, when the
+  subject already carries a token the organisation knows, the platform leaves it and appends none.
+  A subject with two tokens is mail that passed through another Dynamics system — each system's
+  token is its own correlation, and neither is ours to remove.
 
 #### Interim, and now replaced — 2026-09-24
 

@@ -220,10 +220,3 @@ export function blockProgress(sent: number, total: number): number {
   if (total <= 0) return 100;
   return Math.min(100, Math.round((sent / total) * 100));
 }
-
-/** Everything that will actually be sent — committed uploads and reused forward attachments. */
-export function sendableAttachmentIds(items: readonly PendingAttachment[]): string[] {
-  return items
-    .map((a) => a.attachmentId ?? a.reusedAttachmentId)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0);
-}

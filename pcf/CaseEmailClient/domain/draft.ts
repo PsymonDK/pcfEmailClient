@@ -1,6 +1,7 @@
-import type { Recipient } from './compose';
+import { buildOutgoingBody, isForwardSubject, type ComposeMode, type Recipient } from './compose';
 import type { SenderCandidate } from './sender';
-import { bareId, isPartyEntity, partyNavFor, type PartyEntity } from './recipients';
+import { isPartyEntity, partyNavFor, type PartyEntity } from './recipients';
+import { bareId, toGuid } from './guid';
 
 /**
  * The shape of a draft email row (R16).
@@ -25,10 +26,14 @@ export const DRAFT_STATECODE = 0;
 /** `statuscode`: 1 Draft. Cannot be null. */
 export const DRAFT_STATUSCODE = 1;
 
-/** `participationtypemask` values. Same table as `data/emailQueries.ts`' `PARTY_ROLE`. */
-export const PARTY_SENDER = 1;
-export const PARTY_TO = 2;
-export const PARTY_CC = 3;
+/**
+ * `participationtypemask` values: 1 Sender, 2 To, 3 Cc, 4 Bcc. The ONE table (R4) — `data/`
+ * re-exports it as `PARTY_ROLE` rather than keeping a second copy that could drift.
+ */
+export const PARTY_ROLE = { sender: 1, to: 2, cc: 3, bcc: 4 } as const;
+export const PARTY_SENDER = PARTY_ROLE.sender;
+export const PARTY_TO = PARTY_ROLE.to;
+export const PARTY_CC = PARTY_ROLE.cc;
 
 export interface DraftArgs {
   caseId: string;
@@ -55,6 +60,41 @@ export interface DraftArgs {
   inReplyToId: string | undefined;
 }
 
+/** The parts of an open compose surface a save needs. */
+export interface ComposeSnapshot {
+  mode: ComposeMode;
+  /** The message being answered. */
+  activityId: string;
+  subject: string;
+  to: readonly Recipient[];
+  cc: readonly Recipient[];
+  quotedBlock: string;
+}
+
+/**
+ * The save payload's arguments, from what is on screen.
+ *
+ * Out of the component so the `inReplyToId` rule is under test: it was omitted by the shell once
+ * already, with every payload test still passing, and resume silently stopped working. A forward
+ * is a new message to new people, so it links to nothing and never resumes.
+ */
+export function draftArgsFrom(
+  draft: ComposeSnapshot,
+  newHtml: string,
+  sender: SenderCandidate,
+  caseId: string,
+): DraftArgs {
+  return {
+    caseId,
+    subject: draft.subject,
+    bodyHtml: buildOutgoingBody(newHtml, draft.quotedBlock),
+    sender,
+    to: draft.to,
+    cc: draft.cc,
+    inReplyToId: draft.mode === 'forward' ? undefined : draft.activityId,
+  };
+}
+
 /**
  * One `activityparty` row.
  *
@@ -64,7 +104,7 @@ export interface DraftArgs {
  * bare-address form is the normal path here, not a fallback.
  */
 export function senderParty(sender: SenderCandidate): Record<string, unknown> {
-  const id = sender.id.replace(/^\{|\}$/g, '');
+  const id = toGuid(sender.id, 'sender id');
   const bind = sender.kind === 'queue'
     ? { 'partyid_queue@odata.bind': `/queues(${id})` }
     : { 'partyid_systemuser@odata.bind': `/systemusers(${id})` };
@@ -90,10 +130,15 @@ export function recipientParty(r: Recipient, mask: number): Record<string, unkno
   const base = { addressused: r.address, participationtypemask: mask };
   if (!r.partyId || !r.partyEntity || !isPartyEntity(r.partyEntity)) return base;
 
-  const nav = r.partyNav ?? partyNavFor(r.partyEntity);
+  // The platform-stated navigation property is preferred (CLAUDE.md), but it becomes a property
+  // NAME in the payload, so it must at least have the shape of a party lookup's navigation
+  // property. Anything else falls back to the composed one rather than reaching the request.
+  const nav = r.partyNav && /^partyid_[a-z0-9_]+$/.test(r.partyNav)
+    ? r.partyNav
+    : partyNavFor(r.partyEntity);
   return {
     ...base,
-    [`${nav}@odata.bind`]: `/${PARTY_SET[r.partyEntity]}(${bareId(r.partyId)})`,
+    [`${nav}@odata.bind`]: `/${PARTY_SET[r.partyEntity]}(${toGuid(r.partyId, 'partyId')})`,
   };
 }
 
@@ -137,7 +182,7 @@ export function buildDraftPayload(args: DraftArgs): Record<string, unknown> {
     // 1 = Outgoing. Without it the draft reads as incoming mail, and `domain/unread.ts` would
     // then treat the agent's own unsent draft as something waiting to be read.
     directioncode: true,
-    'regardingobjectid_incident@odata.bind': `/incidents(${args.caseId.replace(/^\{|\}$/g, '')})`,
+    'regardingobjectid_incident@odata.bind': `/incidents(${toGuid(args.caseId, 'caseId')})`,
     email_activity_parties: buildPartyRows(args),
     // The navigation property is the lowercase `parentactivityid`, read off
     // `ReferencingEntityNavigationPropertyName` rather than guessed from the SchemaName
@@ -145,7 +190,7 @@ export function buildDraftPayload(args: DraftArgs): Record<string, unknown> {
     ...(args.inReplyToId
       ? {
         'parentactivityid@odata.bind':
-            `/emails(${args.inReplyToId.replace(/^\{|\}$/g, '')})`,
+            `/emails(${toGuid(args.inReplyToId, 'inReplyToId')})`,
       }
       : {}),
   };
@@ -201,4 +246,50 @@ export function describeSaved(at: Date | undefined, now: Date = new Date()): str
   const hh = String(at.getHours()).padStart(2, '0');
   const mm = String(at.getMinutes()).padStart(2, '0');
   return `Saved ${hh}:${mm}`;
+}
+
+/**
+ * What the reading pane may offer on a message that is still a DRAFT (N7).
+ *
+ * Reply, Reply all and Forward were offered on every expanded message, drafts included — so an
+ * agent could "forward" their own unsent reply, and it was labelled "Sent on" besides. A draft is
+ * not something to answer; it is something to finish. Continuing it reopens compose on the SAME
+ * row against the message it answers, so nothing is duplicated.
+ *
+ * - `resume` — the agent's own draft, answering a message on this case.
+ * - `otherAgent` — somebody else's. Their unsent work is theirs to finish.
+ * - `cannotResume` — no answered message on the case (a draft from the standard email form, say),
+ *   or no user id to prove ownership. Nothing here can give it a quote to sit under.
+ */
+export type DraftContinuation =
+  | { kind: 'resume'; mode: ComposeMode; answeringId: string }
+  | { kind: 'otherAgent' }
+  | { kind: 'cannotResume' };
+
+/** `undefined` when the message is not a draft — the pane then offers its normal actions. */
+export function draftContinuation(
+  message: {
+    statuscode: number | null;
+    subject: string | null;
+    parentactivityid?: string | null;
+    ownerid?: string | null;
+  },
+  idsOnCase: ReadonlySet<string>,
+  userId: string | undefined,
+): DraftContinuation | undefined {
+  if (message.statuscode !== DRAFT_STATUSCODE) return undefined;
+  if (message.ownerid && userId && bareId(message.ownerid) !== bareId(userId)) {
+    return { kind: 'otherAgent' };
+  }
+  const answering = message.parentactivityid ? bareId(message.parentactivityid) : undefined;
+  if (!userId || !message.ownerid || !answering || !idsOnCase.has(answering)) {
+    return { kind: 'cannotResume' };
+  }
+  // Only the kind matters on resume: the recipients shown are the ones stored on the row, and
+  // reply and reply-all differ only in how recipients are derived.
+  return {
+    kind: 'resume',
+    mode: isForwardSubject(message.subject) ? 'forward' : 'reply',
+    answeringId: answering,
+  };
 }

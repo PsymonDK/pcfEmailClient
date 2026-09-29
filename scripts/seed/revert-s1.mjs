@@ -1,71 +1,59 @@
-// Reverts every S1 change made to the shared the demo environment environment.
+// Reverts the S1/S2 SPIKE changes made to the shared the demo environment environment.
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/seed/revert-s1.mjs [--confirm]
+//   node scripts/seed/revert-s1.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
 //
 // Dry run unless --confirm.
+//
+// WHAT THIS NO LONGER TOUCHES — deliberately (review finding H6, 2026-09-28). It used to delete
+// solution `JHRBCaseEmailClient` and custom control `jhrb_JHRB.CaseEmailClient` as "unmanaged
+// leftovers". Since Phase 0 those are the names of the LIVE PRODUCT, so running a spike cleanup
+// would have uninstalled the shipped email client. Only spike-only artefacts are removed now: the
+// S1 form, the S2 custom page, and the old spike-named solution `JHRBCaseEmailClientSpike`. To
+// remove the product itself, use scripts/deploy/revert-deploy.mjs — on purpose, not as a side
+// effect of cleaning up a spike.
 //
 // Order matters, and two things are easy to get wrong:
 //
 //  1. The form must be unregistered from the app AND the app republished BEFORE the form can be
 //     deleted, otherwise the delete fails with 0x8004f01f ("cannot be deleted because it is
 //     referenced").
-//  2. The solution is now UNMANAGED (dev). Deleting an unmanaged solution removes only the
-//     container - its components stay in the environment. So the custom control has to be deleted
-//     explicitly. (Under a managed solution the uninstall removed the control for us; that is the
-//     one thing managed was better at, and it is not a reason to install managed into dev.)
-//
-// The form also depends on the control, so the control can only go after the form.
-import fs from 'node:fs';
+//  2. Deleting an unmanaged solution removes only the container - its components stay in the
+//     environment. That is fine here: the one component that mattered, the control, is shared
+//     with the product and must stay.
+import {
+  CONFIRM, api, getEnv, odataString, publish, runSteps,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service workspace
 const SPIKE_FORM_ID = '4fe309a1-dbac-f111-aaab-000d3ab16615'; // Case - Email Client Spike (S1)
-// Both names: the spike solution was renamed to JHRBCaseEmailClient in Phase 0, so a re-run of
-// the spikes now builds under the new name while older leftovers may still carry the old one.
-const SOLUTION_UNIQUE_NAMES = ['JHRBCaseEmailClient', 'JHRBCaseEmailClientSpike'];
-const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
+// Spike-only name. NOT `JHRBCaseEmailClient` — that is the product's solution now (H6).
+const SPIKE_SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
 // S2 custom page: "Case Email Client Page (S2 spike)" / jhrb_caseemailclientpages2spike_314da
 const SPIKE_PAGE_ID = 'e7cb7b97-9dde-4f6a-8356-94bc9e1344d0';
 
-const call = async (path, method, body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  if (!r.ok && r.status !== 404) throw new Error(`${r.status}: ${txt.slice(0, 240)}`);
-  return { status: r.status, txt };
-};
-
-const publishApp = () =>
-  call('PublishXml', 'POST', {
-    ParameterXml: `<importexportxml><appmodules><appmodule>${APP_ID}</appmodule></appmodules></importexportxml>`,
-  });
+const publishApp = () => publish({ appModules: [APP_ID] });
 
 const steps = [
   {
     what: `unregister form ${SPIKE_FORM_ID} from the CSW app`,
     run: () =>
-      call('RemoveAppComponents', 'POST', {
-        AppId: APP_ID,
-        Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: SPIKE_FORM_ID }],
+      api('RemoveAppComponents', {
+        method: 'POST',
+        allow404: true,
+        body: {
+          AppId: APP_ID,
+          Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.systemform', formid: SPIKE_FORM_ID }],
+        },
       }),
   },
   { what: 'republish the CSW app (required before the form will delete)', run: publishApp },
   {
     what: `delete systemform ${SPIKE_FORM_ID} ("Case - Email Client Spike (S1)")`,
-    run: () => call(`systemforms(${SPIKE_FORM_ID})`, 'DELETE'),
+    run: () => api(`systemforms(${SPIKE_FORM_ID})`, { method: 'DELETE', allow404: true }),
   },
   // A custom page added through the app designer leaves BOTH an appmodulecomponent-style
   // registration AND an `appelement` row (component type 10088) linking page -> app.
@@ -75,75 +63,55 @@ const steps = [
   {
     what: `unregister custom page ${SPIKE_PAGE_ID} from the CSW app`,
     run: () =>
-      call('RemoveAppComponents', 'POST', {
-        AppId: APP_ID,
-        Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.canvasapp', canvasappid: SPIKE_PAGE_ID }],
+      api('RemoveAppComponents', {
+        method: 'POST',
+        allow404: true,
+        body: {
+          AppId: APP_ID,
+          Components: [{ '@odata.type': 'Microsoft.Dynamics.CRM.canvasapp', canvasappid: SPIKE_PAGE_ID }],
+        },
       }),
   },
   {
     what: 'delete the appelement(s) linking that page to the app',
     run: async () => {
-      const { txt } = await call(
+      const rows = (await api(
         `appelements?$select=appelementid,name&$filter=_canvasappid_value eq ${SPIKE_PAGE_ID}`,
-        'GET',
-      );
-      const rows = JSON.parse(txt).value ?? [];
-      if (rows.length === 0) return { status: 404 };
-      let last = { status: 404 };
-      for (const r of rows) last = await call(`appelements(${r.appelementid})`, 'DELETE');
+      )).json.value ?? [];
+      if (rows.length === 0) return null;
+      let last = null;
+      for (const r of rows) last = await api(`appelements(${r.appelementid})`, { method: 'DELETE', allow404: true });
       return last;
     },
   },
   { what: 'republish the CSW app (so the page reference is really gone)', run: publishApp },
   {
     what: `delete custom page ${SPIKE_PAGE_ID} ("Case Email Client Page (S2 spike)")`,
-    run: () => call(`canvasapps(${SPIKE_PAGE_ID})`, 'DELETE'),
+    run: () => api(`canvasapps(${SPIKE_PAGE_ID})`, { method: 'DELETE', allow404: true }),
   },
   {
-    what: `delete solution ${SOLUTION_UNIQUE_NAMES.join(' / ')} (unmanaged: container only)`,
+    what: `delete spike solution ${SPIKE_SOLUTION_UNIQUE_NAME} (unmanaged: container only)`,
     run: async () => {
-      let last = { status: 404 };
-      for (const name of SOLUTION_UNIQUE_NAMES) {
-        const { txt } = await call(
-          `solutions?$select=solutionid&$filter=uniquename eq '${name}'`,
-          'GET',
-        );
-        for (const row of JSON.parse(txt).value ?? []) {
-          last = await call(`solutions(${row.solutionid})`, 'DELETE');
-        }
-      }
+      const rows = (await api(
+        `solutions?$select=solutionid&$filter=uniquename eq ${odataString(SPIKE_SOLUTION_UNIQUE_NAME)}`,
+      )).json.value ?? [];
+      if (rows.length === 0) return null;
+      let last = null;
+      for (const row of rows) last = await api(`solutions(${row.solutionid})`, { method: 'DELETE', allow404: true });
       return last;
-    },
-  },
-  {
-    what: `delete custom control ${CONTROL_NAME} (unmanaged leftovers)`,
-    run: async () => {
-      const { txt } = await call(
-        `customcontrols?$select=customcontrolid&$filter=name eq '${CONTROL_NAME}'`,
-        'GET',
-      );
-      const rows = JSON.parse(txt).value ?? [];
-      if (rows.length === 0) return { status: 404 };
-      return call(`customcontrols(${rows[0].customcontrolid})`, 'DELETE');
     },
   },
   { what: 'republish the CSW app', run: publishApp },
 ];
 
 console.log(`Target: ${ORG}\n`);
+const allOk = await runSteps(steps, { confirm: CONFIRM });
 if (!CONFIRM) {
-  console.log('DRY RUN - nothing changed. Re-run with --confirm.\n');
-  steps.forEach((s, i) => console.log(`  ${i + 1}. would ${s.what}`));
-  console.log('\nNote: the seed Case and its 12 emails are removed separately by cleanup.mjs.');
+  console.log('\nNot touched: solution JHRBCaseEmailClient and control jhrb_JHRB.CaseEmailClient (the live product).');
+  console.log('Note: the seed Case and its 12 emails are removed separately by cleanup.mjs.');
   process.exit(0);
 }
-
-for (const [i, s] of steps.entries()) {
-  try {
-    const r = await s.run();
-    console.log(`  ${i + 1}. ${s.what} -> ${r.status === 404 ? 'already gone' : 'ok'}`);
-  } catch (e) {
-    console.log(`  ${i + 1}. ${s.what} -> FAILED: ${String(e.message).slice(0, 220)}`);
-  }
-}
-console.log('\nDone. Run cleanup.mjs --confirm to remove the seed Case and its emails too.');
+console.log(allOk
+  ? '\nDone. Run cleanup.mjs --confirm to remove the seed Case and its emails too.'
+  : '\nSome steps FAILED — see above. Re-running is safe; finished steps report "already gone".');
+if (!allOk) process.exit(1);

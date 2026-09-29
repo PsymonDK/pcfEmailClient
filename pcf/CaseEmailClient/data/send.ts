@@ -1,3 +1,4 @@
+import { bareId } from '../domain/guid';
 import { assertGuid } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import { resolveXrmExecute, type XrmExecute } from './templates';
@@ -19,7 +20,8 @@ import { isSettled, POLL_DELAYS } from '../domain/send';
  * followed by polling `statuscode`, and the result is reported as what was actually observed.
  */
 
-const bare = (id: string) => id.replace(/^\{|\}$/g, '');
+/** Strip braces for a URL. Callers validate with `assertGuid` first. */
+const bare = bareId;
 
 export interface IssueSendResult {
   /** The platform accepted the request. NOT a claim that anything was delivered. */
@@ -30,8 +32,9 @@ export interface IssueSendResult {
 /**
  * Hand the message to the platform.
  *
- * `issueSend: false` marks the email as sent **without actually sending it** — the safe mode for
- * developing against a shared environment, and the default here for exactly that reason. A real
+ * `issueSend: false` marks the email as sent **without actually sending it**. It is NOT a safe
+ * rehearsal (it skips Pending Send and never assigns `messageid`), and the product never passes
+ * it — `runSend` always sends for real. There is no default: the caller must say which. A real
  * send has to be asked for explicitly by the caller, which is the point.
  */
 export async function issueSend(
@@ -85,6 +88,7 @@ export async function readSendStatus(
   emailId: string,
 ): Promise<number | undefined> {
   try {
+    assertGuid(emailId, 'emailId');
     const row = await webApi.retrieveRecord(
       'email', bare(emailId), '?$select=statuscode,statecode',
     );

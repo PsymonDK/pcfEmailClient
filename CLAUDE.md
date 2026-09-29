@@ -30,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **586 tests**, lint and typecheck clean.
+helpers — **686 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -185,6 +185,11 @@ pac auth list
   `pac solution delete`, `pac org delete`, `pac admin reset`, `pac data delete`, or anything that
   removes or overwrites solution components in a shared environment.
 - Prefer `pac pcf push` into an **unmanaged dev solution**; never push straight at anything managed.
+- **The scripts do not use the pac profile.** Every script under `scripts/` goes through
+  `scripts/lib/dv.mjs`, which refuses to run unless `DV_ORG` resolves to the demo org, takes its
+  token from `DV_TOKEN` or `az account get-access-token` (there is no `.tok` file any more), is
+  dry-run unless `--confirm`, and refuses any test-send recipient but the approved address. So
+  `pac auth list` confirms nothing for a script — check `az account show` too.
 
 ### Managed vs unmanaged — non-negotiable
 
@@ -264,7 +269,8 @@ bite if forgotten:
   the **Care** queue (`care@example.invalid`, approved, server-side synced).
   **On send the platform rewrites the row:** it assigns `messageid`, `conversationindex` and
   `trackingtoken`, **overwrites `baseconversationindexhash`** (so you cannot force threading by
-  writing it), and **appends the tracking token to the subject** (`… CRM:0100009`) — which is why
+  writing it), and **appends the tracking token to the subject** (`… CRM:0100009`) unless the
+  subject already carries one it knows, in which case it leaves it — which is why
   `normaliseSubject` must strip `[A-Za-z]{2,8}:d{4,12}` tokens. `SendEmail` returning 200 means
   **Pending Send**, not Sent; poll `statuscode` before claiming delivery. Verified 2026-09-10.
 - Attachments: `activitymimeattachment` with `objectid` = the email and `objecttypecode` = `email`.
@@ -281,7 +287,9 @@ bite if forgotten:
   trusts the 200 will tell agents mail was sent that never leaves. Before offering Send, check:
   org `requireapprovalforqueueemail` / `requireapprovalforuseremail`, then the sender's
   `emailrouteraccessapproval` (**1 = Approved**, on `queue` or `systemuser`), then the mailbox's
-  `outgoingemailstatus` (want *Success*) and `mailboxstatus`.
+  `outgoingemailstatus` (want *Success*). **Not `mailboxstatus`** — measured 2026-09-28 it says
+  nothing about sending: the agent's mailbox reads `mailboxstatus` = Success with outgoing = Not
+  Run, and cannot send. This file used to list it as a check.
   Counter-intuitive companion finding: a queue with **no** address fails **loudly** (synchronous 400);
   a queue with an **unapproved** address fails **silently**. Don't infer one from the other.
 
@@ -433,13 +441,21 @@ bite if forgotten:
 - Resuming a draft splits the stored body back apart with `splitQuotedHistory`, which is exactly
   what R12's round-trip invariant guarantees: **what we emitted, we can re-split.**
 
-**`npm run typecheck` is a TEST-FILE gate, not a type gate.** `tsconfig.test.json` includes only
-`CaseEmailClient/**/*.test.ts`, so source files are checked only insofar as a test imports them —
-and `ui/EmailClientRoot.tsx` is imported by no test, so it is **never type-checked by
-`npm run typecheck` at all**. Corrected 2026-09-25: this file previously said, too narrowly, that
-only `index.ts` was uncovered. Two widened call sites in `EmailClientRoot.tsx` passed typecheck and
-failed the build. **`npm run build` is the type gate — always run it before believing a type change
-is clean.**
+**`npm run typecheck` now checks ALL source, not just test files** (changed 2026-09-28). It runs
+`tsc -p tsconfig.json` (every source file, `EmailClientRoot.tsx` and `index.ts` included) and then
+`tsc -p tsconfig.test.json`. Until then it covered only files a test imported, so
+`EmailClientRoot.tsx` was never checked by it; on its first run it caught a hook dependency
+array reading a `const` before its declaration — a runtime crash that no test exercised.
+`npm run build` still runs the same checks and remains the final gate. Lint now includes
+`eslint-plugin-react-hooks` and `no-unused-vars`; a ref used deliberately to escape a
+dependency is commented in place.
+
+**Sender HTML is sanitised for DISPLAY and for SENDING, differently.** `sanitiseEmailBody`
+holds back remote images and prefixes sender `id`/`name` values by default (tracking pixels, DOM
+clobbering). HTML going OUT — the quoted original in `buildQuotedBlock`, a signature — passes
+`{ allowRemoteImages: true, isolateIds: false }`, because the customer's own message must go back
+to them as written. Every `dangerouslySetInnerHTML` must render a sanitised expression;
+`ui/__tests__/htmlSinks.test.ts` holds the allowlist. See `docs/review/2026-09-28-code-review.md`.
 
 **Read state (R6) — `jhrb_emailreadstate`, created 2026-09-11**
 - **UserOwned**, so Dataverse's own security trims each agent to their own rows. `jhrb_emailid` →
@@ -587,10 +603,17 @@ lives in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts):
   **first** match and pasting a previous reply would otherwise move half the new text into the
   fold. The replacement must **not contain** the marker: `divRplyFwdMsg-quoted` was the first
   attempt and still matched on substring.
-- `composeSubject` strips the inherited tracking token via `stripTrackingToken` — the platform
-  appends a **fresh** one on send, so carrying the old one forward sends two. Use that helper, not
-  `normaliseSubject`, for anything an agent reads: `normaliseSubject` also lower-cases and strips
-  reply prefixes because it exists for grouping.
+- **THE CLIENT NEVER REMOVES A TRACKING TOKEN FROM A SUBJECT — a product requirement
+  (2026-09-29), not a style choice.** `composeSubject` carries the inherited subject forward
+  verbatim, token included; only the RE:/FW: prefix is added. It used to strip the token (the
+  platform appends a fresh one on send, so the worry was two tokens). That worry was wrong: **when
+  the subject already carries a token this organisation knows, the platform leaves it and adds
+  none.** Two tokens in one subject are legitimate — mail that passed through **another Dynamics
+  system** carries that system's token as well as ours, and stripping would sever the other
+  system's correlation too (product owner, 2026-09-29). `stripTrackingToken` was **deleted** so
+  nothing can reach for it again. Do not reintroduce stripping anywhere a subject is written. `normaliseSubject` still
+  drops tokens, but only to build an in-memory grouping key — it never writes a subject — and the
+  thread list hides the token on screen only; neither touches the record.
 
 **The editor is mounted imperatively and destroyed on unmount** —
 [`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). Verified live in the published app on

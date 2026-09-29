@@ -1,32 +1,37 @@
-// S7 - send round-trip. SENDS REAL EMAIL (IssueSend: true), authorised by the requester.
-// From the approved Care queue (caredemo@...) to simon.jehrbo@example.com.
-import fs from 'node:fs';
+// S7 - send round-trip. SENDS REAL EMAIL (IssueSend: true).
+//
+//   DV_CASE=<case guid> [DV_TO=<recipient>] node scripts/spikes/s7-send.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
+//
+// From the approved Care queue (caredemo@...) to DV_TO, default simon.jehrbo@example.com — the one
+// address approved for test sends (CLAUDE.md, 2026-09-25). `guardRecipient` refuses anything
+// else except an RFC 2606 undeliverable address, so a stray DV_TO cannot mail a colleague.
+//
+// Nothing is written or sent without --confirm, and the recipient is printed before sending.
+//
+// "Test B" (a send from the unapproved `<Care Agents>` queue) was REMOVED 2026-09-28 (review
+// finding H7). It sent real mail from a queue nobody had approved, and did not even test the
+// approval guard — that queue has no address. r18-approval-probe.mjs is the probe for R18.
 import crypto from 'node:crypto';
+import {
+  CONFIRM, apiRaw, errorOf, getEnv, guardRecipient, readCaseId, writeIds,
+} from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${SP}/.tok`, 'utf8').trim();
-const CASE = process.env.DV_CASE || fs.readFileSync(`${SP}/.caseid`, 'utf8').trim();
+const { org: ORG } = getEnv();
+const CASE = readCaseId(SP);
 
 const CARE_QUEUE = '23b1c48e-1ff2-f011-8406-7ced8d2e4880';        // approved
-const UNAPPROVED_QUEUE = '07a28679-31f5-f011-8406-7c1e521fcfa3';  // <Care Agents>, approval 0
-const TO = process.env.DV_TO || 'simon.jehrbo@example.com';
+// Throws before anything touches the environment if DV_TO is not an allowed recipient.
+const TO = guardRecipient(process.env.DV_TO || 'simon.jehrbo@example.com');
 const THREAD_SUBJECT = 'Reklamation: utaette samlinger efter montage - Jensen VVS';
 const THREAD_HASH = 111000001;
 const MB = 1048576;
 
-const api = async (p, m, b, hdr = {}) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${p}`, {
-    method: m,
-    headers: { Authorization: `Bearer ${TOK}`, 'Content-Type': 'application/json',
-               Accept: 'application/json', 'OData-Version': '4.0', ...hdr },
-    body: b ? JSON.stringify(b) : undefined,
-  });
-  const t = await r.text();
-  let j = null; try { j = t ? JSON.parse(t) : null; } catch { /* */ }
-  return { ok: r.ok, status: r.status, txt: t, json: j };
-};
-const errOf = (r) => String(r.json?.error?.message ?? r.txt ?? '').replace(/\s+/g, ' ').slice(0, 300);
+// Non-throwing on purpose: every stage reports its own outcome.
+const api = (p, m, b, headers = {}) => apiRaw(p, { method: m, body: b ?? undefined, headers });
+const errOf = (r) => errorOf(r).slice(0, 300);
 
 // --- the reply body: exercises R11 (rich text) and R12 (quoted history) -----
 // Quoted history uses the same Outlook divRplyFwdMsg + Danish headers as the seed
@@ -107,15 +112,31 @@ const state = async (id) => {
            messageid: r.json?.messageid, cIdx: r.json?.conversationindex, token: r.json?.trackingtoken };
 };
 
-// ============ TEST A: the real send ========================================
-say('TEST A - real send from approved Care queue to ' + TO);
+console.log(`Target:    ${ORG}`);
+console.log(`Case:      ${CASE}`);
+console.log(`From:      Care queue ${CARE_QUEUE}`);
+console.log(`RECIPIENT: ${TO}`);
+
+if (!CONFIRM) {
+  console.log('\nDRY RUN — nothing written, nothing sent. Re-run with --confirm to SEND REAL EMAIL');
+  console.log(`to ${TO}: one reply on the case with a 1 MB chunked attachment, IssueSend: true.`);
+  process.exit(0);
+}
+
+// ============ the real send ================================================
+say(`\nReal send from the approved Care queue. Sending to: ${TO}`);
 const a = await makeDraft({ fromQueue: CARE_QUEUE, to: TO, subject: `RE: ${THREAD_SUBJECT}`, hash: THREAD_HASH });
 if (!a.ok) { say('  draft FAILED: ' + a.err); process.exit(1); }
 say(`  draft created ${a.id}`);
+writeIds(`${SP}/s7-created.json`, { caseId: CASE, draft: a.id, to: TO, sent: false });
 const att = await attachChunked(a.id, 's7-1MB-chunked', 1 * MB);
 say(att.ok ? `  attached 1 MB via chunked API (${att.id})` : `  attach FAILED @${att.stage}: ${att.err}`);
 const before = await state(a.id);
 say(`  before send: state=${before.state} status=${before.status} attachments=${before.attachments}`);
+// Re-checked immediately before IssueSend, so nothing between the top of the script and here can
+// have changed who this goes to.
+guardRecipient(TO);
+say(`  SENDING to ${TO} (IssueSend: true)`);
 const t0 = Date.now();
 const send = await api(`emails(${a.id})/Microsoft.Dynamics.CRM.SendEmail`, 'POST', { IssueSend: true });
 const ms = Date.now() - t0;
@@ -123,24 +144,10 @@ if (send.ok) {
   const after = await state(a.id);
   say(`  SendEmail OK (${ms}ms) -> state=${after.state} status=${after.status}`);
   say(`  messageid=${after.messageid ?? '(null)'} conversationindex=${after.cIdx ? after.cIdx.length + ' chars' : '(null)'} trackingtoken=${after.token ?? '(null)'}`);
+  say('  (200 means accepted — Pending Send — not delivered. See CLAUDE.md, Send (R17).)');
 } else {
   say(`  SendEmail FAILED ${send.status}: ${errOf(send)}`);
 }
 
-// ============ TEST B: R18 - unapproved sender ==============================
-say('\nTEST B - R18: send from an UNAPPROVED queue (expect a clean error)');
-const b = await makeDraft({ fromQueue: UNAPPROVED_QUEUE, to: TO, subject: 'S7 R18 probe - unapproved sender (should not arrive)' });
-if (!b.ok) { say('  draft FAILED: ' + b.err); }
-else {
-  const r = await api(`emails(${b.id})/Microsoft.Dynamics.CRM.SendEmail`, 'POST', { IssueSend: true });
-  if (r.ok) {
-    const st = await state(b.id);
-    say(`  SendEmail returned OK -> state=${st.state} status=${st.status}  (no synchronous approval guard)`);
-  } else {
-    say(`  SendEmail FAILED ${r.status}: ${errOf(r)}`);
-  }
-  fs.writeFileSync(`${SP}/s7-testb.json`, JSON.stringify({ id: b.id }, null, 2));
-}
-
-fs.writeFileSync(`${SP}/s7-created.json`, JSON.stringify({ sent: a.id, testB: b.ok ? b.id : null }, null, 2));
+writeIds(`${SP}/s7-created.json`, { caseId: CASE, draft: a.id, to: TO, sent: send.ok });
 say('\nids written to s7-created.json');

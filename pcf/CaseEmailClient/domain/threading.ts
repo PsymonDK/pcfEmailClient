@@ -23,6 +23,10 @@ export interface EmailRow {
   conversationindex: string | null;
   correlatedactivityid?: string | null;
   parentactivityid?: string | null;
+  /** `_ownerid_value`, lower-cased. Decides whether a draft is the agent's own to continue (N7). */
+  ownerid?: string | null;
+  /** When a draft was last saved — what the pane shows for it instead of "Sent on". */
+  modifiedon?: string;
   attachmentcount?: number | null;
   /** The case this message is regarding. Set from `_regardingobjectid_value`; drives R8. */
   regardingCaseId?: string | null;
@@ -49,17 +53,6 @@ const RE_PREFIX =
  * third-party tokens of the same shape (e.g. "MON:026300261").
  */
 const RE_TRACKING_TOKEN = /\s*\b[A-Za-z]{2,8}:\d{4,12}\b\s*/g;
-
-/**
- * Strips the platform's tracking token ONLY, preserving case and any reply prefix.
- *
- * `normaliseSubject` also lower-cases and strips prefixes, which makes it right for grouping and
- * wrong for anything an agent reads. Composing a reply needs this one: the platform appends a
- * *fresh* token on send, so carrying the old one forward produces `… CRM:0100012 CRM:0100019`.
- */
-export function stripTrackingToken(subject: string): string {
-  return subject.replace(RE_TRACKING_TOKEN, ' ').replace(/\s+/g, ' ').trim();
-}
 
 /** Strips localised reply/forward prefixes and tracking tokens, and collapses whitespace. */
 export function normaliseSubject(subject: string | null | undefined): string {
@@ -89,12 +82,17 @@ export function conversationDepth(conversationIndex: string | null | undefined):
   return Math.floor((hexLen - 44) / 10);
 }
 
+/** The 22-byte header (44 hex chars) that identifies a conversation's root. */
+const rootOf = (conversationIndex: string): string => conversationIndex.trim().slice(0, 44);
+
 function compareMessages(a: EmailRow, b: EmailRow): number {
   const ai = a.conversationindex;
   const bi = b.conversationindex;
   if (ai && bi) {
-    // Prefix-ordered: lexicographic sort puts parents before their children.
-    if (ai !== bi) return ai < bi ? -1 : 1;
+    // Prefix-ordered: lexicographic sort puts parents before their children — but ONLY within one
+    // conversation root. Across two roots (a thread merged by correlation) the comparison is
+    // between unrelated timestamps, so it falls through to the date.
+    if (ai !== bi && rootOf(ai) === rootOf(bi)) return ai < bi ? -1 : 1;
   } else if (ai && !bi) {
     return -1; // rows with real conversation data first
   } else if (!ai && bi) {
@@ -131,8 +129,39 @@ export function buildThreads(rows: EmailRow[]): Thread[] {
     return { key: `s:${normaliseSubject(r.subject)}`, by: 'subject' };
   };
 
-  for (const r of rows) {
-    const { key, by } = keyOf(r);
+  /*
+   * Merge conversations the PLATFORM says are one (measured 2026-09-28, CAS-01130-T1M1W1).
+   *
+   * A customer's reply can arrive with a NEW `baseconversationindexhash`: their mail client
+   * started a fresh Thread-Index instead of continuing ours, so hash grouping put the reply in a
+   * thread of its own. The platform still correlated it — `correlatedactivityid` points at the
+   * message it answers — so that link joins the two groups.
+   *
+   * `correlatedactivityid` ONLY, deliberately not `parentactivityid`: the case's automatic
+   * acknowledgement carries a parent link to the mail that opened the case, and agents want it
+   * kept apart from the conversation. Correlation is the platform matching an incoming reply to
+   * something we sent, which is exactly "this is the same conversation".
+   */
+  const keyed = rows.map((r) => ({ r, ...keyOf(r) }));
+  const keyById = new Map(keyed.map((k) => [k.r.activityid, k.key]));
+  const mergedInto = new Map<string, string>();
+  const find = (key: string): string => {
+    let k = key;
+    while (mergedInto.has(k)) k = mergedInto.get(k)!;
+    return k;
+  };
+  for (const { r, key } of keyed) {
+    const answered = r.correlatedactivityid ? keyById.get(r.correlatedactivityid) : undefined;
+    if (!answered) continue;
+    const from = find(key);
+    const to = find(answered);
+    // Onto the conversation being answered, so the thread keeps the older, stable key.
+    if (from !== to) mergedInto.set(from, to);
+  }
+
+  for (const { r, key: ownKey, by: ownBy } of keyed) {
+    const key = find(ownKey);
+    const by: Thread['groupedBy'] = key === ownKey ? ownBy : 'correlation';
     const bucket = byKey.get(key);
     if (bucket) {
       bucket.rows.push(r);
@@ -148,6 +177,7 @@ export function buildThreads(rows: EmailRow[]): Thread[] {
   for (const [key, { groupedBy, rows: msgs }] of byKey) {
     msgs.sort(compareMessages);
     const withIndex = msgs.filter((m) => !!m.conversationindex).length;
+    const roots = new Set(msgs.flatMap((m) => (m.conversationindex ? [rootOf(m.conversationindex)] : [])));
     threads.push({
       key,
       groupedBy,
@@ -158,7 +188,7 @@ export function buildThreads(rows: EmailRow[]): Thread[] {
           .filter((s) => s.length > 0)
           .sort((a, b) => a.length - b.length)[0] ?? '(no subject)',
       messages: msgs,
-      orderedByCreatedOnFallback: withIndex === 0,
+      orderedByCreatedOnFallback: withIndex === 0 || roots.size > 1,
     });
   }
 

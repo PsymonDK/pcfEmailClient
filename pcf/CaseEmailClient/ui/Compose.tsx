@@ -2,6 +2,8 @@ import * as React from 'react';
 import type { ComposeMode, Recipient } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
 import { isResolved } from '../domain/recipients';
+import { entityLabel, MIN_SEARCH_LENGTH, type RecipientSuggestion } from '../domain/recipientSearch';
+import { sanitiseEmailBody } from '../domain/sanitise';
 import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
@@ -31,6 +33,8 @@ export interface ComposeProps {
   subject: string;
   /** The inherited chain, already assembled. Rendered read-only; never given to the editor. */
   quotedBlock?: string;
+  /** The editor opens on a resumed draft's text rather than a fresh signature. */
+  resumed?: boolean;
   /** Initial new text — signature (R15) or a restored draft (R16). */
   initialHtml?: string;
   height: number;
@@ -45,6 +49,17 @@ export interface ComposeProps {
    * rendered rather than offered and broken.
    */
   onAddRecipients?: (field: 'to' | 'cc') => void | Promise<void>;
+  /**
+   * Type-ahead: records whose name or address starts with the text. Must be a STABLE function —
+   * the row's search effect depends on it.
+   */
+  onSearchRecipients?: (text: string) => Promise<RecipientSuggestion[]>;
+  /** A suggestion was picked — it names a real record. */
+  onPickRecipient?: (field: 'to' | 'cc', suggestion: RecipientSuggestion) => void;
+  /** Enter on a typed address that no suggestion matched: resolve it like a reply would. */
+  onTypedAddress?: (field: 'to' | 'cc', address: string) => void;
+  /** A flagged chip was clicked: pick the record it should be. Absent without the lookup. */
+  onResolveRecipient?: (field: 'to' | 'cc', address: string) => void;
   /** Mark recipients that match no record — i.e. this org refuses unresolved parties. */
   flagUnresolved?: boolean;
   /** Who the message goes out as (R17). On a Case this is normally the Case's queue. */
@@ -100,15 +115,19 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     mode, answeringLabel, to, cc, subject, quotedBlock, initialHtml, height,
     onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
-    onAddRecipients, flagUnresolved,
+    onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
+    onResolveRecipient,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
-    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate,
+    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
+  const safeQuote = React.useMemo(() => sanitiseEmailBody(quotedBlock).html, [quotedBlock]);
   const [editingSubject, setEditingSubject] = React.useState(false);
-  const [empty, setEmpty] = React.useState(true);
+  // A resumed draft starts with the agent's own text in it, so Send starts enabled (M15). It
+  // used to wait for a keystroke, because the editor reports only changes, never its first state.
+  const [empty, setEmpty] = React.useState(!resumed);
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -200,7 +219,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
           }}
         >
-          to {answeringLabel}
+          {/* A forward has no recipient yet: the label says whose message it carries (N9). */}
+          {mode === 'forward' ? 'message from' : 'to'} {answeringLabel}
         </span>
         <span style={{ flexGrow: 1 }} />
         {/* Cc is hidden until asked for. An always-visible empty Cc row would spend 30 of the
@@ -243,6 +263,10 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         onAdd={onAddRecipients ? () => void onAddRecipients('to') : undefined}
         disabled={sending}
         flagUnresolved={flagUnresolved}
+        onSearch={onSearchRecipients}
+        onPick={(s) => onPickRecipient?.('to', s)}
+        onTypedAddress={(a) => onTypedAddress?.('to', a)}
+        onResolve={onResolveRecipient ? (a) => onResolveRecipient('to', a) : undefined}
       />
       {/* Cc appears once it has someone in it, or once the agent asks for it. Rendering it
           unconditionally would spend 30 of the 471 measured vertical pixels on an empty row. */}
@@ -254,6 +278,10 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           onAdd={onAddRecipients ? () => void onAddRecipients('cc') : undefined}
           disabled={sending}
           flagUnresolved={flagUnresolved}
+          onSearch={onSearchRecipients}
+          onPick={(s) => onPickRecipient?.('cc', s)}
+          onTypedAddress={(a) => onTypedAddress?.('cc', a)}
+          onResolve={onResolveRecipient ? (a) => onResolveRecipient('cc', a) : undefined}
         />
       )}
 
@@ -328,7 +356,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             disabled={sending}
             onUse={onUseTemplate}
             onInsert={(html) => editorApi.current?.insertHTML(html)}
-            onReplace={(html) => editorApi.current?.setHTML(html)}
+            onReplace={(html) => editorApi.current?.setHTML(html, true)}
             onSubject={onSubjectChange}
           />
         )}
@@ -363,8 +391,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         >
           {/* Named per file. "Too big" with no detail leaves an agent who dropped five files
               unable to tell which one to remove. */}
-          {attachmentRejections.map((r) => (
-            <div key={r.filename}>
+          {attachmentRejections.map((r, i) => (
+            <div key={`${i}-${r.filename}`}>
               <strong>{r.filename}</strong> — {r.reason}
             </div>
           ))}
@@ -391,7 +419,12 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             <div
               // Read-only by construction: no contentEditable, and the string is never handed to
               // the editor. Rendered on the same literal white as any other sender HTML (N7).
-              dangerouslySetInnerHTML={{ __html: quotedBlock }}
+              //
+              // Sanitised AGAIN at render, although `buildQuotedBlock` already sanitises: a
+              // resumed draft's quote comes back out of Dataverse, and a draft saved before
+              // 2026-09-28 carries the sender's raw HTML. Display only — what is sent is still
+              // `quotedBlock`, untouched, so R12's round trip is unaffected.
+              dangerouslySetInnerHTML={{ __html: safeQuote }}
               style={{
                 maxHeight: '120px', overflowY: 'auto', padding: '6px 10px',
                 boxSizing: 'border-box', background: BODY_SURFACE, colorScheme: 'light',
@@ -570,6 +603,16 @@ const SenderRow: React.FC<{
  * which chip is the problem — so it carries a warning border and says why on hover. The Add
  * button beside it is how they fix it.
  */
+/** One plain address — what Enter on typed text may add when no suggestion is chosen. */
+const LOOKS_LIKE_ADDRESS = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
+
+/**
+ * A recipient row: chips, a type-ahead input, and the lookup button.
+ *
+ * The suggestions render IN FLOW under the row rather than floating over it: the row scrolls
+ * horizontally and clips its overflow, and CSW's form containers carry transforms that break
+ * fixed positioning. Compose makes room while the list is open.
+ */
 const RecipientRow: React.FC<{
   label: string;
   people: Recipient[];
@@ -578,72 +621,209 @@ const RecipientRow: React.FC<{
   disabled?: boolean;
   /** When false, an unresolved chip is just informational rather than a blocker. */
   flagUnresolved?: boolean;
-}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved }) => (
-  <div
-    style={{
-      display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 30px', height: '30px',
-      padding: '0 10px', boxSizing: 'border-box', overflowX: 'auto', overflowY: 'hidden',
-      borderBottom: `1px solid ${T.stroke3}`,
-    }}
-  >
-    <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '20px' }}>{label}</span>
-    {people.length === 0 && (
-      <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
-    )}
-    {people.map((r) => {
-      const unknown = flagUnresolved && !isResolved(r);
-      return (
-        <span
-          key={r.address}
-          title={unknown
-            ? `${r.address} — not a known contact, account, user or queue`
-            : r.address}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
-            height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
-            background: unknown ? T.warnBg : T.bg3,
-            border: `1px solid ${unknown ? T.warnFg : T.stroke2}`,
-            borderRadius: RADIUS.pill,
-            fontSize: '12px', color: T.fg1, maxWidth: '200px',
-          }}
-        >
-          {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {r.name || r.address}
-          </span>
-          <button
-            type="button"
-            onClick={() => onRemove(r.address)}
-            aria-label={`Remove ${r.name || r.address}`}
-            style={{
-              border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
-              font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
-            }}
-          >
-            ✕
-          </button>
-        </span>
-      );
-    })}
-    {onAdd && (
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={disabled}
-        aria-label={`Add ${label} recipient`}
-        title="Look up a contact, account, user or queue"
+  onSearch?: (text: string) => Promise<RecipientSuggestion[]>;
+  onPick?: (suggestion: RecipientSuggestion) => void;
+  onTypedAddress?: (address: string) => void;
+  /** Resolve a flagged chip to a record. When set, a flagged chip's label is a button. */
+  onResolve?: (address: string) => void;
+}> = ({ label, people, onRemove, onAdd, disabled, flagUnresolved, onSearch, onPick, onTypedAddress, onResolve }) => {
+  const [text, setText] = React.useState('');
+  const [suggestions, setSuggestions] = React.useState<RecipientSuggestion[]>([]);
+  const [active, setActive] = React.useState(0);
+  const [open, setOpen] = React.useState(false);
+  /** Only the newest search may answer — typing fast must not show an older query's results. */
+  const searchSeq = React.useRef(0);
+  const listId = `cec-suggest-${label.toLowerCase()}`;
+
+  React.useEffect(() => {
+    if (!onSearch) return undefined;
+    const query = text.trim();
+    if (query.length < MIN_SEARCH_LENGTH) {
+      searchSeq.current += 1;
+      setSuggestions([]);
+      setOpen(false);
+      return undefined;
+    }
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(() => {
+      void onSearch(query).then((found) => {
+        if (seq !== searchSeq.current) return undefined;
+        setSuggestions(found);
+        setActive(0);
+        setOpen(true);
+        return undefined;
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [text, onSearch]);
+
+  const reset = () => { setText(''); setSuggestions([]); setOpen(false); searchSeq.current += 1; };
+  const pick = (s: RecipientSuggestion) => { onPick?.(s); reset(); };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' && open && suggestions.length > 0) {
+      e.preventDefault();
+      setActive((i) => Math.min(suggestions.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp' && open && suggestions.length > 0) {
+      e.preventDefault();
+      setActive((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && suggestions[active]) pick(suggestions[active]);
+      else if (LOOKS_LIKE_ADDRESS.test(text.trim())) { onTypedAddress?.(text.trim()); reset(); }
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  const showList = open && text.trim().length >= MIN_SEARCH_LENGTH;
+
+  return (
+    <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column' }}>
+      <div
         style={{
-          flex: '0 0 auto', height: '22px', padding: '0 8px', boxSizing: 'border-box',
-          border: `1px dashed ${T.stroke1}`, borderRadius: RADIUS.pill, background: 'transparent',
-          font: 'inherit', fontSize: '12px', color: disabled ? T.fg4 : T.link,
-          cursor: disabled ? 'default' : 'pointer',
+          display: 'flex', alignItems: 'center', gap: '6px', flex: '0 0 30px', height: '30px',
+          padding: '0 10px', boxSizing: 'border-box', overflowX: 'auto', overflowY: 'hidden',
+          borderBottom: `1px solid ${T.stroke3}`,
         }}
       >
-        + Add
-      </button>
-    )}
-  </div>
-);
+        <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '20px' }}>{label}</span>
+        {people.length === 0 && !onSearch && (
+          <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
+        )}
+        {people.map((r, i) => {
+          const unknown = flagUnresolved && !isResolved(r);
+          const resolvable = unknown && !!onResolve && !disabled;
+          const why = r.ambiguousMatches
+            ? `${r.address} — matches more than one record`
+            : `${r.address} — not a known contact, account, lead, user or queue`;
+          return (
+            <span
+              key={`${i}-${r.address}`}
+              title={!unknown ? r.address : resolvable ? `${why}. Click to pick the right record.` : why}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px', flex: '0 0 auto',
+                height: '22px', padding: '0 4px 0 8px', boxSizing: 'border-box',
+                background: unknown ? T.warnBg : T.bg3,
+                border: `1px solid ${unknown ? T.warnFg : T.stroke2}`,
+                borderRadius: RADIUS.pill,
+                fontSize: '12px', color: T.fg1, maxWidth: '200px',
+              }}
+            >
+              {unknown && <span aria-hidden style={{ color: T.warnFg, flex: '0 0 auto' }}>!</span>}
+              {resolvable ? (
+                <button
+                  type="button"
+                  onClick={() => onResolve?.(r.address)}
+                  aria-label={`Resolve ${r.address} to a record`}
+                  style={{
+                    border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+                    font: 'inherit', fontSize: '12px', color: T.fg1, textDecoration: 'underline dotted',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {r.name || r.address}
+                </button>
+              ) : (
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.name || r.address}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => onRemove(r.address)}
+                aria-label={`Remove ${r.name || r.address}`}
+                style={{
+                  border: 'none', background: 'transparent', cursor: 'pointer', color: T.fg3,
+                  font: 'inherit', fontSize: '12px', lineHeight: 1, padding: '2px 3px', flex: '0 0 auto',
+                }}
+              >
+                ✕
+              </button>
+            </span>
+          );
+        })}
+        {onSearch && (
+          <input
+            type="text"
+            value={text}
+            disabled={disabled}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={() => setOpen(false)}
+            onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+            placeholder={people.length === 0 ? 'Type a name or address' : ''}
+            role="combobox"
+            aria-label={`Add ${label} recipient by name or address`}
+            aria-autocomplete="list"
+            aria-expanded={showList}
+            aria-controls={listId}
+            aria-activedescendant={showList && suggestions[active] ? `${listId}-${active}` : undefined}
+            style={{
+              flex: '1 0 140px', minWidth: '140px', height: '22px', border: 'none', outline: 'none',
+              background: 'transparent', font: 'inherit', fontSize: '12px', color: T.fg1,
+            }}
+          />
+        )}
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={disabled}
+            aria-label={`Add ${label} recipient`}
+            title="Look up a contact, account, user or queue"
+            style={{
+              flex: '0 0 auto', height: '22px', padding: '0 8px', boxSizing: 'border-box',
+              border: `1px dashed ${T.stroke1}`, borderRadius: RADIUS.pill, background: 'transparent',
+              font: 'inherit', fontSize: '12px', color: disabled ? T.fg4 : T.link,
+              cursor: disabled ? 'default' : 'pointer',
+            }}
+          >
+            + Add
+          </button>
+        )}
+      </div>
+      {showList && (
+        <div
+          id={listId}
+          role="listbox"
+          aria-label={`${label} suggestions`}
+          style={{ borderBottom: `1px solid ${T.stroke3}`, background: T.bg1, padding: '2px 0' }}
+        >
+          {suggestions.length === 0 && (
+            <div style={{ padding: '4px 40px', fontSize: '12px', color: T.fg3 }}>
+              No contact, account, user or queue starts with that.
+              {LOOKS_LIKE_ADDRESS.test(text.trim()) && ' Press Enter to add the address as typed.'}
+            </div>
+          )}
+          {suggestions.map((s, i) => (
+            <div
+              key={`${s.partyEntity}:${s.partyId}`}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // mousedown, not click: a click would first blur the input and close the list.
+              onMouseDown={(e) => { e.preventDefault(); pick(s); }}
+              onMouseEnter={() => setActive(i)}
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: '8px', padding: '3px 10px 3px 40px',
+                fontSize: '12px', cursor: 'pointer', background: i === active ? T.selected : 'transparent',
+              }}
+            >
+              <span style={{ color: T.fg1, fontWeight: 600 }}>{s.name}</span>
+              <span style={{ color: T.fg2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {s.address}
+              </span>
+              <span style={{ flexGrow: 1 }} />
+              <span style={{ color: T.fg3, flex: '0 0 auto' }}>{entityLabel(s.partyEntity)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * The formatting toolbar.

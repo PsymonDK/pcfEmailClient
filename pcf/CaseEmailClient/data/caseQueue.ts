@@ -1,3 +1,5 @@
+import { asString } from './coerce';
+import { toGuid } from '../domain/guid';
 import { assertGuid, type WebApiLike } from './emailQueries';
 import { normaliseWebApiError, type NormalisedError } from './errors';
 import type { SenderCandidate } from '../domain/sender';
@@ -33,7 +35,7 @@ const QUEUE_COLUMNS = [
 ] as const;
 
 export function buildCaseQueueQuery(caseId: string): string {
-  const bare = caseId.replace(/^\{|\}$/g, '').toLowerCase();
+  const bare = toGuid(caseId, 'caseId');
   return (
     '?$select=_queueid_value,statecode'
     + `&$filter=_objectid_value eq ${bare}`
@@ -68,7 +70,30 @@ export interface CaseQueue {
   mailboxId?: string;
 }
 
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+const str = (v: unknown): string => asString(v);
+
+/**
+ * A `queue` row as a sending identity. One mapping (R4) for both routes to a queue — the case's
+ * own `queueitem` expand and the configured override — which had drifted into two copies.
+ */
+function toCaseQueue(q: Record<string, unknown>, fallbackId = ''): CaseQueue | undefined {
+  const id = str(q.queueid) || fallbackId;
+  if (!id) return undefined;
+  const signatureId = str(q._emailsignature_value);
+  return {
+    candidate: {
+      kind: 'queue',
+      id,
+      displayName: str(q.name) || 'Queue',
+      address: str(q.emailaddress).toLowerCase(),
+      signatureId: signatureId || undefined,
+    },
+    approvalState: typeof q.emailrouteraccessapproval === 'number'
+      ? q.emailrouteraccessapproval
+      : 0,
+    mailboxId: str(q._defaultmailbox_value) || undefined,
+  };
+}
 
 /**
  * The Case's queue, or `undefined` when it is in none.
@@ -90,27 +115,8 @@ export async function fetchCaseQueue(
   try {
     const page = await webApi.retrieveMultipleRecords('queueitem', buildCaseQueueQuery(caseId), 1);
     const q = page.entities[0]?.queueid as Record<string, unknown> | undefined;
-    if (!q) return {};
-
-    const id = str(q.queueid);
-    if (!id) return {};
-
-    const signatureId = str(q._emailsignature_value);
-    return {
-      queue: {
-        candidate: {
-          kind: 'queue',
-          id,
-          displayName: str(q.name) || 'Queue',
-          address: str(q.emailaddress).toLowerCase(),
-          signatureId: signatureId || undefined,
-        },
-        approvalState: typeof q.emailrouteraccessapproval === 'number'
-          ? q.emailrouteraccessapproval
-          : 0,
-        mailboxId: str(q._defaultmailbox_value) || undefined,
-      },
-    };
+    const queue = q ? toCaseQueue(q) : undefined;
+    return queue ? { queue } : {};
   } catch (rejection) {
     return { error: normaliseWebApiError(rejection) };
   }
@@ -131,24 +137,10 @@ export async function fetchQueueById(
     assertGuid(queueId, 'queueId');
     const q = await webApi.retrieveRecord(
       'queue',
-      queueId.replace(/^\{|\}$/g, ''),
+      toGuid(queueId, 'queueId'),
       `?$select=${QUEUE_COLUMNS.join(',')}`,
     );
-    const id = str(q.queueid) || queueId;
-    const signatureId = str(q._emailsignature_value);
-    return {
-      candidate: {
-        kind: 'queue',
-        id,
-        displayName: str(q.name) || 'Queue',
-        address: str(q.emailaddress).toLowerCase(),
-        signatureId: signatureId || undefined,
-      },
-      approvalState: typeof q.emailrouteraccessapproval === 'number'
-        ? q.emailrouteraccessapproval
-        : 0,
-      mailboxId: str(q._defaultmailbox_value) || undefined,
-    };
+    return toCaseQueue(q, queueId);
   } catch {
     // A misconfigured override must not cost the agent their sender. Falling through to the
     // Case's own queue is the useful failure.

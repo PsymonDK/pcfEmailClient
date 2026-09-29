@@ -1,0 +1,110 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<forms xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <systemform>
+    <formid>{729d9197-cdad-f111-aaac-000d3ab163fb}</formid>
+    <IntroducedVersion>1.0</IntroducedVersion>
+    <FormPresentation>1</FormPresentation>
+    <FormActivationState>1</FormActivationState>
+    <form enablerelatedinformation="false" shownavigationbar="true" hasmargin="false" headerdensity="HighWithControls" showinformselector="true">
+      <tabs>
+        <tab name="tab_emailclient" id="{92909FD5-982D-44A3-AA7A-3944E69D0078}" IsUserDefined="1" locklevel="0" showlabel="true" verticallayout="true">
+          <labels>
+            <label description="Email" languagecode="1033" />
+          </labels>
+          <columns>
+            <column width="100%">
+              <sections>
+                <section name="section_emailclient" id="{BB4F2EA3-73AD-4977-A9E0-BE394A6607C8}" IsUserDefined="1" locklevel="0" showlabel="false" showbar="false" layout="varwidth" celllabelalignment="Left" celllabelposition="Left" columns="1" labelwidth="115">
+                  <labels>
+                    <label description="" languagecode="1033" />
+                  </labels>
+                  <rows>
+                    <row>
+                      <cell id="{B2705C17-77E0-420D-BCA4-6DAAC5EBCAF6}" locklevel="0" colspan="1" rowspan="20" auto="false" showlabel="false">
+                        <labels>
+                          <label description="Case Email Client" languagecode="1033" />
+                        </labels>
+                        <control indicationOfSubgrid="true" id="Subgrid_emailclient" classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}" uniqueid="{61F0D8D4-7EC7-44C7-B73B-A6E4A0396BD2}">
+                          <parameters>
+                            <RecordsPerPage>50</RecordsPerPage>
+                            <AutoExpand>Fixed</AutoExpand>
+                            <EnableQuickFind>false</EnableQuickFind>
+                            <EnableViewPicker>false</EnableViewPicker>
+                            <EnableChartPicker>false</EnableChartPicker>
+                            <ChartGridMode>Grid</ChartGridMode>
+                            <RelationshipName>Incident_Emails</RelationshipName>
+                            <TargetEntityType>email</TargetEntityType>
+                            <ViewId>{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}</ViewId>
+                            <ViewIds>{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}</ViewIds>
+                          </parameters>
+                        </control>
+                      </cell>
+                    </row>
+                  </rows>
+                </section>
+              </sections>
+            </column>
+          </columns>
+        </tab>
+      </tabs>
+      <header id="{CF9CD80E-17E4-438D-9705-5575B9BDF2D1}" celllabelposition="Top" columns="1111" labelwidth="115">
+        <rows>
+          <row>
+            <cell id="{2e6df00b-7ea2-406e-8340-681ae4445302}" locklevel="0" colspan="1" rowspan="1">
+              <labels>
+                <label description="Case Number" languagecode="1033" />
+              </labels>
+              <control id="header_ticketnumber" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="ticketnumber" disabled="false" />
+            </cell>
+            <cell id="{5e1e7fba-952d-44c5-a517-700941fd9b7f}" locklevel="0" colspan="1" rowspan="1">
+              <labels>
+                <label description="Status Reason" languagecode="1033" />
+              </labels>
+              <control id="header_statuscode" classid="{3EF39988-22BB-4F0B-BBBE-64B5A3748AEE}" datafieldname="statuscode" disabled="false" />
+            </cell>
+            <cell id="{fdfbade5-7f2f-4ab2-9f66-b142bb262656}" locklevel="0" colspan="1" rowspan="1">
+              <labels>
+                <label description="Priority" languagecode="1033" />
+              </labels>
+              <control id="header_prioritycode" classid="{3EF39988-22BB-4F0B-BBBE-64B5A3748AEE}" datafieldname="prioritycode" disabled="false" />
+            </cell>
+            <cell id="{52956bdc-e8c7-c177-621c-266b5bd2a9ee}" showlabel="true" locklevel="0">
+              <labels>
+                <label description="Owner" languagecode="1033" />
+              </labels>
+              <control id="header_ownerid" classid="{270BD3DB-D9AF-4782-9025-509E298DEC0A}" datafieldname="ownerid" disabled="false" />
+            </cell>
+          </row>
+        </rows>
+      </header>
+      <controlDescriptions>
+        <controlDescription forControl="{61F0D8D4-7EC7-44C7-B73B-A6E4A0396BD2}">
+          <customControl formFactor="0" name="jhrb_JHRB.CaseEmailClient">
+            <parameters />
+          </customControl>
+          <customControl formFactor="1" name="jhrb_JHRB.CaseEmailClient">
+            <parameters />
+          </customControl>
+          <customControl formFactor="2" name="jhrb_JHRB.CaseEmailClient">
+            <parameters />
+          </customControl>
+        </controlDescription>
+      </controlDescriptions>
+      <DisplayConditions FallbackForm="false" Order="29">
+        <Role Id="{627090ff-40a3-4053-8790-584edc5be201}" />
+        <Role Id="{119f245c-3cc8-4b62-b31c-d1a046ced15d}" />
+        <Role Id="{1808b939-dd07-4ca7-aa99-ddd2734378f1}" />
+        <Role Id="{3DAC4D9E-568C-E611-80D4-00155D42A122}" />
+        <Role Id="{ecfd0b44-5720-45e3-ae68-417ddb0fb654}" />
+      </DisplayConditions>
+    </form>
+    <IsCustomizable>1</IsCustomizable>
+    <CanBeDeleted>1</CanBeDeleted>
+    <LocalizedNames>
+      <LocalizedName description="Case - Email Client" languagecode="1033" />
+    </LocalizedNames>
+    <Descriptions>
+      <Description description="Hosts the JHRB.CaseEmailClient PCF on a single &quot;Email&quot; tab. Opened as a CSW session tab by an Entity record application tab template. See docs/design/01-design-decisions.md." languagecode="1033" />
+    </Descriptions>
+  </systemform>
+</forms>

@@ -62,6 +62,21 @@ describe('pickSetting', () => {
     expect(pickSetting(rows, CARE.id)).toBeDefined();
   });
 
+  it('treats two rows for the same queue as NO configuration — send as the agent (L2)', () => {
+    const rows = [
+      row({ queueId: CARE.id, sendFromQueue: true }),
+      row({ queueId: CARE.id, sendFromQueue: false }),
+      row({ isDefault: true }),
+    ];
+    // Not the default row either: the queue-specific intent exists, it is just contradictory.
+    expect(pickSetting(rows, CARE.id)).toBeUndefined();
+  });
+
+  it('treats two default rows as NO configuration (L2)', () => {
+    expect(pickSetting([row({ isDefault: true }), row({ isDefault: true })], CARE.id))
+      .toBeUndefined();
+  });
+
   it('returns nothing when the table is empty', () => {
     expect(pickSetting([], CARE.id)).toBeUndefined();
   });

@@ -1,6 +1,6 @@
 import type { EmailRow } from './threading';
 import { splitQuotedHistory } from './quoting';
-import { stripTrackingToken } from './threading';
+import { sanitiseEmailBody } from './sanitise';
 
 /**
  * Composing a reply, reply-all or forward: recipients (R9) and the outgoing body (R12).
@@ -53,6 +53,11 @@ export interface Recipient {
    * to agree today.
    */
   partyNav?: string;
+  /**
+   * The address matched MORE than one record, so none was chosen (L6). Still unresolved — two
+   * matches is never a guess — but the agent is told why, instead of "not a known record".
+   */
+  ambiguousMatches?: number;
 }
 
 export interface ResolvedRecipients {
@@ -122,12 +127,18 @@ export interface QuoteHeader {
 }
 
 /**
- * The quoted block: an attribution header plus the original message's body, **verbatim**.
+ * The quoted block: an attribution header plus the original message's body, **sanitised once**.
  *
- * "Verbatim" is the whole point. `originalBodyHtml` is passed through untouched — not parsed, not
- * re-serialised, not sanitised again — because every transformation is a chance to alter a
- * business document, and because re-serialising is precisely what makes quoted chains degrade
- * into soup after a few rounds.
+ * `originalBodyHtml` is the raw `description` exactly as Dataverse returns it — written by
+ * someone outside the organisation, and S12 measured that the platform sanitises nothing. It is
+ * sanitised HERE, once, and never transformed again: from this point the block is the opaque,
+ * verbatim string R12 depends on, so the round trip is still byte-exact.
+ *
+ * **Why here and not at the call site.** Until 2026-09-28 this comment said "not sanitised
+ * again" — but the body had never been sanitised the first time. The reading pane sanitises
+ * inside `BodyFrame` and nothing else did, so Reply → expand quote rendered the sender's HTML into
+ * the host document with the agent's session behind it, and the same HTML went out in the reply
+ * under the queue's identity. Doing it inside the builder means no caller can forget.
  */
 export function buildQuotedBlock(header: QuoteHeader, originalBodyHtml: string): string {
   const rows = [
@@ -145,7 +156,8 @@ export function buildQuotedBlock(header: QuoteHeader, originalBodyHtml: string):
     `<div id="${QUOTE_CONTAINER_ID}">`
     + '<hr style="display:inline-block;width:98%" tabindex="-1">'
     + `<div style="font-size:11pt">${headerHtml}</div>`
-    + originalBodyHtml
+    // Remote images kept: this is the customer's own message going back to them.
+    + sanitiseEmailBody(originalBodyHtml, { allowRemoteImages: true, isolateIds: false }).html
     + '</div>'
   );
 }
@@ -217,18 +229,36 @@ export function headerFor(
 /**
  * The reply or forward subject.
  *
- * **The old tracking token is stripped.** The platform appends a fresh one on send, so carrying
- * the inherited one forward yields `… CRM:0100012 CRM:0100019` — seen in the published app on
- * 2026-09-23 before this was added. Threading does not depend on the token in the subject;
- * `conversationindex` and the hash carry it, and the platform rewrites both on send.
+ * **The tracking token is KEPT, verbatim — a requirement, not a preference (2026-09-29).** The
+ * client must never remove a tracking token from a subject: the token is how Dataverse correlates
+ * mail with the record, and it is the platform's to manage. Until 2026-09-29 this function
+ * stripped the inherited token, on the grounds that the platform appends a fresh one on send.
+ * It does not: a subject that already carries a token this organisation knows is left as it is.
+ * Two tokens mean the mail passed through another Dynamics system, whose token must survive too.
+ * The helper that stripped it was deleted so it cannot creep back.
  */
 export function composeSubject(mode: ComposeMode, originalSubject: string | null): string {
-  const base = stripTrackingToken((originalSubject ?? '').trim());
-  const prefix = mode === 'forward' ? 'FW: ' : 'RE: ';
-  // Do not stack prefixes: "RE: RE: RE:" is how a thread's subject becomes unreadable. Matches the
-  // same prefixes `normaliseSubject` strips, so the two stay consistent.
-  if (/^\s*(re|fw|fwd|sv|vs|aw|antw|rif|ang|vb|vl)\s*(\[\d+\])?\s*:/i.test(base)) return base;
-  return prefix + base;
+  const base = (originalSubject ?? '').trim();
+  const forward = mode === 'forward';
+  /*
+   * Do not stack the SAME prefix: "RE: RE: RE:" is how a thread's subject becomes unreadable. A
+   * different one is added, as Outlook does — forwarding "RE: X" gives "FW: RE: X" (N8). Any
+   * prefix used to count, so a forward of a reply went out as "RE: X".
+   *
+   * Together these are the prefixes `normaliseSubject` strips. "VS" sits with forwards: it is
+   * the Danish and Norwegian forward prefix, which matters more here than Finnish "vastaus".
+   */
+  const same = forward ? FORWARD_PREFIX : REPLY_PREFIX;
+  if (same.test(base)) return base;
+  return (forward ? 'FW: ' : 'RE: ') + base;
+}
+
+const REPLY_PREFIX = /^\s*(re|sv|aw|antw|rif|ang)\s*(\[\d+\])?\s*:/i;
+const FORWARD_PREFIX = /^\s*(fw|fwd|vs|vb|vl)\s*(\[\d+\])?\s*:/i;
+
+/** Does this subject start with a forward prefix? How a stored draft says it was a forward. */
+export function isForwardSubject(subject: string | null): boolean {
+  return FORWARD_PREFIX.test(subject ?? '');
 }
 
 function escapeHtml(s: string): string {

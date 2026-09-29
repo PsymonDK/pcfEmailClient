@@ -1,9 +1,14 @@
 import type { WebApiLike } from './emailQueries';
+import { normaliseWebApiError, type NormalisedError } from './errors';
 import {
   bareId, emailColumnFor, isPartyEntity, LOOKUP_ENTITIES, partyNavFor, RESOLVE_ORDER,
   type PartyEntity, type ResolutionOutcome,
 } from '../domain/recipients';
 import type { Recipient } from '../domain/compose';
+import {
+  buildSearchQuery, mergeSuggestions, MIN_SEARCH_LENGTH, PER_TABLE, toSuggestions,
+  type RecipientSuggestion,
+} from '../domain/recipientSearch';
 
 /**
  * Finding the record behind a recipient.
@@ -61,14 +66,19 @@ export function resolveXrmUtility(): XrmUtility | undefined {
  * Returns `[]` for a cancel, which the caller treats as "nothing to do" rather than an error.
  */
 export async function openRecipientLookup(
+  options: {
+    /** Pre-fills the dialog's search — resolving a flagged chip searches for its address. */
+    searchText?: string;
+    allowMultiSelect?: boolean;
+  } = {},
   utility: XrmUtility | undefined = resolveXrmUtility(),
 ): Promise<PickedRecord[]> {
   if (!utility) return [];
   try {
     const picked = await utility.lookupObjects({
       entityTypes: [...LOOKUP_ENTITIES],
-      allowMultiSelect: true,
-      searchText: '',
+      allowMultiSelect: options.allowMultiSelect ?? true,
+      searchText: options.searchText ?? '',
     });
     return Array.isArray(picked) ? picked : [];
   } catch {
@@ -98,13 +108,31 @@ export async function fetchPartyAddress(
   }
 }
 
-function addressFilter(entity: PartyEntity, address: string): string {
+/**
+ * The lookup query for one address.
+ *
+ * Two layers of escaping, in this order, and both are needed (M1, 2026-09-28):
+ *
+ * 1. **OData** — single quotes delimit the literal, so they are doubled.
+ * 2. **URL** — the options string goes into the query string as-is, and the server URL-decodes it
+ *    AFTER our OData escaping. Unencoded, `+` decoded to a space (so plus-addressed customers never
+ *    resolved and their replies were refused), `&` and `#` cut the query off, and a `%27` in an
+ *    external sender's address decoded to a quote and could rewrite the filter.
+ */
+export function addressFilter(entity: PartyEntity, address: string): string {
   const column = emailColumnFor(entity);
-  // Single quotes are the string delimiter in OData; doubling escapes them.
-  const safe = address.replace(/'/g, "''");
+  const literal = encodeURIComponent(address.replace(/'/g, "''"));
   const name = entity === 'account' ? 'name' : 'fullname';
-  return `?$select=${entity}id,${column},${name}&$filter=${column} eq '${safe}'&$top=2`;
+  return `?$select=${entity}id,${column},${name}&$filter=${column} eq '${literal}'&$top=2`;
 }
+
+/** No read privilege on a table: HTTP 403, or Dataverse's `PrivilegeDenied` (0x80040220). */
+function isPrivilegeError(e: NormalisedError): boolean {
+  return e.status === 403 || e.code?.toLowerCase() === '0x80040220';
+}
+
+/** One plain address. Anything else is not worth four queries, and is not a recipient. */
+const ADDRESS_SHAPE = /^[^\s@,;<>"]+@[^\s@,;<>"]+$/;
 
 /**
  * Turn a bare address back into a record.
@@ -120,7 +148,7 @@ export async function resolveAddress(
   address: string,
 ): Promise<ResolutionOutcome> {
   const trimmed = address.trim();
-  if (!trimmed) return { kind: 'none' };
+  if (!ADDRESS_SHAPE.test(trimmed)) return { kind: 'none' };
 
   for (const entity of RESOLVE_ORDER) {
     try {
@@ -144,10 +172,15 @@ export async function resolveAddress(
           address: trimmed.toLowerCase(),
         },
       };
-    } catch {
-      // One unreadable table must not stop the search — an agent may lack read on `lead` and
-      // still be perfectly able to mail a contact.
-      continue;
+    } catch (rejection) {
+      // A table the agent may not READ must not stop the search — they may lack read on `lead`
+      // and still be perfectly able to mail a contact.
+      //
+      // Any OTHER failure stops it (L6). Carrying on past a contact lookup that merely timed out
+      // could bind the address to an account or user with the same address instead — a real
+      // record, the wrong one. Unresolved is the honest answer, and the send guard names it.
+      if (isPrivilegeError(normaliseWebApiError(rejection))) continue;
+      return { kind: 'none' };
     }
   }
   return { kind: 'none' };
@@ -204,6 +237,8 @@ export async function enrichRecipients(
   return recipients.map((r) => {
     if (r.partyId) return r;
     const outcome = resolved.get(r.address.trim().toLowerCase());
+    // Several matches stay unresolved — never a guess — but say so (L6).
+    if (outcome?.kind === 'ambiguous') return { ...r, ambiguousMatches: outcome.matches };
     if (!outcome || outcome.kind !== 'resolved') return r;
     return {
       ...r,
@@ -215,4 +250,28 @@ export async function enrichRecipients(
       partyNav: partyNavFor(outcome.party.partyEntity),
     };
   });
+}
+
+/**
+ * Type-ahead suggestions for To/Cc: records whose name or address starts with `text`.
+ *
+ * One query per table, in parallel. A table the agent may not read — or one that errors — costs
+ * its own suggestions and nothing else; a type-ahead that fails outright is worse than one that
+ * shows the contacts it could find.
+ */
+export async function searchRecipients(
+  webApi: WebApiLike,
+  text: string,
+  alreadyOnMessage: Iterable<string>,
+): Promise<RecipientSuggestion[]> {
+  if (text.trim().length < MIN_SEARCH_LENGTH) return [];
+  const results = await Promise.all(LOOKUP_ENTITIES.map(async (entity) => {
+    try {
+      const page = await webApi.retrieveMultipleRecords(entity, buildSearchQuery(entity, text), PER_TABLE);
+      return [entity, toSuggestions(entity, page.entities)] as const;
+    } catch {
+      return [entity, [] as RecipientSuggestion[]] as const;
+    }
+  }));
+  return mergeSuggestions(new Map(results), alreadyOnMessage);
 }

@@ -203,7 +203,8 @@ describe('toSettingRow', () => {
 });
 
 describe('buildDraftLookupQuery — finding an agent’s existing draft', () => {
-  const q = buildDraftLookupQuery(CASE_ID, 'de1b0e6c-b6b8-f111-aaaf-000d3ab163fb');
+  const AGENT_ID = '{4F2D39F5-23CC-F011-8544-6045BDE0FA7E}';
+  const q = buildDraftLookupQuery(CASE_ID, 'de1b0e6c-b6b8-f111-aaaf-000d3ab163fb', AGENT_ID);
 
   it('finds only OPEN DRAFTS, never sent mail', () => {
     // statecode 0 + statuscode 1 is the draft definition. Without both, reopening Reply could
@@ -215,6 +216,11 @@ describe('buildDraftLookupQuery — finding an agent’s existing draft', () => 
   it('scopes by case through the typed navigation property AND by parent message', () => {
     expect(q).toContain('regardingobjectid_incident/incidentid eq');
     expect(q).toContain('_parentactivityid_value eq');
+  });
+
+  it('finds only the agent’s own draft, never a colleague’s (M2)', () => {
+    // userSettings.userId arrives braced and upper-cased; the filter wants the bare lower form.
+    expect(q).toContain('_ownerid_value eq 4f2d39f5-23cc-f011-8544-6045bde0fa7e');
   });
 
   it('DOES select description, deliberately', () => {

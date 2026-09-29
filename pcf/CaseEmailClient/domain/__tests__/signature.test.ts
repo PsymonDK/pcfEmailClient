@@ -42,6 +42,14 @@ describe('extractSignatureHtml — the real stylesheet', () => {
     expect(html).toContain('<span>Simon</span>');
   });
 
+  it('escapes a substituted value — it is text, not markup (L5)', () => {
+    const html = extractSignatureHtml(REAL_SIGNATURE, {
+      'systemuser/firstname': '<img src=x onerror=alert(1)> & Co',
+    });
+    expect(html).toContain('<span>&lt;img src=x onerror=alert(1)&gt; &amp; Co</span>');
+    expect(html).not.toContain('<img');
+  });
+
   it('leaves the slot empty when the value is unknown, as the stylesheet itself says', () => {
     // `<xsl:otherwise></xsl:otherwise>` — its own instruction for "no value" is an empty string.
     expect(extractSignatureHtml(REAL_SIGNATURE)).toContain('<span></span>');

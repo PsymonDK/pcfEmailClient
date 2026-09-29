@@ -1,8 +1,8 @@
 // Creates the per-agent read-state table (R6).
 //
-//   DV_TOKEN=$(az account get-access-token --resource $DV_ORG --query accessToken -o tsv) \
-//   DV_ORG=https://your-org.crm4.dynamics.com \
-//     node scripts/deploy/create-readstate-table.mjs [--confirm]
+//   node scripts/deploy/create-readstate-table.mjs [--confirm]
+//
+// Environment guard and token acquisition: see scripts/deploy/README.md.
 //
 // Dry run unless --confirm. This is a SCHEMA change to a shared environment, so it is deliberately
 // step-by-step and each step reports what it did.
@@ -18,72 +18,20 @@
 // The `incident` lookup is DENORMALISED on purpose. Without it, reading state for a case means one
 // query per message; with it, the client fetches one page filtered by case + user. That is the
 // difference between 1 request and 50 on a busy case.
-import fs from 'node:fs';
+import {
+  CONFIRM, api, getEnv, label, publish, withSettle, writeIds,
+} from '../lib/dv.mjs';
 
-const ORG = process.env.DV_ORG || 'https://your-org.crm4.dynamics.com';
-const TOK = process.env.DV_TOKEN || fs.readFileSync(`${import.meta.dirname}/../../.tok`, 'utf8').trim();
-const CONFIRM = process.argv.includes('--confirm');
+const { org: ORG } = getEnv();
 
 const SOLUTION = 'JHRBCaseEmailClient';
 const PREFIX = 'jhrb';
 const TABLE = `${PREFIX}_emailreadstate`;
 const IDS_FILE = `${import.meta.dirname}/readstate-ids.json`;
 
-const label = (text) => ({
-  '@odata.type': 'Microsoft.Dynamics.CRM.Label',
-  LocalizedLabels: [{
-    '@odata.type': 'Microsoft.Dynamics.CRM.LocalizedLabel',
-    Label: text,
-    LanguageCode: 1033,
-  }],
-});
-
-const api = async (path, method = 'GET', body) => {
-  const r = await fetch(`${ORG}/api/data/v9.2/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOK}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'OData-Version': '4.0',
-      // Puts every created component straight into our unmanaged solution, so nothing is left
-      // loose in the Default solution where it would be missed at export time.
-      'MSCRM.SolutionUniqueName': SOLUTION,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const txt = await r.text();
-  let json = null;
-  try { json = txt ? JSON.parse(txt) : null; } catch { /* not json */ }
-  if (!r.ok) {
-    const message = json?.error?.message ?? txt.slice(0, 400);
-    throw new Error(`${method} ${path} -> ${r.status}: ${String(message).replace(/\s+/g, ' ').slice(0, 300)}`);
-  }
-  return { json, headers: r.headers };
-};
-
-/**
- * Retries a step through the metadata cache lag that follows a table creation.
- *
- * Measured 2026-09-11: `POST EntityDefinitions` returns 201 with a MetadataId, and for several
- * seconds afterwards every request that touches that table fails with *"was not found in the
- * MetadataCache.LazyDynamicMetadataCache"* — or, on the Attributes endpoint, with a bare
- * "An unexpected error occurred." So the first run created the table and then failed every
- * column on it. Without this, whether the script works depends on how fast the server settles.
- */
-const withSettle = async (what, attempt) => {
-  for (let i = 1; i <= 6; i += 1) {
-    try {
-      return await attempt();
-    } catch (e) {
-      const transient = /MetadataCache|unexpected error occurred/i.test(e.message);
-      if (!transient || i === 6) throw e;
-      console.log(`   ${what}: metadata cache not settled, retrying (${i}/5)…`);
-      await new Promise((r) => setTimeout(r, i * 4000));
-    }
-  }
-  throw new Error('unreachable');
-};
+// Every request carries the solution header, so each created component lands in our unmanaged
+// solution rather than loose in Default.
+const dv = (path, opts = {}) => api(path, { solution: SOLUTION, ...opts });
 
 // ── the definitions ──────────────────────────────────────────────────────────
 
@@ -229,13 +177,15 @@ const created = { createdAt: new Date().toISOString(), org: ORG, table: TABLE, s
 
 // 1. the table
 try {
-  const existing = await api(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId`).catch(() => null);
+  // Only a 404 means "absent". Anything else (an expired token's 401) throws, rather than being
+  // read as "not there" and followed by a create.
+  const existing = await dv(`EntityDefinitions(LogicalName='${TABLE}')?$select=MetadataId`, { allow404: true });
   if (existing?.json?.MetadataId) {
     created.metadataId = existing.json.MetadataId;
     console.log(`1. table ${TABLE} -> already exists (${created.metadataId})`);
   } else {
-    const r = await api('EntityDefinitions', 'POST', entity);
-    created.metadataId = r.headers.get('OData-EntityId')?.match(/\(([^)]+)\)/)?.[1];
+    const r = await dv('EntityDefinitions', { method: 'POST', body: entity });
+    created.metadataId = r.id;
     console.log(`1. created table ${TABLE} -> ${created.metadataId ?? 'ok'}`);
   }
 } catch (e) {
@@ -252,7 +202,7 @@ created.lookups = [];
 for (const l of lookups) {
   const name = l.Lookup.LogicalName;
   try {
-    await withSettle(name, () => api('RelationshipDefinitions', 'POST', l));
+    await withSettle(() => dv('RelationshipDefinitions', { method: 'POST', body: l }), name);
     console.log(`2. created lookup ${name} -> ${l.ReferencedEntity}`);
     created.lookups.push(name);
   } catch (e) {
@@ -268,8 +218,10 @@ for (const l of lookups) {
 
 // 3. the timestamp
 try {
-  await withSettle(`${PREFIX}_readon`, () =>
-    api(`EntityDefinitions(LogicalName='${TABLE}')/Attributes`, 'POST', readOnAttribute));
+  await withSettle(
+    () => dv(`EntityDefinitions(LogicalName='${TABLE}')/Attributes`, { method: 'POST', body: readOnAttribute }),
+    `${PREFIX}_readon`,
+  );
   console.log(`3. created ${PREFIX}_readon`);
   created.readOn = true;
 } catch (e) {
@@ -282,8 +234,10 @@ try {
 // 4. the alternate key — only meaningful if both its columns exist
 if (created.lookups.includes(`${PREFIX}_emailid`) && created.lookups.includes(`${PREFIX}_userid`)) {
   try {
-    await withSettle(alternateKey.LogicalName, () =>
-      api(`EntityDefinitions(LogicalName='${TABLE}')/Keys`, 'POST', alternateKey));
+    await withSettle(
+      () => dv(`EntityDefinitions(LogicalName='${TABLE}')/Keys`, { method: 'POST', body: alternateKey }),
+      alternateKey.LogicalName,
+    );
     console.log(`4. created alternate key on (${alternateKey.KeyAttributes.join(', ')})`);
     created.alternateKey = alternateKey.LogicalName;
   } catch (e) {
@@ -302,14 +256,13 @@ if (created.lookups.includes(`${PREFIX}_emailid`) && created.lookups.includes(`$
 
 // 5. publish
 try {
-  await api('PublishXml', 'POST', {
-    ParameterXml: `<importexportxml><entities><entity>${TABLE}</entity></entities></importexportxml>`,
-  });
+  // Scoped to our own new table, which nobody else customises.
+  await publish({ entities: [TABLE] });
   console.log('5. published');
 } catch (e) {
   console.log(`5. publish FAILED: ${e.message}`);
 }
 
-fs.writeFileSync(IDS_FILE, JSON.stringify(created, null, 2) + '\n');
-console.log(`\nWrote ${IDS_FILE}`);
+writeIds(IDS_FILE, created);
+console.log('\nWrote readstate-ids.json');
 console.log('Remove it again with: node scripts/deploy/revert-readstate-table.mjs --confirm');

@@ -9,7 +9,6 @@ import {
   MESSAGE_SIZE_LIMIT,
   planBlocks,
   blockRange,
-  sendableAttachmentIds,
   sizeWarning,
   totalSize,
   type PendingAttachment,
@@ -164,7 +163,7 @@ describe('sizeWarning', () => {
   });
 });
 
-describe('totalSize / blockProgress / sendableAttachmentIds', () => {
+describe('totalSize / blockProgress', () => {
   it('totals only what still counts', () => {
     expect(totalSize([attached({ size: 1 * MB }), attached({ size: 2 * MB, status: 'failed' })]))
       .toBe(1 * MB);
@@ -179,17 +178,6 @@ describe('totalSize / blockProgress / sendableAttachmentIds', () => {
   it('never divides by zero, and never exceeds 100', () => {
     expect(blockProgress(0, 0)).toBe(100);
     expect(blockProgress(9, 4)).toBe(100);
-  });
-
-  it('collects uploaded AND reused ids, skipping anything unfinished', () => {
-    // On forward the existing attachmentid is reused — same stored blob, no upload.
-    const ids = sendableAttachmentIds([
-      attached({ attachmentId: 'a1' }),
-      attached({ reusedAttachmentId: 'b2' }),
-      attached({ status: 'uploading', attachmentId: undefined }),
-      attached({ status: 'failed', attachmentId: undefined }),
-    ]);
-    expect(ids).toEqual(['a1', 'b2']);
   });
 });
 

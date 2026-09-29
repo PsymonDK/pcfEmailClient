@@ -71,9 +71,19 @@ function resolveSubstitutions(xslt: string, values: SignatureValues): string {
   VALUE_OF.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = VALUE_OF.exec(xslt)) !== null) {
-    out += values[m[1]] ?? '';
+    // A VALUE, spliced into HTML — so it is escaped. A user's own name or title containing `<`
+    // was inserted as markup until 2026-09-28 (L5).
+    out += escapeHtml(values[m[1]] ?? '');
   }
   return out;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**

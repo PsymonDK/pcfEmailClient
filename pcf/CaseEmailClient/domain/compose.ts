@@ -1,7 +1,6 @@
 import type { EmailRow } from './threading';
 import { splitQuotedHistory } from './quoting';
 import { sanitiseEmailBody } from './sanitise';
-import { stripTrackingToken } from './threading';
 
 /**
  * Composing a reply, reply-all or forward: recipients (R9) and the outgoing body (R12).
@@ -230,13 +229,15 @@ export function headerFor(
 /**
  * The reply or forward subject.
  *
- * **The old tracking token is stripped.** The platform appends a fresh one on send, so carrying
- * the inherited one forward yields `… CRM:0100012 CRM:0100019` — seen in the published app on
- * 2026-09-23 before this was added. Threading does not depend on the token in the subject;
- * `conversationindex` and the hash carry it, and the platform rewrites both on send.
+ * **The tracking token is KEPT, verbatim — a requirement, not a preference (2026-09-29).** The
+ * client must never remove a tracking token from a subject: the token is how Dataverse correlates
+ * mail with the record, and it is the platform's to manage. Until 2026-09-29 this function
+ * stripped the inherited token, on the grounds that the platform appends a fresh one on send;
+ * that was reversed on the product owner's instruction, and the helper that did it was deleted
+ * so it cannot creep back.
  */
 export function composeSubject(mode: ComposeMode, originalSubject: string | null): string {
-  const base = stripTrackingToken((originalSubject ?? '').trim());
+  const base = (originalSubject ?? '').trim();
   const forward = mode === 'forward';
   /*
    * Do not stack the SAME prefix: "RE: RE: RE:" is how a thread's subject becomes unreadable. A

@@ -1589,6 +1589,10 @@ it is half the size of the entire reading slice.
   appears in a fixture. `stripTrackingToken` is now exported from `threading.ts`: token only,
   preserving case and prefix, where `normaliseSubject` lower-cases and strips prefixes too and is
   therefore wrong for anything an agent reads.
+  **REVERSED 2026-09-29:** the product owner requires that the client never remove a tracking
+  token from a subject. `composeSubject` now carries the token forward verbatim and
+  `stripTrackingToken` was deleted. What the platform does on send with a subject that already
+  carries a token is recorded in `docs/review/2026-09-28-code-review.md` once a real send shows it.
 
 #### Interim, and now replaced — 2026-09-24
 

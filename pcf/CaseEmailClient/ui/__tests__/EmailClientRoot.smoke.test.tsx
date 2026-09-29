@@ -207,6 +207,19 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
   });
 
+  it('a forward keeps the tracking token, and its header names whose message it is (N9)', async () => {
+    // The token must never be removed from a subject (requirement, 2026-09-29). And a forward has
+    // no recipient yet, so "Forward to Care" — the original sender — was wrong.
+    const r = await renderShell({
+      selectedThreadKey: 'h:-1269871662',
+      compose: { mode: 'forward', activityId: SENT },
+    });
+    const text = r.host.querySelector('[role=region][aria-label*="compose"]')?.textContent ?? '';
+    expect(text).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
+    expect(text).toContain('Forwardmessage from Care');
+    expect(text).not.toContain('to Care');
+  });
+
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {
     const r = await renderShell({
       selectedThreadKey: 'h:-1269871662',

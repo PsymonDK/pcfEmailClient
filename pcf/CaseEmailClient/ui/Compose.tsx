@@ -219,7 +219,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
           }}
         >
-          to {answeringLabel}
+          {/* A forward has no recipient yet: the label says whose message it carries (N9). */}
+          {mode === 'forward' ? 'message from' : 'to'} {answeringLabel}
         </span>
         <span style={{ flexGrow: 1 }} />
         {/* Cc is hidden until asked for. An always-visible empty Cc row would spend 30 of the

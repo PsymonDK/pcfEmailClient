@@ -602,10 +602,14 @@ lives in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts):
   **first** match and pasting a previous reply would otherwise move half the new text into the
   fold. The replacement must **not contain** the marker: `divRplyFwdMsg-quoted` was the first
   attempt and still matched on substring.
-- `composeSubject` strips the inherited tracking token via `stripTrackingToken` — the platform
-  appends a **fresh** one on send, so carrying the old one forward sends two. Use that helper, not
-  `normaliseSubject`, for anything an agent reads: `normaliseSubject` also lower-cases and strips
-  reply prefixes because it exists for grouping.
+- **THE CLIENT NEVER REMOVES A TRACKING TOKEN FROM A SUBJECT — a product requirement
+  (2026-09-29), not a style choice.** `composeSubject` carries the inherited subject forward
+  verbatim, token included; only the RE:/FW: prefix is added. It used to strip the token (the
+  platform appends a fresh one on send, so the worry was two tokens). That was reversed on the
+  product owner's instruction and `stripTrackingToken` was **deleted** so nothing can reach for
+  it again. Do not reintroduce stripping anywhere a subject is written. `normaliseSubject` still
+  drops tokens, but only to build an in-memory grouping key — it never writes a subject — and the
+  thread list hides the token on screen only; neither touches the record.
 
 **The editor is mounted imperatively and destroyed on unmount** —
 [`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). Verified live in the published app on

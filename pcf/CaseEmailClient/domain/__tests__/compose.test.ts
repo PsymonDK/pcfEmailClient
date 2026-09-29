@@ -261,22 +261,20 @@ describe('headerFor', () => {
   });
 });
 
-describe('composeSubject — the tracking token', () => {
-  it('STRIPS the inherited tracking token', () => {
-    // Seen in the published app 2026-09-23: the reply subject read
-    // "Re: Test af ny mail tråd CRM:0100012", and the platform appends a FRESH token on send —
-    // so the sent subject would have carried two.
+describe('composeSubject — the tracking token is NEVER removed', () => {
+  // A requirement (2026-09-29): the client must not remove a tracking token from a subject. This
+  // block used to assert the opposite.
+  it('keeps the inherited token verbatim on a reply', () => {
     expect(composeSubject('reply', 'Test af ny mail tråd CRM:0100012'))
-      .toBe('RE: Test af ny mail tråd');
-  });
-
-  it('strips the token but keeps an existing prefix, without stacking', () => {
+      .toBe('RE: Test af ny mail tråd CRM:0100012');
     expect(composeSubject('reply', 'Re: Test af ny mail tråd CRM:0100012'))
-      .toBe('Re: Test af ny mail tråd');
+      .toBe('Re: Test af ny mail tråd CRM:0100012');
   });
 
-  it('handles the other token shape too', () => {
-    expect(composeSubject('forward', 'Ordrestatus MON:026300261')).toBe('FW: Ordrestatus');
+  it('keeps it on a forward, whatever its shape', () => {
+    expect(composeSubject('forward', 'Ordrestatus MON:026300261')).toBe('FW: Ordrestatus MON:026300261');
+    expect(composeSubject('forward', 'RE: Test: kodegennemgang CRM:0100017'))
+      .toBe('FW: RE: Test: kodegennemgang CRM:0100017');
   });
 
   it('leaves a subject with no token alone', () => {

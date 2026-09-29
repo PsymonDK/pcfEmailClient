@@ -2015,3 +2015,9 @@ type-checked by `npm run typecheck` at all** — only by `npm run build`. Both c
 widened `blockingReasonBeforeSend` passed typecheck and failed the build.
 
 **`npm run build` is the type gate. `npm run typecheck` is a test-file gate.**
+
+#### Opening a record from the PCF without leaving the case — 2026-09-29 (v1.25.0)
+
+`Xrm.Navigation.navigateTo({ pageType: "entityrecord", entityName: "email", entityId }, { target: 2, position: 1, width: 80%, height: 85% })` works from inside the PCF in CSW: the standard email form opens as a dialog over the Case, read-only for a completed email, with From/To/Cc/**Bcc**, attachments and the platform's own command bar. Closing it with its ✕ resolves the promise (no rejection on close), and the control underneath is untouched — no teardown, no lost compose. `openForm` was rejected unmeasured: navigating the tab away would destroy the control. Used by the reading pane's "Open in email form" (`data/navigation.ts`).
+
+Mark as unread was verified in the same run: deleting the agent's `jhrb_emailreadstate` row made the message unread in the list and the pane, it stayed unread past the 1.5 s dwell (the message is collapsed, so the dwell cannot re-arm), and it was still unread after a full reload.

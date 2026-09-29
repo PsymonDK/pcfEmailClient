@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { ComposeMode, Recipient } from '../domain/compose';
+import type { ComposeMode, Recipient, RecipientField } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
 import { isResolved } from '../domain/recipients';
 import { entityLabel, MIN_SEARCH_LENGTH, type RecipientSuggestion } from '../domain/recipientSearch';
@@ -30,6 +30,8 @@ export interface ComposeProps {
   answeringLabel: string;
   to: Recipient[];
   cc: Recipient[];
+  /** Blind copies (issue #11). Shown only once asked for, like Cc. */
+  bcc: Recipient[];
   subject: string;
   /** The inherited chain, already assembled. Rendered read-only; never given to the editor. */
   quotedBlock?: string;
@@ -41,25 +43,25 @@ export interface ComposeProps {
   onHeightChange: (contentHeight: number) => void;
   onClose: () => void;
   onSubjectChange: (next: string) => void;
-  onRemoveRecipient: (field: 'to' | 'cc', address: string) => void;
+  onRemoveRecipient: (field: RecipientField, address: string) => void;
   /**
    * Opens the platform's lookup so the agent can add a recipient that names a real record.
    *
    * Absent when `Xrm.Utility` is unreachable, in which case the Add button is simply not
    * rendered rather than offered and broken.
    */
-  onAddRecipients?: (field: 'to' | 'cc') => void | Promise<void>;
+  onAddRecipients?: (field: RecipientField) => void | Promise<void>;
   /**
    * Type-ahead: records whose name or address starts with the text. Must be a STABLE function —
    * the row's search effect depends on it.
    */
   onSearchRecipients?: (text: string) => Promise<RecipientSuggestion[]>;
   /** A suggestion was picked — it names a real record. */
-  onPickRecipient?: (field: 'to' | 'cc', suggestion: RecipientSuggestion) => void;
+  onPickRecipient?: (field: RecipientField, suggestion: RecipientSuggestion) => void;
   /** Enter on a typed address that no suggestion matched: resolve it like a reply would. */
-  onTypedAddress?: (field: 'to' | 'cc', address: string) => void;
+  onTypedAddress?: (field: RecipientField, address: string) => void;
   /** A flagged chip was clicked: pick the record it should be. Absent without the lookup. */
-  onResolveRecipient?: (field: 'to' | 'cc', address: string) => void;
+  onResolveRecipient?: (field: RecipientField, address: string) => void;
   /** Mark recipients that match no record — i.e. this org refuses unresolved parties. */
   flagUnresolved?: boolean;
   /** Who the message goes out as (R17). On a Case this is normally the Case's queue. */
@@ -112,7 +114,7 @@ export interface TemplateOutcome {
 
 export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref) => {
   const {
-    mode, answeringLabel, to, cc, subject, quotedBlock, initialHtml, height,
+    mode, answeringLabel, to, cc, bcc, subject, quotedBlock, initialHtml, height,
     onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
@@ -130,6 +132,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const [empty, setEmpty] = React.useState(!resumed);
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
+  const [bccOpen, setBccOpen] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   /**
    * Drag enter/leave fire for every child element the pointer crosses, so a naive boolean
@@ -237,6 +240,19 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             Cc
           </button>
         )}
+        {bcc.length === 0 && !bccOpen && (
+          <button
+            type="button"
+            onClick={() => setBccOpen(true)}
+            title="Blind copy: recipients no one else on the message can see"
+            style={{
+              border: 'none', background: 'transparent', color: T.link, cursor: 'pointer',
+              font: 'inherit', fontSize: '12px', padding: '0 4px', flex: '0 0 auto',
+            }}
+          >
+            Bcc
+          </button>
+        )}
         <IconButton label="Close compose" onClick={onClose}>
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
             <path d="M5 5l10 10M15 5L5 15" />
@@ -282,6 +298,22 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           onPick={(s) => onPickRecipient?.('cc', s)}
           onTypedAddress={(a) => onTypedAddress?.('cc', a)}
           onResolve={onResolveRecipient ? (a) => onResolveRecipient('cc', a) : undefined}
+        />
+      )}
+      {/* Bcc (issue #11): the same row, the same record rules — a blind copy must name a record
+          too. Never pre-filled: nothing is carried into Bcc from the message being answered. */}
+      {(bcc.length > 0 || bccOpen) && (
+        <RecipientRow
+          label="Bcc"
+          people={bcc}
+          onRemove={(a) => onRemoveRecipient('bcc', a)}
+          onAdd={onAddRecipients ? () => void onAddRecipients('bcc') : undefined}
+          disabled={sending}
+          flagUnresolved={flagUnresolved}
+          onSearch={onSearchRecipients}
+          onPick={(s) => onPickRecipient?.('bcc', s)}
+          onTypedAddress={(a) => onTypedAddress?.('bcc', a)}
+          onResolve={onResolveRecipient ? (a) => onResolveRecipient('bcc', a) : undefined}
         />
       )}
 
@@ -688,7 +720,8 @@ const RecipientRow: React.FC<{
           borderBottom: `1px solid ${T.stroke3}`,
         }}
       >
-        <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '20px' }}>{label}</span>
+        {/* 24px: wide enough for "Bcc", so the three rows' chips start on one line. */}
+        <span style={{ fontSize: '12px', color: T.fg3, flex: '0 0 auto', width: '24px' }}>{label}</span>
         {people.length === 0 && !onSearch && (
           <span style={{ fontSize: '12px', color: T.fg4 }}>No recipients</span>
         )}

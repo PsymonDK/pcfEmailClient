@@ -11,6 +11,7 @@ const MAILBOX = '0b8c1d2e-3f40-4152-8637-48495a6b7c8d';
 const input: SendInput = {
   to: [{ name: 'Kunde', address: 'kunde@example.invalid', partyId: 'p1', partyEntity: 'contact' }],
   cc: [],
+  bcc: [],
   sender: { kind: 'queue', id: QUEUE, displayName: 'Care', address: 'care@example.invalid' },
   allowUnresolved: false,
 };
@@ -96,6 +97,23 @@ describe('runSend — the order is the contract', () => {
   it('refuses before saving when there is nobody to send to', async () => {
     const { api, log } = platform();
     const out = await runSend({ ...input, to: [] }, deps(api, log));
+    expect(out.ok).toBe(false);
+    expect(log).not.toContain('save');
+  });
+
+  it('a Bcc-only message has recipients (issue #11)', async () => {
+    const { api, log } = platform();
+    const out = await runSend({ ...input, to: [], bcc: input.to }, deps(api, log));
+    expect(out.ok).toBe(true);
+    expect(log).toContain('save');
+  });
+
+  it('refuses an undeliverable BCC address before saving, like To and Cc', async () => {
+    const { api, log } = platform();
+    const out = await runSend(
+      { ...input, bcc: [{ name: '', address: 'blind@example.invalid' }] },
+      deps(api, log),
+    );
     expect(out.ok).toBe(false);
     expect(log).not.toContain('save');
   });

@@ -25,6 +25,8 @@ import {
  * - `email_activity_parties` on **PATCH replaces** the To/Cc/sender set and leaves the platform's
  *   own owner (mask 9) and regarding (mask 8) rows alone. So recipient edits are one request, not
  *   a delete-then-recreate dance.
+ * - **It replaces Bcc (mask 4) too** — measured 2026-09-29 (issue #11): a PATCH without Bcc
+ *   deleted the Bcc party of a draft created with one. Every party save must carry Bcc back.
  */
 
 /** `context.webAPI`, narrowed to the writes a draft needs. */

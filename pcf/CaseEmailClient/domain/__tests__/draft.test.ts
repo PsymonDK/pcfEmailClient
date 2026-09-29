@@ -7,6 +7,7 @@ import {
   draftArgsFrom,
   draftContinuation,
   DRAFT_STATECODE,
+  PARTY_BCC,
   DRAFT_STATUSCODE,
   PARTY_CC,
   PARTY_SENDER,
@@ -39,6 +40,7 @@ const args = (over: Partial<DraftArgs> = {}): DraftArgs => ({
   sender: CARE,
   to: [{ name: 'Kunde', address: 'kunde@example.com' }],
   cc: [],
+  bcc: [],
   inReplyToId: undefined,
   ...over,
 });
@@ -298,6 +300,7 @@ describe('draftArgsFrom — what a save writes, from what is on screen', () => {
     subject: 'RE: Ordre',
     to: [{ name: 'Kunde', address: 'kunde@example.com' }],
     cc: [],
+    bcc: [],
     quotedBlock: '<div id="divRplyFwdMsg">quote</div>',
   };
 
@@ -349,5 +352,30 @@ describe('draftContinuation — a draft is finished, not answered (N7)', () => {
     expect(draftContinuation(draft, new Set(), ME)).toEqual({ kind: 'cannotResume' });
     expect(draftContinuation({ ...draft, ownerid: null }, onCase, ME)).toEqual({ kind: 'cannotResume' });
     expect(draftContinuation(draft, onCase, undefined)).toEqual({ kind: 'cannotResume' });
+  });
+});
+
+describe('Bcc on the party set (issue #11)', () => {
+  const blind = { name: 'Leder', address: 'leder@example.com', partyId: 'aaaa0000-0000-0000-0000-000000000009', partyEntity: 'systemuser' as const, partyNav: 'partyid_systemuser' };
+
+  it('writes Bcc as participationtypemask 4 on every party save', () => {
+    // Measured 2026-09-29: a PATCH of email_activity_parties REPLACES the set, Bcc included —
+    // leaving Bcc out of the payload deleted it from the draft.
+    const rows = buildPartyRows(args({ bcc: [blind] }));
+    expect(rows.filter((r) => r.participationtypemask === PARTY_BCC)).toEqual([
+      expect.objectContaining({ participationtypemask: 4, 'partyid_systemuser@odata.bind': '/systemusers(aaaa0000-0000-0000-0000-000000000009)' }),
+    ]);
+  });
+
+  it('skips a Bcc row with no address, like To and Cc', () => {
+    expect(buildPartyRows(args({ bcc: [{ name: '', address: '  ' }] })).some((r) => r.participationtypemask === 4)).toBe(false);
+  });
+
+  it('carries Bcc from what is on screen into the save', () => {
+    const snap = {
+      mode: 'reply' as const, activityId: 'aaaa0000-0000-0000-0000-000000000001', subject: 'RE: x',
+      to: [], cc: [], bcc: [blind], quotedBlock: '',
+    };
+    expect(draftArgsFrom(snap, '', CARE, 'case-1').bcc).toEqual([blind]);
   });
 });

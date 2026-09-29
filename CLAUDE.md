@@ -30,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **711 tests**, lint and typecheck clean.
+helpers — **722 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -427,6 +427,11 @@ bite if forgotten:
 - **`email_activity_parties` works on create AND on PATCH.** On PATCH it **replaces** the
   sender/To/Cc set and leaves the platform's own owner (mask 9) and regarding (mask 8) rows
   alone — so a recipient change is one request, not delete-then-recreate.
+- **…and it replaces BCC (mask 4) too — measured 2026-09-29 (issue #11).** A PATCH without Bcc
+  deleted the Bcc party of a draft created with one, and the first save after resuming ANY draft
+  rewrites parties. So `DraftArgs.bcc` is required, `buildPartyRows` writes mask 4 on every party
+  save, and resume rehydrates the stored Bcc. Bcc is never carried into a reply or forward, and the
+  reading pane shows it on OUTGOING mail only (`domain/recipientLine.ts`).
 - **A recipient can be a bare `addressused` string with no `partyid`.** That is the *normal* case
   on a Case: customers are frequently not Contacts. A queue sender binds as
   `partyid_queue@odata.bind`, and **the platform then fills that party's `addressused` itself**

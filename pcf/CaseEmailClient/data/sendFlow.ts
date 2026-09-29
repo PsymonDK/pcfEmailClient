@@ -29,6 +29,7 @@ import { issueSend, readSendStatus, type IssueSendResult } from './send';
 export interface SendInput {
   to: readonly Recipient[];
   cc: readonly Recipient[];
+  bcc: readonly Recipient[];
   /** Who the row goes out as. The save must write THIS sender — see `save`. */
   sender: SenderCandidate;
   allowUnresolved: boolean;
@@ -56,10 +57,11 @@ export type SendOutcome =
 
 export async function runSend(input: SendInput, deps: SendDeps): Promise<SendOutcome> {
   const before = blockingReasonBeforeSend({
-    recipientCount: input.to.length + input.cc.length,
+    // A Bcc-only message is a real message: it has recipients.
+    recipientCount: input.to.length + input.cc.length + input.bcc.length,
     attachments: deps.attachments(),
-    unresolvedAddresses: unresolvedAddresses(input.to, input.cc),
-    ambiguousAddresses: ambiguousAddresses(input.to, input.cc),
+    unresolvedAddresses: unresolvedAddresses(input.to, input.cc, input.bcc),
+    ambiguousAddresses: ambiguousAddresses(input.to, input.cc, input.bcc),
     allowUnresolved: input.allowUnresolved,
   });
   if (before) return { ok: false, detail: before };

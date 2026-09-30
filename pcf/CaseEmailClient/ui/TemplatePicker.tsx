@@ -134,6 +134,9 @@ export const TemplatePicker: React.FC<{
           onKeyDown={onKeyDown}
           style={{
             position: 'absolute', right: 0, bottom: '26px', zIndex: 3, width: '560px', maxWidth: '80vw',
+            // Reset: the compose chrome around the toolbar inherits `nowrap`, and the formatting
+            // note ran 567 px wide inside a 258 px column, cut off mid-word (measured live, 1.29.0).
+            whiteSpace: 'normal',
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
             background: T.bg1, border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, overflow: 'hidden',
           }}

@@ -143,3 +143,9 @@ One refinement made while building: the language control also appears when every
 3. **The click model above** (fill-if-empty, insert-at-cursor otherwise, Undo/Replace bar after)?
 4. **Fix the subject defect now**, as its own small change ahead of R22? *Recommendation:* yes — it
    breaks a product requirement today.
+
+## Verified in the published app — 2026-09-30
+
+- **1.28.0:** the list showed all five Case templates with their descriptions and **no language control** (all English, English UI). The preview resolved on sight. Click and keyboard (↓, Enter) both inserted; an empty message was filled above the signature; **Undo** restored the editor HTML exactly; **Replace** left only the template. The subject kept `CRM:0100017`. Closing left no draft.
+- **1.29.0, the formatting note (#17):** *Case Auto Response* → "fonts and sizes"; *Case resolution survey invite* → "tables, fonts and sizes, colours and alignment"; the three plain templates → no note. The bar repeats it after inserting.
+- **1.30.0:** the note ran on one line and was clipped (the compose chrome inherits `nowrap`); the popover now resets `white-space`.

@@ -2033,3 +2033,68 @@ Mark as unread was verified in the same run: deleting the agent's `jhrb_emailrea
 - **5 `incident` templates**, the out-of-the-box ones; **all 49 templates are `languagecode` 1033**; **only 1033 is provisioned** (`RetrieveProvisionedLanguages`); no personal templates. The agent: `uilanguageid` 1033, `localeid` 1030 (Danish). So a language filter has nothing to filter here — see `docs/design/04-template-picker.md`.
 - The standard form's **Insert Template** first asks *Select Record* (To or Regarding) because the template type follows the record. The client does not need that step: a reply on a Case always resolves `incident` templates.
 - **Opening a client draft in the standard email form autosaves it without any edit** — the form went Unsaved → Saving → Saved on load (draft 0360338d, `modifiedon` moved). Checked afterwards: still a draft, parties unchanged, and the `divRplyFwdMsg` quote marker survived, so resume still splits the body. Worth knowing now that *Open in email form* makes this one click away.
+
+### S14 — Can the Dynamics rich text editor be hosted inside the PCF? *(added 2026-09-30, issue #17)*
+
+**Why.** Templates, signatures and much inbound mail are authored in the shipped editor; TipTap (StarterKit + Link) drops tables, fonts, sizes, colours, alignment, images, headings, underline, quotes and lines on insert (measured, #17). S10 (2026-09-10) mounted `RichTextEditorControlV2` through `context.factory` but got an inert shell.
+
+#### What the shipped editor is — measured 2026-09-30 on a new, unsaved email in the standard form (discarded)
+
+- **It is CKEditor 5**, not TipTap/ProseMirror: the V2 bundle (`cc_MscrmControls.RichTextEditorV2.RichTextEditorControlV2/bundle.js`, **4.7 MB**) references `ckeditor5` and has no TipTap or ProseMirror; the editable carries `ck ck-content ck-editor__editable` and exposes `ckeditorInstance` (CKEditor 5's documented hook) with `getData()` / `setData()`.
+- **A commercially licensed build with 210 plugins** — `config.licenseKey` is set. Includes `GeneralHtmlSupport` (arbitrary HTML preserved — why templates keep their formatting there), Table, FontFamily/Size/Color/BackgroundColor, Alignment, Image*, Indent, BlockQuote, HorizontalLine, Highlight, FormatPainter, FindAndReplace, and Microsoft's own (CopilotInitializer, EmailAssist, AttachmentUpload, DocumentPreview). Toolbar: copilot, emailAssist, translate, formatPainter, fontFamily, fontSize, bold, italic, underline, background/font colour, lists, outdent/indent, blockQuote, alignment, link, super/subscript, strikethrough, imagePicker, direction, undo/redo, removeFormat, insertTable.
+- **Approach 2 (use the engine directly) is closed by licensing, not technique.** The instance's class is reachable from the page, but the build and its key are Microsoft's; reusing it outside their control is not ours to do. Bundling our own CKEditor 5 means GPL-2+ obligations or a commercial licence — a product decision, not a spike.
+- **What the form passes the control** (host props on `description.fieldControl`): `value` — bound (`Usage 0`, `Primary`, type `Multiple`) to `description`; **`configUrl` — static `/WebResources/Activities/SystemLibraries/msdyn_EmailRTEconfig.js`** (the email editor's configuration); `mentionedRecords`; one more parameter. The host component also receives `configuration`, `descriptor`, `propBagData` (utils, theming, formatting, client, page, resources, mode), `manifest`, `controlFactory`. **S10 passed no `configUrl`** — a plausible reason its mount stayed inert; approach 1 retries with it.
+
+#### The configuration route is documented — with a gap (Learn, ms.date 2026-09-28)
+
+Source: [Add the rich text editor control](https://learn.microsoft.com/en-us/power-apps/maker/model-driven-apps/rich-text-editor-control). Suggested by the product owner: copy `msdyn_EmailRTEconfig.js` and point the editor at the copy.
+
+- **Per-instance configuration is supported**: a JSON-formatted JavaScript web resource entered as the control's static value (`configUrl`), layered over `RTEGlobalConfiguration_Readonly.json` → `RTEGlobalConfiguration.json` → the instance file (`extraPlugins` merge; other properties replace). **`RTEGlobalConfiguration.json` does not apply to email**, which is why the email form names `msdyn_EmailRTEconfig.js` explicitly. So a copy of that file, shipped as our own web resource, is the documented way to tailor the email editor. Its keys: `defaultSupportedProps` (toolbar, fonts, sizes, height, pasteFilter, extra/removePlugins…), `attachmentEntity`, `disableImages`, `externalPlugins`, `sanitizerWhitelist`, `showFullScreenExpander`, `disableContentSanitization`, and more.
+- **The gap:** the customisation section is written for the **classic** editor and still says the control "uses CKEditor 4" — the classic editor was deprecated April 2025, and the running one is **CKEditor 5** (measured above). The page warns classic customisations may need recreating, and lists modern-editor limits: **no non-Microsoft plug-ins**, and `imageEntity`/`attachmentEntity` do not work. The email config still uses CKEditor 4-style keys (`enterMode`, `extraPlugins`, toolbar arrays), so **which keys the modern editor honours is undocumented — measure, do not assume.**
+- **Documented hooks for approach 3 (editor on the form):** a `rteEditorReady` event on `window.top` whose `detail.parentEntity` names the table and field, and the ordinary form API (`getAttribute(...).setValue`) to set content. The modern editor needs the *New look for model-driven apps* app setting.
+
+#### S14 result, approach 1 — 2026-09-30: **YES, it mounts and edits inside the PCF** (spike build 1.32.0, published app)
+
+Driven from the browser through a spike-only hook exposing the PCF `context` (branch `spike-s14-platform-rte`, never merged). `context.factory.createComponent("MscrmControls.RichTextEditorV2.RichTextEditorControlV2", id, props)` + `bindDOMComponent(descriptor, hostDiv)` inside our control's container:
+
+| Props | Result |
+|---|---|
+| `parameters.value` (`Type: Multiple`, `Static`, `Usage 1`, `Primary`, a literal HTML string) + **`parameters.configUrl`** = `/WebResources/Activities/SystemLibraries/msdyn_EmailRTEconfig.js` | **A real CKEditor 5 instance** (`ck-editor__editable` + `ckeditorInstance`) showing the value — but **read-only** (one read-only lock, no toolbar) |
+| … **+ `parameters.isReadOnly`** (`TwoOptions`, static `false`) | **Editable**, with the modern toolbar (settings, translate, format painter, font Segoe UI, size 9, B/I/U, more). `controlstates.isControlDisabled:false` and `Usage 0` changed nothing further |
+
+Then, on the editable instance:
+
+- **Real keyboard typing** lands, and `ckeditorInstance.getData()` returns it; `model.document.on("change:data")` fires — the hook an autosave needs.
+- **Template fidelity:** *Case resolution survey invite* resolved with `InstantiateTemplate`, `setData` → `getData`: tables 3→3, colours 7→7, backgrounds 3→3, font-family/size kept (8→9 / 11→12, the extra is the editor's sticky-style wrapper), links 1→1, alignment 3→2 (an `align=` attribute, which the modern editor documents as unsupported). It renders complete — banner, body, button. TipTap kept none of the tables, fonts, colours or alignment.
+- **The Case form stays clean** — `getIsDirty()` false, no dirty attributes: with a static `value` the control writes nothing to the host record.
+- **`unbindDOMComponent(id)` removes it completely.**
+
+**What made the difference against S10:** `configUrl` (the editor loads its whole configuration from it) and `isReadOnly: false`. **Why S10's shell was inert** is therefore explained, and S10's verdict — "do not depend on it" — becomes a **risk decision** rather than an impossibility: `createComponent`/`bindDOMComponent` and the parameter shape are still **undocumented** (the typings expose 2 of the factory's 11 members); `configUrl` and the configuration format **are** documented.
+
+Still to measure before a product decision: our own copy of the config (which keys the modern editor honours); sizing inside compose; dark theme; the Copilot/Email Assist buttons it brings; behaviour across a CSW session switch (we would persist `getData()` ourselves, as today); and what happens on a machine where the RTE bundle is not yet cached (it is 4.7 MB, loaded from the platform, not from our bundle).
+
+#### S14 — our own copy of the email config (2026-09-30)
+
+A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **outside any solution** (`jhrb_/CaseEmailClient/spike/EmailRTEconfig.js`, id `7fc4529b-d3bc-f111-aaaf-0022489d55b0`, safe to delete), mounted through `configUrl` exactly like Microsoft's. The file uses **CKEditor 4 names**; the modern editor **translates** them (`CopyFormatting`→`formatPainter`, `Font`→`fontFamily`, `Justify*`→`alignment`, `Image`→`imagePicker`, `Table`→`insertTable`, …).
+
+| Change in the copy | Honoured by the modern editor? |
+|---|---|
+| `toolbar` cut to Bold, Italic, Underline, lists, Link, Table, Undo, Redo | **Yes** — exactly those items, font, size, format painter, colours, indent, alignment and image gone |
+| `stickyStyle` Calibri 11 pt (+ labels) | **Yes** — content computes to Calibri 14.67 px (= 11 pt) vs Segoe UI 12 px (= 9 pt) |
+| `height` 200px | **Yes** — editable 202 px vs 602 px |
+| `removePlugins` += CopilotInitializer, EmailAssist, EmailAssistEditing, Translate, TranslateUI | **Partly** — `CopilotInitializer` no longer loads, but **the Copilot ("Adjust with Copilot"), Email Assist and Translate ("All languages") buttons stay** — they are prepended to every toolbar whatever the config says. Governed elsewhere (environment/app Copilot and email-assist settings), not by this file |
+
+So the product owner's suggestion holds: **a config copy shipped as our own web resource is a working, documented way to tailor the hosted editor** — toolbar, default font and height all took effect. The Copilot / Translate buttons are the exception.
+
+#### S14 — fit, session switch, load cost (2026-09-30, spike build 1.32.0)
+
+**1. Fit inside compose.** Mounted over our compose's toolbar row + editor area (1083 × 134 px; viewport 1978 px wide):
+- **The toolbar fits** — one 41 px row, the rest collapsing into *More items*, so narrower panes degrade gracefully.
+- **The height does not come from the container.** Microsoft's config fixes the editable at 600 px (602 measured), so in 134 px it is simply clipped. Sizing must come from us: a small `height` in **our** config copy (honoured, measured above) plus compose measuring the editor's real height, as it does for TipTap today. (Setting the editable's height from outside also works — 86 px, text visible, the quote strip and Send row stay visible — but that reaches into Microsoft's DOM and is the fallback, not the plan.)
+- **Dark theme: not verified.** The editor's CSS runs on CKEditor's theme variables (`--ck-content-font-color` …) and Learn documents dark mode for the modern editor, but confirming it inside our control needs a user switched to dark mode.
+
+**2. CSW session switch.** Typed into the hosted editor, switched to the Home session and back:
+- On Home the case session's DOM is gone entirely — the hosted editor with it, no leftover editables.
+- Back on the case, our control is rebuilt (**new `context`**) and our own M11 restore reopens compose. The hosted editor is not there (it lived in the torn-down control) — **re-mounting it with the new context's factory, under the same component id, works**, and `setData` of the text saved before the switch restores it. The Case form stays not dirty. So the design holds: we persist `getData()` ourselves (draft autosave + `setControlState`, as today) and re-mount on restore.
+
+**3. Load cost.** First mount on a freshly loaded page: **~0.77 s** to editable (first markup 0.31 s); a second mount **0.35 s**. The bundle never appeared as a network request — the platform served it from its own client cache. A cache-bypassing download of the bundle (4.9 MB decoded) took **0.75–0.85 s** here (three runs), so a truly first load costs roughly **1.5–2 s**, once per browser. Agents who have opened the standard email form already have it cached — it is the same editor.

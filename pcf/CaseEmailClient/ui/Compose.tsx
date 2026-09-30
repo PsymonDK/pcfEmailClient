@@ -11,6 +11,8 @@ import { BODY_SURFACE, BODY_SURFACE_FG, formatSize, RADIUS, T } from './tokens';
 import { IconButton } from './parts';
 import { Editor, type EditorHandle } from './Editor';
 import type { EmailTemplate } from '../data/templates';
+import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
+import { insertPlacement } from '../domain/templatePicker';
 
 /**
  * The docked compose surface (R9, R10, R11).
@@ -99,18 +101,24 @@ export interface ComposeProps {
    * forever with no error recorded anywhere. Only `confirmed` gets the success colour.
    */
   sendReport?: SendReport;
-  /** R14 — templates that apply to a Case. Empty hides the picker rather than showing an empty one. */
+  /** R22 — templates that apply to a Case. Empty hides the picker rather than showing an empty one. */
   templates: readonly EmailTemplate[];
   /** Resolves one server-side. Returns the prepared content, or an agent-facing reason. */
   onUseTemplate: (templateId: string) => Promise<TemplateOutcome>;
+  /** `context.userSettings.languageId` — the picker's default language (R22, decision 1). */
+  uiLanguage?: number;
+  /**
+   * Has the agent typed anything beyond the signature? Decides where a picked template goes:
+   * an empty message is filled from the top, anything typed gets it at the cursor (decision 3).
+   */
+  hasTypedText: () => boolean;
 }
 
-export interface TemplateOutcome {
-  html: string;
-  subject: string;
-  unresolved: string[];
-  error?: string;
-}
+/** The Undo / Replace links on the post-insert bar (R22). */
+const barLink: React.CSSProperties = {
+  border: 'none', background: 'transparent', padding: '0 2px', font: 'inherit', fontSize: '12px',
+  color: T.link, cursor: 'pointer', flex: '0 0 auto',
+};
 
 export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref) => {
   const {
@@ -121,7 +129,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     onResolveRecipient,
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
-    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed,
+    sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed, uiLanguage, hasTypedText,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
@@ -133,6 +141,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
   const [bccOpen, setBccOpen] = React.useState(false);
+  /** R22 — the template just inserted, for the Undo / Replace bar. Cleared by either, or ✕. */
+  const [inserted, setInserted] = React.useState<{ title: string; html: string; unresolved: string[] }>();
   const fileInput = React.useRef<HTMLInputElement>(null);
   /**
    * Drag enter/leave fire for every child element the pointer crosses, so a naive boolean
@@ -385,13 +395,45 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         {templates.length > 0 && (
           <TemplatePicker
             templates={templates}
+            uiLanguage={uiLanguage}
             disabled={sending}
-            onUse={onUseTemplate}
-            onInsert={(html) => editorApi.current?.insertHTML(html)}
-            onReplace={(html) => editorApi.current?.setHTML(html, true)}
+            onResolve={onUseTemplate}
+            onPick={(template, outcome) => {
+              // Click 2 inserts (R22). The subject is never touched — see the regression test.
+              if (insertPlacement(hasTypedText()) === 'fill') editorApi.current?.insertHTMLAtStart(outcome.html);
+              else editorApi.current?.insertHTML(outcome.html);
+              setInserted({ title: template.title, html: outcome.html, unresolved: outcome.unresolved });
+            }}
           />
         )}
       </Toolbar>
+
+      {/* R22 — Insert vs Replace without a third click: a single pick never destroys work, and
+          Replace (or Undo) is one deliberate click away here, right after the insert. */}
+      {inserted && (
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 auto', minHeight: '26px',
+            padding: '2px 10px', boxSizing: 'border-box', fontSize: '12px', color: T.fg2,
+            borderBottom: `1px solid ${T.stroke3}`,
+            background: inserted.unresolved.length > 0 ? T.warnBg2 : 'transparent',
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+            Inserted &quot;{inserted.title}&quot;
+            {inserted.unresolved.length > 0 && (
+              <span style={{ color: T.warnFg }}>
+                {' '}· {inserted.unresolved.length === 1 ? '1 placeholder' : `${inserted.unresolved.length} placeholders`} couldn&apos;t be filled ({inserted.unresolved.join(', ')}) — fix before sending
+              </span>
+            )}
+          </span>
+          <span style={{ flexGrow: 1 }} />
+          <button type="button" onClick={() => { editorApi.current?.undo(); setInserted(undefined); }} style={barLink}>Undo</button>
+          <button type="button" onClick={() => { editorApi.current?.setHTML(inserted.html, true); setInserted(undefined); }} style={barLink}>Replace the whole message instead</button>
+          <button type="button" aria-label="Dismiss" onClick={() => setInserted(undefined)} style={{ ...barLink, color: T.fg3 }}>✕</button>
+        </div>
+      )}
 
       <Editor
         ref={editorApi}
@@ -882,159 +924,6 @@ const Toolbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
     {children}
   </div>
 );
-
-/**
- * The template picker (R14).
- *
- * **`Insert` and `Replace` are two separate buttons**, per the frozen design: a template that
- * silently overwrites a half-written reply is unforgivable once. Both act on the **new-text
- * region only** — never the quote, which the editor does not hold.
- *
- * Tokens are resolved server-side before anything is inserted, and anything the platform could
- * not fill is reported instead of being posted to a customer as `{!Case:Title;}`.
- */
-const TemplatePicker: React.FC<{
-  templates: readonly EmailTemplate[];
-  disabled?: boolean;
-  onUse: (templateId: string) => Promise<TemplateOutcome>;
-  onInsert: (html: string) => void;
-  onReplace: (html: string) => void;
-}> = ({ templates, disabled, onUse, onInsert, onReplace }) => {
-  const [open, setOpen] = React.useState(false);
-  const [chosen, setChosen] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
-  const [preview, setPreview] = React.useState<TemplateOutcome>();
-
-  const load = async (templateId: string) => {
-    setChosen(templateId);
-    setPreview(undefined);
-    if (!templateId) return;
-    setBusy(true);
-    // Resolved BEFORE insert, so the agent sees what will land — including anything unfillable.
-    setPreview(await onUse(templateId));
-    setBusy(false);
-  };
-
-  const apply = (replace: boolean) => {
-    if (!preview || preview.error) return;
-    if (replace) onReplace(preview.html); else onInsert(preview.html);
-    // The template's subject is deliberately NOT applied. Every compose here is a reply or a
-    // forward, and replacing its subject removed the tracking token (a product requirement says
-    // the client never does that), dropped the RE:/FW: prefix, and cost threading its subject
-    // fallback — every Case template carries a subject, so every insert did it (2026-09-30).
-    // The picker is not even given a way to change the subject, so this cannot drift back.
-    setOpen(false);
-    setChosen('');
-    setPreview(undefined);
-  };
-
-  return (
-    <div style={{ position: 'relative', flex: '0 0 auto' }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        disabled={disabled}
-        aria-expanded={open}
-        style={{
-          height: '22px', padding: '0 8px', boxSizing: 'border-box',
-          border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, background: T.bg1,
-          font: 'inherit', fontSize: '12px', color: T.fg1,
-          cursor: disabled ? 'default' : 'pointer',
-        }}
-      >
-        Template
-      </button>
-
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Insert a template"
-          style={{
-            position: 'absolute', right: 0, bottom: '26px', zIndex: 3, width: '320px',
-            padding: '10px', boxSizing: 'border-box', background: T.bg1,
-            border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md,
-            display: 'flex', flexDirection: 'column', gap: '8px',
-          }}
-        >
-          <select
-            value={chosen}
-            onChange={(e) => void load(e.target.value)}
-            aria-label="Template"
-            style={{
-              height: '28px', padding: '0 6px', boxSizing: 'border-box', width: '100%',
-              border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, background: T.bg1,
-              font: 'inherit', fontSize: '13px', color: T.fg1,
-            }}
-          >
-            <option value="">Choose a template…</option>
-            {templates.map((t) => (
-              <option key={t.templateId} value={t.templateId}>{t.title}</option>
-            ))}
-          </select>
-
-          {busy && <span style={{ fontSize: '12px', color: T.fg3 }}>Resolving…</span>}
-
-          {preview?.error && (
-            <span role="alert" style={{ fontSize: '12px', color: T.dangerFg }}>{preview.error}</span>
-          )}
-
-          {preview && !preview.error && (
-            <>
-              {/* The preview is what makes "resolved before insert" mean anything to the agent. */}
-              <div
-                dangerouslySetInnerHTML={{ __html: preview.html }}
-                style={{
-                  maxHeight: '110px', overflowY: 'auto', padding: '6px 8px',
-                  boxSizing: 'border-box', background: BODY_SURFACE, colorScheme: 'light',
-                  color: BODY_SURFACE_FG, font: `400 12px/17px ${T.font}`,
-                  border: `1px solid ${T.stroke2}`, borderRadius: RADIUS.sm, contain: 'content',
-                }}
-              />
-              {preview.unresolved.length > 0 && (
-                <span
-                  role="alert"
-                  style={{
-                    fontSize: '12px', color: T.warnFg, background: T.warnBg2,
-                    border: `1px solid ${T.warnStroke}`, borderRadius: RADIUS.sm, padding: '4px 6px',
-                  }}
-                >
-                  {preview.unresolved.length} placeholder
-                  {preview.unresolved.length === 1 ? '' : 's'} could not be filled:{' '}
-                  {preview.unresolved.join(', ')}. Fix them before sending.
-                </span>
-              )}
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                {/* Two buttons, deliberately. Replace destroys what is written; Insert does not. */}
-                <button
-                  type="button"
-                  onClick={() => apply(false)}
-                  style={{
-                    height: '26px', padding: '0 12px', boxSizing: 'border-box', border: 'none',
-                    borderRadius: RADIUS.md, background: T.brandBg, color: T.onBrand,
-                    font: 'inherit', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  Insert at cursor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => apply(true)}
-                  style={{
-                    height: '26px', padding: '0 12px', boxSizing: 'border-box',
-                    border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, background: T.bg1,
-                    font: 'inherit', fontSize: '12px', color: T.fg1, cursor: 'pointer',
-                  }}
-                >
-                  Replace all
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
 
 /**
  * The attachment tray (R13).

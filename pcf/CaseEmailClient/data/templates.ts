@@ -21,13 +21,19 @@ export const CASE_TEMPLATE_TYPE = 'incident';
 export interface EmailTemplate {
   templateId: string;
   title: string;
-  /** The unresolved subject, for the picker. The resolved one comes from instantiation. */
+  /** The unresolved subject. Never applied to a reply — kept for completeness only. */
   subject: string;
+  /** What the admin wrote about it; the second line of each picker row (R22). */
+  description: string;
+  /** LCID (`template.languagecode`). Measured 2026-09-30: 1033 on every template in the demo. */
+  languageCode?: number;
+  /** A template the agent owns. Listed under "My templates" (R22, decision 2). */
+  isPersonal: boolean;
 }
 
 export function buildTemplateListQuery(): string {
   return (
-    '?$select=templateid,title,subject'
+    '?$select=templateid,title,subject,description,languagecode,ispersonal'
     + `&$filter=templatetypecode eq '${CASE_TEMPLATE_TYPE}'`
     + '&$orderby=title asc'
   );
@@ -56,6 +62,9 @@ export async function fetchCaseTemplates(
         templateId: typeof row.templateid === 'string' ? row.templateid : '',
         title: typeof row.title === 'string' && row.title.length > 0 ? row.title : '(untitled)',
         subject: typeof row.subject === 'string' ? row.subject : '',
+        description: typeof row.description === 'string' ? row.description : '',
+        languageCode: typeof row.languagecode === 'number' ? row.languagecode : undefined,
+        isPersonal: row.ispersonal === true,
       })).filter((t) => t.templateId.length > 0),
     };
   } catch (rejection) {

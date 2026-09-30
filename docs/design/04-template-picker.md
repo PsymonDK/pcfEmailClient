@@ -1,7 +1,6 @@
 # R22 — the template picker · design proposal for review
 
-Issue [#8](https://github.com/PsymonDK/modeldriven-emailclient/issues/8). **Status: proposal, awaiting
-design review — nothing here is built.** R22 supersedes R14: *Case templates in the agent's
+Issue [#8](https://github.com/PsymonDK/modeldriven-emailclient/issues/8). **Status: APPROVED 2026-09-30 and built (branch `r22-template-picker`, v1.28.0).** Decisions below. R22 supersedes R14: *Case templates in the agent's
 language by default, an explicit way to switch language, and two clicks or fewer from compose to an
 inserted template.*
 
@@ -122,7 +121,16 @@ focus. Rows are `role="option"` in a `listbox`; the preview panel is `aria-live=
 
 ---
 
-## Decisions needed at review
+## Decisions — taken 2026-09-30
+
+1. **Default language: the agent's interface language** (`context.userSettings.languageId`).
+2. **Personal templates: listed**, under *My templates*, above the organisation's.
+3. **Click model: approved** — fill an empty message from the top, insert at the cursor once text is typed, Undo / Replace on the bar afterwards.
+4. **Subject defect: fixed first**, on its own ([PR #16](https://github.com/PsymonDK/modeldriven-emailclient/pull/16)).
+
+One refinement made while building: the language control also appears when every template is in **one language that is not the agent's** — otherwise that list would be shown with no control, which is the silent fallback R22 forbids (`domain/templatePicker.ts`, `showLanguageControl`).
+
+## The questions as they were put at review
 
 1. **Whose language is the default?**
    - (a) the agent's **UI language** (`uilanguageid`) — what R22 literally says;

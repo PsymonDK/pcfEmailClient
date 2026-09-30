@@ -2079,7 +2079,7 @@ A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **out
 
 | Change in the copy | Honoured by the modern editor? |
 |---|---|
-| `toolbar` cut to Bold, Italic, Underline, lists, Link, Table, Undo, Redo | **Yes** — exactly those items, font/size/format painter/colours/indent/alignment/image/table-of-contents gone |
+| `toolbar` cut to Bold, Italic, Underline, lists, Link, Table, Undo, Redo | **Yes** — exactly those items, font, size, format painter, colours, indent, alignment and image gone |
 | `stickyStyle` Calibri 11 pt (+ labels) | **Yes** — content computes to Calibri 14.67 px (= 11 pt) vs Segoe UI 12 px (= 9 pt) |
 | `height` 200px | **Yes** — editable 202 px vs 602 px |
 | `removePlugins` += CopilotInitializer, EmailAssist, EmailAssistEditing, Translate, TranslateUI | **Partly** — `CopilotInitializer` no longer loads, but **the Copilot ("Adjust with Copilot"), Email Assist and Translate ("All languages") buttons stay** — they are prepended to every toolbar whatever the config says. Governed elsewhere (environment/app Copilot and email-assist settings), not by this file |

@@ -47,7 +47,15 @@ export function fakeEditorFactory(options: { readOnly?: boolean; throwOnCreate?:
           },
           document: { getRoot: () => editable, on: (_event: string, cb: () => void) => { listeners.push(cb); } },
         },
-        editing: { view: { focus: () => editable.focus() } },
+        editing: {
+          view: {
+            focus: () => editable.focus(),
+            change: (cb: (w: { setStyle(name: string, value: string, el: unknown): void }) => void) => cb({
+              setStyle: (name, value) => { editable.style.setProperty(name, value); },
+            }),
+            document: { getRoot: () => editable },
+          },
+        },
         execute: (command: string) => {
           if (command === 'undo' && history.length > 0) { editable.innerHTML = history.pop()!; changed(); }
         },

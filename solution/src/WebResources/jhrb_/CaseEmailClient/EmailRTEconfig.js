@@ -76,7 +76,7 @@
   "disableImages": false,
   "disableDefaultImageProcessing": true,
   "allowSameOriginSandbox": true,
-  "showFullScreenExpander": true,
+  "showFullScreenExpander": false,
   "disableContentSanitization": true,
   "readmodeCustomHandler": "WebResources/Activities/SystemLibraries/msdyn_EmailReadModeCustomHandler.js",
   "sanitizerWhitelist": {

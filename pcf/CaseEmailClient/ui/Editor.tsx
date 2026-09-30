@@ -90,7 +90,13 @@ interface CkEditor {
     insertContent(content: unknown): void;
     document: { getRoot(): unknown; on(event: 'change:data', callback: () => void): void };
   };
-  editing: { view: { focus(): void } };
+  editing: {
+    view: {
+      focus(): void;
+      change(callback: (writer: { setStyle(name: string, value: string, element: unknown): void }) => void): void;
+      document: { getRoot(): unknown };
+    };
+  };
   execute(command: string): void;
   enableReadOnlyMode?(lockId: string): void;
   disableReadOnlyMode?(lockId: string): void;
@@ -104,14 +110,14 @@ function findEditor(host: HTMLElement): { editable: HTMLElement; editor: CkEdito
 }
 
 const SENDING_LOCK = 'cec-sending';
+/** The editable never shrinks below this, however much the rows around it take. */
+export const MIN_EDITABLE_HEIGHT = 80;
 let componentSeq = 0;
 
 export interface EditorProps {
   /** Initial new text — a signature (R15), or a restored draft. */
   initialHtml?: string;
   onChange?: (html: string, isEmpty: boolean) => void;
-  /** Reports the editor's pixel height so the shell can size the docked surface (R10). */
-  onHeightChange?: (contentHeight: number) => void;
   ariaLabel: string;
   /** Locked while a send is in flight — the surface stays visible, per the spec. */
   disabled?: boolean;
@@ -122,7 +128,7 @@ export interface EditorProps {
 }
 
 export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) => {
-  const { initialHtml, onChange, onHeightChange, ariaLabel, disabled, factory, onUnavailable } = props;
+  const { initialHtml, onChange, ariaLabel, disabled, factory, onUnavailable } = props;
   const hostRef = React.useRef<HTMLDivElement>(null);
   const editorRef = React.useRef<CkEditor | null>(null);
   const editableRef = React.useRef<HTMLElement | null>(null);
@@ -135,8 +141,6 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
   // Fresh closures every render; the editor's listeners are registered once. Read through refs.
   const onChangeRef = React.useRef(onChange);
   onChangeRef.current = onChange;
-  const onHeightRef = React.useRef(onHeightChange);
-  onHeightRef.current = onHeightChange;
   const onUnavailableRef = React.useRef(onUnavailable);
   onUnavailableRef.current = onUnavailable;
 
@@ -209,11 +213,30 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
           if (silent.current) return;
           onChangeRef.current?.(editor.getData(), isEmptyNow());
         });
+        // Fill the host. The editable's height is FIXED by the configuration (`height`), and
+        // the host is sized by compose's flex column — so on every resize, give the editable
+        // whatever the host has left after the editor's own toolbar. Set through CKEditor's view
+        // (the documented way to size an editable) rather than on the element, which the editor
+        // owns and re-renders. A delta on the current value converges in one step: setting it
+        // changes the content's height by the same amount, and nothing else.
+        const fit = () => {
+          const content = host.firstElementChild;
+          if (!content) return;
+          const current = parseFloat(editable.style.height) || editable.getBoundingClientRect().height;
+          const next = Math.max(
+            MIN_EDITABLE_HEIGHT,
+            Math.floor(current + host.clientHeight - content.getBoundingClientRect().height),
+          );
+          if (Math.abs(next - current) < 1) return;
+          editor.editing.view.change((writer) => writer.setStyle('height', `${next}px`, editor.editing.view.document.getRoot()));
+        };
         if (typeof ResizeObserver !== 'undefined') {
-          resize = new ResizeObserver(() => onHeightRef.current?.(host.scrollHeight));
+          // The host changes with the pane; the content changes when the toolbar wraps.
+          resize = new ResizeObserver(fit);
           resize.observe(host);
+          if (host.firstElementChild) resize.observe(host.firstElementChild);
         }
-        onHeightRef.current?.(host.scrollHeight);
+        fit();
         setStatus('ready');
         return true;
       }
@@ -255,8 +278,13 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
       aria-label={ariaLabel}
       aria-busy={status === 'loading'}
       style={{
-        flex: '0 0 auto',
-        minHeight: status === 'loading' ? '80px' : 0,
+        // Takes every pixel the fixed rows leave; `fit` hands them to the editable. Hidden
+        // overflow keeps a momentarily too-tall editable from pushing Send off the pane.
+        flex: '1 1 0',
+        // The editor's toolbar row (41px measured) plus the smallest editable worth typing in.
+        minHeight: `${MIN_EDITABLE_HEIGHT + 48}px`,
+        overflow: 'hidden',
+        whiteSpace: 'normal',
         display: status === 'unavailable' ? 'none' : 'block',
         background: T.bg1,
         opacity: disabled ? 0.6 : 1,

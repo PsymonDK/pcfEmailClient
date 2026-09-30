@@ -345,6 +345,26 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
   });
 
+  it('compose takes over the reading pane, and closing it gives the thread back as it was (2026-09-30)', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: SENT } });
+    const threadHidden = () => {
+      let n: HTMLElement | null = r.host.querySelector<HTMLElement>('[data-message]');
+      expect(n).not.toBeNull();
+      for (; n && n !== r.host; n = n.parentElement) if (n.style.display === 'none') return true;
+      return false;
+    };
+    expect(threadHidden()).toBe(true);
+    // The compose surface and its editor are the column now — nothing is docked under a thread.
+    expect(r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!.style.flexGrow).toBe('1');
+
+    await act(async () => {
+      r.host.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    // Hidden, never unmounted: the same message rows come straight back.
+    expect(threadHidden()).toBe(false);
+  });
+
   it('inserting a template never changes the subject — the tracking token stays (2026-09-30)', async () => {
     // Every Case template carries a subject, and applying one used to replace the reply's subject
     // with it: "FW: RE: … CRM:0100017" became "Your case has been escalated", token and all gone.

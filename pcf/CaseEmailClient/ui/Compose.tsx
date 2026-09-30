@@ -15,11 +15,13 @@ import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
 import { insertPlacement } from '../domain/templatePicker';
 
 /**
- * The docked compose surface (R9, R10, R11).
+ * The compose surface (R9, R11).
  *
- * **Docked, not overlaid** — Gate 2. At 222px it leaves 189px of the reading pane visible at the
- * measured floor, which is the point of composing in place: you can still see what you are
- * answering. It grows to a ~380px ceiling and, per the spec, **never shrinks back while open**.
+ * **It takes over the reading pane while open** — the Outlook model, decided 2026-09-30. Gate 2
+ * docked it under the thread at 222–380px so the thread stayed visible; that stopped working when
+ * the Dynamics editor (#17) arrived, because its toolbar is a row of its own and the docked
+ * surface left one line of thread and a few of editor. The editor now fills whatever the fixed
+ * rows leave, and the message being answered is one click away in the quote fold.
  *
  * **The quote is below the editor and read-only.** It is not editable text and it is not in the
  * editor's document; `domain/compose.ts` concatenates it verbatim at send. That is R12's whole
@@ -41,8 +43,6 @@ export interface ComposeProps {
   resumed?: boolean;
   /** Initial new text — signature (R15) or a restored draft (R16). */
   initialHtml?: string;
-  height: number;
-  onHeightChange: (contentHeight: number) => void;
   onClose: () => void;
   onSubjectChange: (next: string) => void;
   onRemoveRecipient: (field: RecipientField, address: string) => void;
@@ -126,8 +126,8 @@ const barLink: React.CSSProperties = {
 
 export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref) => {
   const {
-    mode, answeringLabel, to, cc, bcc, subject, quotedBlock, initialHtml, height,
-    onHeightChange, onClose, onSubjectChange, onRemoveRecipient,
+    mode, answeringLabel, to, cc, bcc, subject, quotedBlock, initialHtml,
+    onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
     onResolveRecipient,
@@ -197,15 +197,22 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         if (files.length > 0) onAddFiles(files);
       }}
       style={{
-        flex: `0 0 ${height}px`,
-        height: `${height}px`,
+        flex: '1 1 0',
         display: 'flex',
         flexDirection: 'column',
+        minWidth: 0,
         minHeight: 0,
         boxSizing: 'border-box',
-        borderTop: `1px solid ${T.stroke1}`,
-        background: T.bg2,
+        // The same card as the reading pane it replaces, so the column does not change shape.
+        background: T.bg1,
+        border: `1px solid ${T.stroke2}`,
+        borderRadius: RADIUS.lg,
+        overflow: 'hidden',
         position: 'relative',
+        // The form's control container sets `white-space: nowrap` and it inherits all the way
+        // down: measured 2026-09-30, the editor's text ran off to the right under a scrollbar.
+        // Rows that must not wrap say so themselves.
+        whiteSpace: 'normal',
       }}
     >
       {/* R13 — the drop target, shown only mid-drag. `pointerEvents: none` is load-bearing:
@@ -448,7 +455,6 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         initialHtml={initialHtml}
         disabled={sending}
         onChange={(_html, isEmpty) => { setEmpty(isEmpty); onBodyChange?.(); }}
-        onHeightChange={onHeightChange}
         factory={editorFactory}
         onUnavailable={() => setEditorUnavailable(true)}
       />
@@ -509,14 +515,20 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
       )}
 
       {/* R12 — the inherited chain, read-only, folded. NOT in the editor's document. */}
+      {/* Open, it takes up to 45% of the pane and scrolls inside; the editor keeps the rest. */}
       {quotedBlock && (
-        <div style={{ flex: '0 0 auto', borderTop: `1px solid ${T.stroke3}` }}>
+        <div
+          style={{
+            flex: '0 1 auto', maxHeight: quoteOpen ? '45%' : undefined, minHeight: 0,
+            display: 'flex', flexDirection: 'column', borderTop: `1px solid ${T.stroke3}`,
+          }}
+        >
           <button
             type="button"
             onClick={() => setQuoteOpen((o) => !o)}
             aria-expanded={quoteOpen}
             style={{
-              display: 'flex', alignItems: 'center', gap: '6px', width: '100%', height: '24px',
+              display: 'flex', alignItems: 'center', gap: '6px', width: '100%', flex: '0 0 24px', height: '24px',
               padding: '0 10px', boxSizing: 'border-box', border: 'none', background: 'transparent',
               font: 'inherit', fontSize: '12px', color: T.fg2, cursor: 'pointer', textAlign: 'left',
             }}
@@ -535,7 +547,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
               // `quotedBlock`, untouched, so R12's round trip is unaffected.
               dangerouslySetInnerHTML={{ __html: safeQuote }}
               style={{
-                maxHeight: '120px', overflowY: 'auto', padding: '6px 10px',
+                flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '6px 10px',
                 boxSizing: 'border-box', background: BODY_SURFACE, colorScheme: 'light',
                 color: BODY_SURFACE_FG, font: `400 12px/17px ${T.font}`, contain: 'content',
               }}

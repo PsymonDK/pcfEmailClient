@@ -113,11 +113,8 @@ export function useCompose(args: ComposeArgs) {
     senderState, setSenderState, chosenSender, signatureHtml, orgPolicyRef,
   } = args;
 
-  /** R9/R10 — the open compose surface, or nothing. One at a time, docked in the reading pane. */
+  /** R9 — the open compose surface, or nothing. One at a time; it takes over the reading pane. */
   const [compose, setCompose] = React.useState<ComposeDraft>();
-  const [composeContentHeight, setComposeContentHeight] = React.useState(0);
-  /** R10: compose never shrinks back while open. Reset when it closes. */
-  const composeHighWater = React.useRef(0);
   const editorRef = React.useRef<EditorHandle>(null);
   /** True once the AGENT has changed the body. Not set by our own seeding — see `seeding`. */
   const bodyTouched = React.useRef(false);
@@ -560,14 +557,12 @@ export function useCompose(args: ComposeArgs) {
 
       const session = ++sessionCounter.current;
       signatureOwner.current = senderRef.current?.id;
-      composeHighWater.current = 0;
       bodyTouched.current = existing !== undefined;
       latestHtml.current = undefined;
       removedKeys.current.clear();
       setRejections([]);
       updateAttachments(() => trayRows);
       setInlineBytes(inline);
-      setComposeContentHeight(0);
       setSendReport(undefined);
       // The chosen sender may differ from the one stored on a resumed draft, and the displayed
       // recipients are the stored ones only when they could be read — so the first save rewrites
@@ -925,7 +920,6 @@ export function useCompose(args: ComposeArgs) {
     if (stillOpen) {
       setCompose(undefined);
       updateAttachments(() => []);
-      composeHighWater.current = 0;
     }
     setNotice({
       headline: 'Message accepted — sending',
@@ -1009,7 +1003,7 @@ export function useCompose(args: ComposeArgs) {
 
 
   return {
-    compose, setCompose, composeContentHeight, setComposeContentHeight, composeHighWater,
+    compose, setCompose,
     editorRef, bodyTouched, seeding, latestHtml, attachments, rejections, inlineBytes,
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,

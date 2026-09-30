@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { buildThreads, type EmailRow, type Thread } from '../domain/threading';
-import { resolveLayout, composeHeight } from '../domain/layout';
+import { resolveLayout } from '../domain/layout';
 import { measureHost, observeHost, type HostMeasurement } from './hostMeasure';
 import { type ComposeMode } from '../domain/compose';
 import {
@@ -610,7 +610,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
 
   // ── compose (R9–R17) — see ui/useCompose.ts ────────────────────────────────
   const {
-    compose, setCompose, composeContentHeight, setComposeContentHeight, composeHighWater,
+    compose, setCompose,
     editorRef, bodyTouched, seeding, latestHtml, attachments, rejections, inlineBytes,
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
@@ -851,13 +851,22 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
         />
       )}
 
-      {/* The reading pane and compose share one column: compose is DOCKED, so its height comes
-          out of the pane rather than out of the page. Gate 2. */}
+      {/* The reading pane and compose share one column, and compose TAKES IT OVER while open —
+          the Outlook model, decided 2026-09-30 when the Dynamics editor (#17) replaced TipTap:
+          its toolbar alone is a row, and docked under the thread it left one line of either.
+          The message being answered stays one click away in the quote fold. The pane is hidden,
+          not unmounted, so closing compose returns to the thread exactly as it was left. */}
       {(layout.layout === 'two-pane' || selected) && (
         <div
           style={{
             display: 'flex', flexDirection: 'column', flexGrow: 1,
             minWidth: 0, minHeight: 0, gap: '8px',
+          }}
+        >
+        <div
+          style={{
+            display: compose ? 'none' : 'flex', flexDirection: 'column', flexGrow: 1,
+            minWidth: 0, minHeight: 0,
           }}
         >
         <ErrorBoundary label="The reading pane">
@@ -908,6 +917,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           onRetry={() => void load()}
         />
         </ErrorBoundary>
+        </div>
 
         {compose && (
           <ErrorBoundary label="The reply" key={`boundary-${compose.session}`}>
@@ -924,16 +934,10 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             subject={compose.subject}
             quotedBlock={compose.quotedBlock}
             resumed={compose.resumedHtml !== undefined}
-            height={composeHeight(composeContentHeight, composeHighWater.current)}
-            onHeightChange={(h) => {
-              composeHighWater.current = Math.max(composeHighWater.current, composeHeight(h));
-              setComposeContentHeight(h);
-            }}
             onClose={() => {
               // Save on the way out, or clean up a blank draft this client created. The save
               // snapshots the editor before compose unmounts, so closing loses nothing.
               void closeCompose();
-              composeHighWater.current = 0;
               setCompose(undefined);
             }}
             onSubjectChange={(next) => {

@@ -2052,3 +2052,23 @@ Source: [Add the rich text editor control](https://learn.microsoft.com/en-us/pow
 - **Per-instance configuration is supported**: a JSON-formatted JavaScript web resource entered as the control's static value (`configUrl`), layered over `RTEGlobalConfiguration_Readonly.json` → `RTEGlobalConfiguration.json` → the instance file (`extraPlugins` merge; other properties replace). **`RTEGlobalConfiguration.json` does not apply to email**, which is why the email form names `msdyn_EmailRTEconfig.js` explicitly. So a copy of that file, shipped as our own web resource, is the documented way to tailor the email editor. Its keys: `defaultSupportedProps` (toolbar, fonts, sizes, height, pasteFilter, extra/removePlugins…), `attachmentEntity`, `disableImages`, `externalPlugins`, `sanitizerWhitelist`, `showFullScreenExpander`, `disableContentSanitization`, and more.
 - **The gap:** the customisation section is written for the **classic** editor and still says the control "uses CKEditor 4" — the classic editor was deprecated April 2025, and the running one is **CKEditor 5** (measured above). The page warns classic customisations may need recreating, and lists modern-editor limits: **no non-Microsoft plug-ins**, and `imageEntity`/`attachmentEntity` do not work. The email config still uses CKEditor 4-style keys (`enterMode`, `extraPlugins`, toolbar arrays), so **which keys the modern editor honours is undocumented — measure, do not assume.**
 - **Documented hooks for approach 3 (editor on the form):** a `rteEditorReady` event on `window.top` whose `detail.parentEntity` names the table and field, and the ordinary form API (`getAttribute(...).setValue`) to set content. The modern editor needs the *New look for model-driven apps* app setting.
+
+#### S14 result, approach 1 — 2026-09-30: **YES, it mounts and edits inside the PCF** (spike build 1.32.0, published app)
+
+Driven from the browser through a spike-only hook exposing the PCF `context` (branch `spike-s14-platform-rte`, never merged). `context.factory.createComponent("MscrmControls.RichTextEditorV2.RichTextEditorControlV2", id, props)` + `bindDOMComponent(descriptor, hostDiv)` inside our control's container:
+
+| Props | Result |
+|---|---|
+| `parameters.value` (`Type: Multiple`, `Static`, `Usage 1`, `Primary`, a literal HTML string) + **`parameters.configUrl`** = `/WebResources/Activities/SystemLibraries/msdyn_EmailRTEconfig.js` | **A real CKEditor 5 instance** (`ck-editor__editable` + `ckeditorInstance`) showing the value — but **read-only** (one read-only lock, no toolbar) |
+| … **+ `parameters.isReadOnly`** (`TwoOptions`, static `false`) | **Editable**, with the modern toolbar (settings, translate, format painter, font Segoe UI, size 9, B/I/U, more). `controlstates.isControlDisabled:false` and `Usage 0` changed nothing further |
+
+Then, on the editable instance:
+
+- **Real keyboard typing** lands, and `ckeditorInstance.getData()` returns it; `model.document.on("change:data")` fires — the hook an autosave needs.
+- **Template fidelity:** *Case resolution survey invite* resolved with `InstantiateTemplate`, `setData` → `getData`: tables 3→3, colours 7→7, backgrounds 3→3, font-family/size kept (8→9 / 11→12, the extra is the editor's sticky-style wrapper), links 1→1, alignment 3→2 (an `align=` attribute, which the modern editor documents as unsupported). It renders complete — banner, body, button. TipTap kept none of the tables, fonts, colours or alignment.
+- **The Case form stays clean** — `getIsDirty()` false, no dirty attributes: with a static `value` the control writes nothing to the host record.
+- **`unbindDOMComponent(id)` removes it completely.**
+
+**What made the difference against S10:** `configUrl` (the editor loads its whole configuration from it) and `isReadOnly: false`. **Why S10's shell was inert** is therefore explained, and S10's verdict — "do not depend on it" — becomes a **risk decision** rather than an impossibility: `createComponent`/`bindDOMComponent` and the parameter shape are still **undocumented** (the typings expose 2 of the factory's 11 members); `configUrl` and the configuration format **are** documented.
+
+Still to measure before a product decision: our own copy of the config (which keys the modern editor honours); sizing inside compose; dark theme; the Copilot/Email Assist buttons it brings; behaviour across a CSW session switch (we would persist `getData()` ourselves, as today); and what happens on a machine where the RTE bundle is not yet cached (it is 4.7 MB, loaded from the platform, not from our bundle).

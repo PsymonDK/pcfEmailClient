@@ -48,35 +48,65 @@ Delivered **R9–R18 and R20**. Merged as
 
 Both are UI paths that unit tests cannot reach, and neither has been exercised in the published app:
 
-- Send **refusing a genuinely unknown address** in the UI. The test Case has no unresolvable
-  address on it, so the path has never actually run.
-- The **`Sending` → `Sent` badge transition** on the thread-list row.
+- Send **refusing a genuinely unknown address** in the UI. The flagged chip for an unknown address
+  has been shown live (1.19.0/1.20.0), but Send has never been pressed on one.
+- The **`Sending` → `Sent` badge transition** on the thread-list row. The Bcc test send on
+  2026-09-29 reached Sent within a minute, before the badge could be observed.
 
 ---
 
-## Phase 3 — make it shippable · **PLANNED**
+## Phase 3 — make it shippable · **IN PROGRESS**
 
 Phase 1 made it readable and Phase 2 made it usable. Phase 3 is what stands between this and
 installing it somewhere that is not the demo environment.
+
+### Done so far in Phase 3
+
+| When | What | PR |
+|---|---|---|
+| 2026-09-28/29 | **Code review, security and refactor** — sanitising for display vs send, CSS and `cid:` image handling, a serial draft-save queue, the send flow extracted and ordered, draft ownership checks, a scripts environment guard, and N1–N11 found by testing in the published app (among them: forward dropping attachments, inline images never showing, tracking tokens stripped from subjects, the form header drawn over the control). Tracked in [`docs/review/2026-09-28-code-review.md`](review/2026-09-28-code-review.md) | [#10](https://github.com/PsymonDK/modeldriven-emailclient/pull/10) |
+| 2026-09-29 | **Reading-pane "More actions" menu** — open in email form (as a dialog), mark as unread, expand/collapse all | [#12](https://github.com/PsymonDK/modeldriven-emailclient/pull/12) |
+| 2026-09-29 | **Bcc** ([#11](https://github.com/PsymonDK/modeldriven-emailclient/issues/11)) — compose, drafts and outgoing display, plus a **data-loss fix**: a party save replaces Bcc too, so resuming a draft used to delete its Bcc. Real Bcc-only delivery confirmed | [#13](https://github.com/PsymonDK/modeldriven-emailclient/pull/13) |
+
+Also settled along the way: **the client never removes a tracking token from a subject** (a
+product requirement), recipient type-ahead in To/Cc/Bcc, leads in the lookup, and flagged chips
+that resolve in place.
 
 Ordered by what blocks what. **N3 is the only outstanding MUST** and comes first.
 
 ### 3.1 N3 (M) — ships as a solution, with no manual per-environment steps
 
 The requirement is that a managed solution imports into a clean environment and the client works.
-Today it does not: two steps are manual, and the managed path has never been built.
+Today it does not: two steps are manual, and the managed path has never been imported anywhere.
 
 - **Assigning the security role.** A new custom table grants privileges to nobody but System
   Administrator and System Customizer, so read state and settings are silently refused for every
   agent until the purpose-built role is assigned. Currently a per-environment human action.
 - **Registering the email-client form with the CSW app**, and publishing the app. One app-designer
   action per environment.
-- **The managed build has never been run.** `dotnet build -c Release -p:SolutionPackageType=Managed`
-  is documented but unexercised, and `<Managed>` in the built solution has never been verified for
-  a release artefact.
+- **The managed build now builds, but has never been imported.** Done in the code review (R7):
+  `solution/src` is a `pac solution sync --packagetype Both` of the environment's solution — the
+  two custom tables, the role, the control and the form — so Debug builds unmanaged and
+  `dotnet build -c Release -p:SolutionPackageType=Managed` builds managed. The Email Client form
+  was rebuilt self-contained, taking its missing dependencies from **88 to 10**, all standard
+  Customer Service components. What is missing is an import into a clean environment, which
+  needs an environment other than the shared demo one.
+- **Configuration is data, not solution content.** The default `jhrb_emailclientsetting` row
+  (`seed-settings.mjs`) does not travel with the solution, and an empty settings table silently
+  means "send as the agent".
+- **The deployment scripts are locked to the demo org** by design (`scripts/lib/dv.mjs`), so
+  none of them can be run against a downstream environment as they stand.
 
 Decide per item whether it can be automated into the solution or has to become a documented
 runbook step. A runbook step is an acceptable answer; an *undocumented* one is not.
+
+**Progress (2026-09-30, branch `n3-shippable`):**
+
+- **Runbook written** — [`docs/deploy/install.md`](deploy/install.md): what the solution contains (verified from the managed build), prerequisites, build, import, post-import, the remaining manual steps, verification, upgrade and uninstall.
+- **Post-import script** — [`scripts/install/post-import.mjs`](../scripts/install/post-import.mjs): checks the import, registers the form with the CSW app, seeds the default settings row, and (with `--team`) assigns the role. Additive only, dry run unless `--confirm`, and the target must be named with `--org` every time. **Dry-run verified against the demo environment** (2026-09-30): every check passed and it reported nothing to do; the `--team` path found the team, the role's copy in its business unit, and would assign it.
+- **Solution version** now tracks the control version (it had stayed at `1.0`), enforced by a test.
+- **Still manual, by nature:** role assignment to individual users (or `--team`), mailbox approval, and the optional session-tab template.
+- **Still open:** an import of the managed package into a clean environment — needs one that is not the shared demo.
 
 ### 3.2 R22 (S) — email template handling that an agent will actually use
 
@@ -131,6 +161,5 @@ rather than capability.
 ## Out of scope
 
 - **R8b** — cross-Case inbox, queue triage, mail rules. That is the OOB Inbox's job.
-- **Bcc** — no path exists anywhere in the client, and adding recipients did not imply it.
 - Changing `Organization.allowunresolvedpartiesonemailsend` — a shared-environment org setting.
 - Chasing the ~17-minute delivery latency; it is a tenant/Exchange characteristic, not client code.

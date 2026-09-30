@@ -8,7 +8,7 @@ import {
   DataverseError, fetchAttachments, fetchParties, type MessageParties, type Party,
 } from '../data/emailQueries';
 import { agentFacingMessage } from '../data/errors';
-import type { TemplateOutcome } from './Compose';
+import type { TemplateOutcome } from './TemplatePicker';
 import {
   discardDraft, fetchDraftById, findExistingDraft, saveDraft, type DraftApiLike,
 } from '../data/draft';

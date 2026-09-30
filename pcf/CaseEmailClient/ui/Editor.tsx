@@ -36,6 +36,13 @@ export interface EditorHandle {
    */
   setHTML(html: string, asEdit?: boolean): void;
   isEmpty(): boolean;
+  /**
+   * Inserts at the very START of the new text — above the signature. R22's "fill an empty
+   * message": the whole-letter case, where the cursor may be anywhere (or nowhere).
+   */
+  insertHTMLAtStart(html: string): void;
+  /** One step of the editor's own history — the Undo on the "Inserted template" bar (R22). */
+  undo(): void;
 }
 
 export interface EditorProps {
@@ -70,6 +77,8 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
     insertHTML: (html) => { editorRef.current?.commands.insertContent(html); },
     setHTML: (html, asEdit = false) => { editorRef.current?.commands.setContent(html, asEdit); },
     isEmpty: () => editorRef.current?.isEmpty ?? true,
+    insertHTMLAtStart: (html) => { editorRef.current?.chain().insertContentAt(0, html).focus().run(); },
+    undo: () => { editorRef.current?.commands.undo(); },
   }), []);
 
   React.useEffect(() => {

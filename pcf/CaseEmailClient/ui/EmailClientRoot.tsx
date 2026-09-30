@@ -29,7 +29,7 @@ import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { Compose } from './Compose';
 import { type DraftApiLike } from '../data/draft';
-import { describeSaved, draftContinuation } from '../domain/draft';
+import { describeSaved, draftContinuation, worthSaving } from '../domain/draft';
 import { sizeWarning } from '../domain/attachments';
 import { ourAddresses as ourAddressesFor } from '../domain/sender';
 import { sendBlockedBy } from '../domain/preflight';
@@ -56,6 +56,8 @@ export interface EmailClientRootProps {
   themeSignals?: ThemeSignals;
   /** `context.userSettings.userId`, braces and all — R6 read state is per agent. */
   userId?: string;
+  /** `context.userSettings.languageId` — the agent's interface language, R22's default. */
+  languageId?: number;
   allocatedHeight: number;
   allocatedWidth: number;
   /** Restored from `setControlState` after a session-switch teardown (R16/N1). */
@@ -83,7 +85,7 @@ export interface RestorableState {
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const {
-    caseId, caseIdSource, webApi, userId, allocatedHeight, allocatedWidth, restored, onStateChange,
+    caseId, caseIdSource, webApi, userId, languageId, allocatedHeight, allocatedWidth, restored, onStateChange,
     themeSignals,
   } = props;
 
@@ -958,6 +960,9 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             // the cursor does not land inside the agent's own sign-off.
             initialHtml={compose.resumedHtml ?? initialBodyWithSignature(signatureHtml)}
             templates={templates}
+            uiLanguage={languageId}
+            // The same rule draft saving uses for "is there anything beyond the signature?".
+            hasTypedText={() => worthSaving(editorRef.current?.getHTML() ?? '', signatureHtml)}
             onUseTemplate={resolveTemplate}
             sender={chosenSender}
             candidates={senderState.candidates}

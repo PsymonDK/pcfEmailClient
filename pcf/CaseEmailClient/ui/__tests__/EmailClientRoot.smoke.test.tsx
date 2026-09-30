@@ -87,7 +87,10 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             return options?.includes("startswith(fullname,'sim")
               ? [{ contactid: CONTACT, fullname: 'Simon Jehrbo', emailaddress1: 'simon.jehrbo@example.com' }]
               : [];
-          case 'template': return [{ templateid: 'f00dcafe-0000-4000-8000-000000000001', title: 'Case Escalation', subject: 'Your case has been escalated' }];
+          case 'template': return [
+            { templateid: 'f00dcafe-0000-4000-8000-000000000001', title: 'Case Escalation', subject: 'Your case has been escalated' },
+            { templateid: 'f00dcafe-0000-4000-8000-000000000002', title: 'Welcome', subject: 'Welcome' },
+          ];
           case 'organization': return [{ requireapprovalforqueueemail: true, requireapprovalforuseremail: true }];
           case 'queueitem': return [{ queueid: {
             queueid: CARE, name: 'Care', emailaddress: 'caredemo@example.invalid',
@@ -346,17 +349,120 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       const region = () => r.host.querySelector('[role=region][aria-label*="compose"]')?.textContent ?? '';
       expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
 
-      await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template')!.click(); return Promise.resolve(); });
-      const select = r.host.querySelector<HTMLSelectElement>('select[aria-label="Template"]')!;
+      // R22: click 1 opens the picker, click 2 on a row inserts.
       await act(async () => {
-        select.value = 'f00dcafe-0000-4000-8000-000000000001';
-        select.dispatchEvent(new Event('change', { bubbles: true }));
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
-      await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Insert at cursor')!.click(); return Promise.resolve(); });
+      // The preview resolves on sight, before any click.
+      expect(r.host.querySelector('[aria-live="polite"]')?.textContent).toContain('Dear customer');
+      const row = r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!;
+      expect(row.textContent).toContain('Case Escalation');
+      await act(async () => {
+        row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
 
+      expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('Dear customer');
+      expect(region()).toContain('Inserted "Case Escalation"');
       expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
       expect(region()).not.toContain('Your case has been escalated');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('R22: after inserting, Undo takes it out and Replace leaves only the template', async () => {
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({
+        json: () => Promise.resolve({ value: [{ subject: 'x', description: '<p>Dear customer</p>' }] }),
+      }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      const editorText = () => r.host.querySelector('.ProseMirror')?.textContent ?? '';
+      const before = editorText();
+      const insert = async () => {
+        await act(async () => {
+          Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+          for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        });
+        await act(async () => {
+          r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!
+            .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+        });
+      };
+      const click = async (label: string) => {
+        await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === label)!.click(); return Promise.resolve(); });
+      };
+
+      await insert();
+      // Nothing typed yet, so it FILLS from the top — above whatever the editor held.
+      expect(editorText().startsWith('Dear customer')).toBe(true);
+      await click('Undo');
+      expect(editorText()).toBe(before);
+      expect(r.host.textContent).not.toContain('Inserted "Case Escalation"');
+
+      await insert();
+      await click('Replace the whole message instead');
+      expect(editorText()).toBe('Dear customer');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('#17: a template with formatting the editor cannot hold says so, before and after inserting', async () => {
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({
+        json: () => Promise.resolve({ value: [{ subject: 'x', description: '<table><tr><td style="color:red">Pris</td></tr></table><p>Tekst</p>' }] }),
+      }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(r.host.querySelector('[role=note]')?.textContent)
+        .toBe("Formatting will be simplified: tables and colours won't carry over into the reply.");
+      await act(async () => {
+        r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(r.host.textContent).toContain('formatting simplified (tables and colours)');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('the picker keeps a FIXED height, and only real mouse movement changes the hovered template', async () => {
+    // Reported 2026-09-30: the popover opens upward and followed the preview's height, so hovering
+    // resized it, a neighbouring row slid under the still cursor and took the hover, and the two
+    // flipped forever. jsdom cannot measure layout, so this asserts the two guards instead.
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({ json: () => Promise.resolve({ value: [{ subject: 'x', description: '<p>x</p>' }] }) }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      const listbox = r.host.querySelector<HTMLElement>('[role=listbox][aria-label="Templates"]')!;
+      const popover = listbox.parentElement!.parentElement!;
+      expect(popover.style.height).toBe('300px');
+
+      const rows = () => Array.from(listbox.querySelectorAll<HTMLElement>('[role=option]'));
+      const selected = () => rows().find((o) => o.getAttribute('aria-selected') === 'true')?.textContent;
+      expect(selected()).toContain('Case Escalation');
+      // Content moving under a still cursor fires mouseenter/over — that must NOT change the hover.
+      await act(() => { rows()[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return Promise.resolve(); });
+      expect(selected()).toContain('Case Escalation');
+      // A real move does.
+      await act(() => { rows()[1].dispatchEvent(new MouseEvent('mousemove', { bubbles: true })); return Promise.resolve(); });
+      expect(selected()).toContain('Welcome');
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }

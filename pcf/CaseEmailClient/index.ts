@@ -81,6 +81,8 @@ export class CaseEmailClient
       // makes every read-state filter return nothing rather than fail, which looks like the
       // feature is broken rather than the id.
       userId: context.userSettings.userId,
+      // The agent's interface language (LCID) — the template picker's default language (R22).
+      languageId: context.userSettings.languageId,
       allocatedHeight: context.mode.allocatedHeight,
       allocatedWidth: context.mode.allocatedWidth,
       restored: this.state,

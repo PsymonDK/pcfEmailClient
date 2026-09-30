@@ -30,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **725 tests**, lint and typecheck clean.
+helpers — **742 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -70,6 +70,12 @@ actually packaged before believing an import:
 ```bash
 unzip -p solution/bin/Debug/solution.zip Controls/jhrb_JHRB.CaseEmailClient/ControlManifest.xml | grep -o 'version="[0-9.]*"'
 ```
+
+**`pac solution import` can exit 0 without importing anything.** Measured 2026-09-30: with the pac
+profile's MFA expired it printed `AADSTS50078` and exited **0** — no import job was created and the
+environment kept the previous build. Confirm an import landed from Dataverse, not from pac's exit
+code: the newest `importjobs` row for `JHRBCaseEmailClient` (and, after publishing, the
+`customcontrols` version).
 
 **Never write a colour literal in a component (N7).** `T.*` resolves through CSS custom properties
 set on the root — see [`ui/theme.ts`](pcf/CaseEmailClient/ui/theme.ts). A hardcoded hex cannot follow

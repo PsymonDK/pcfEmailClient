@@ -409,6 +409,31 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
+  it('#17: a template with formatting the editor cannot hold says so, before and after inserting', async () => {
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({
+        json: () => Promise.resolve({ value: [{ subject: 'x', description: '<table><tr><td style="color:red">Pris</td></tr></table><p>Tekst</p>' }] }),
+      }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(r.host.querySelector('[role=note]')?.textContent)
+        .toBe("Formatting will be simplified: tables and colours won't carry over into the reply.");
+      await act(async () => {
+        r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(r.host.textContent).toContain('formatting simplified (tables and colours)');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {
     const r = await renderShell({
       selectedThreadKey: 'h:-1269871662',

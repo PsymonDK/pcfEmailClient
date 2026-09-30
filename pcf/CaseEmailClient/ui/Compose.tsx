@@ -12,7 +12,7 @@ import { IconButton } from './parts';
 import { Editor, type EditorHandle } from './Editor';
 import type { EmailTemplate } from '../data/templates';
 import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
-import { insertPlacement } from '../domain/templatePicker';
+import { describeLost, formattingLost, insertPlacement } from '../domain/templatePicker';
 
 /**
  * The docked compose surface (R9, R10, R11).
@@ -142,7 +142,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const [ccOpen, setCcOpen] = React.useState(false);
   const [bccOpen, setBccOpen] = React.useState(false);
   /** R22 — the template just inserted, for the Undo / Replace bar. Cleared by either, or ✕. */
-  const [inserted, setInserted] = React.useState<{ title: string; html: string; unresolved: string[] }>();
+  const [inserted, setInserted] = React.useState<{ title: string; html: string; unresolved: string[]; lost: string[] }>();
   const fileInput = React.useRef<HTMLInputElement>(null);
   /**
    * Drag enter/leave fire for every child element the pointer crosses, so a naive boolean
@@ -402,7 +402,10 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
               // Click 2 inserts (R22). The subject is never touched — see the regression test.
               if (insertPlacement(hasTypedText()) === 'fill') editorApi.current?.insertHTMLAtStart(outcome.html);
               else editorApi.current?.insertHTML(outcome.html);
-              setInserted({ title: template.title, html: outcome.html, unresolved: outcome.unresolved });
+              setInserted({
+                title: template.title, html: outcome.html, unresolved: outcome.unresolved,
+                lost: formattingLost(outcome.html),
+              });
             }}
           />
         )}
@@ -422,6 +425,9 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
             Inserted &quot;{inserted.title}&quot;
+            {inserted.lost.length > 0 && (
+              <span style={{ color: T.fg3 }}> · formatting simplified ({describeLost(inserted.lost)})</span>
+            )}
             {inserted.unresolved.length > 0 && (
               <span style={{ color: T.warnFg }}>
                 {' '}· {inserted.unresolved.length === 1 ? '1 placeholder' : `${inserted.unresolved.length} placeholders`} couldn&apos;t be filled ({inserted.unresolved.join(', ')}) — fix before sending

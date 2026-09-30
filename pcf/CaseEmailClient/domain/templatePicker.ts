@@ -114,3 +114,34 @@ export function languageName(lcid: number, uiLanguage?: number): string {
     return tag;
   }
 }
+
+/**
+ * What the editor would DROP from this HTML — so the picker can say so before inserting (#17).
+ *
+ * Measured 2026-09-30: the sanitiser keeps tables, inline styles, alignment and images, so the
+ * preview SHOWS them — but the editor is TipTap's StarterKit plus Link (no headings, quotes,
+ * rules, underline, tables, images or styles), and it silently flattens all of that on insert.
+ * Without this the preview promises formatting the reply then loses. The list mirrors the
+ * editor's schema in `ui/Editor.tsx`; if an extension is added there, remove its entry here.
+ */
+export function formattingLost(html: string): string[] {
+  const lost: string[] = [];
+  const add = (label: string, when: boolean) => { if (when && !lost.includes(label)) lost.push(label); };
+  const styles = [...html.matchAll(/\bstyle\s*=\s*"([^"]*)"|\bstyle\s*=\s*'([^']*)'/gi)].map((m) => (m[1] ?? m[2] ?? '').toLowerCase());
+  add('tables', /<table\b/i.test(html));
+  add('images', /<img\b/i.test(html));
+  add('fonts and sizes', /<font\b[^>]*\b(face|size)\s*=/i.test(html) || styles.some((s) => /(^|;)\s*font(-family|-size)?\s*:/.test(s)));
+  add('colours', /<font\b[^>]*\bcolor\s*=/i.test(html) || styles.some((s) => /(^|;)\s*(color|background(-color)?)\s*:/.test(s)));
+  add('alignment', /\balign\s*=/i.test(html) || styles.some((s) => /(^|;)\s*text-align\s*:/.test(s)));
+  add('headings', /<h[1-6]\b/i.test(html));
+  add('underline', /<u\b/i.test(html) || styles.some((s) => /text-decoration\s*:\s*underline/.test(s)));
+  add('quotes', /<blockquote\b/i.test(html));
+  add('lines', /<hr\b/i.test(html));
+  return lost;
+}
+
+/** "tables, colours and alignment" — for the one-line notice. */
+export function describeLost(lost: readonly string[]): string {
+  if (lost.length <= 1) return lost.join('');
+  return `${lost.slice(0, -1).join(', ')} and ${lost[lost.length - 1]}`;
+}

@@ -389,7 +389,6 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             onUse={onUseTemplate}
             onInsert={(html) => editorApi.current?.insertHTML(html)}
             onReplace={(html) => editorApi.current?.setHTML(html, true)}
-            onSubject={onSubjectChange}
           />
         )}
       </Toolbar>
@@ -900,8 +899,7 @@ const TemplatePicker: React.FC<{
   onUse: (templateId: string) => Promise<TemplateOutcome>;
   onInsert: (html: string) => void;
   onReplace: (html: string) => void;
-  onSubject: (subject: string) => void;
-}> = ({ templates, disabled, onUse, onInsert, onReplace, onSubject }) => {
+}> = ({ templates, disabled, onUse, onInsert, onReplace }) => {
   const [open, setOpen] = React.useState(false);
   const [chosen, setChosen] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -920,7 +918,11 @@ const TemplatePicker: React.FC<{
   const apply = (replace: boolean) => {
     if (!preview || preview.error) return;
     if (replace) onReplace(preview.html); else onInsert(preview.html);
-    if (preview.subject) onSubject(preview.subject);
+    // The template's subject is deliberately NOT applied. Every compose here is a reply or a
+    // forward, and replacing its subject removed the tracking token (a product requirement says
+    // the client never does that), dropped the RE:/FW: prefix, and cost threading its subject
+    // fallback — every Case template carries a subject, so every insert did it (2026-09-30).
+    // The picker is not even given a way to change the subject, so this cannot drift back.
     setOpen(false);
     setChosen('');
     setPreview(undefined);

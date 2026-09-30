@@ -87,6 +87,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             return options?.includes("startswith(fullname,'sim")
               ? [{ contactid: CONTACT, fullname: 'Simon Jehrbo', emailaddress1: 'simon.jehrbo@example.com' }]
               : [];
+          case 'template': return [{ templateid: 'f00dcafe-0000-4000-8000-000000000001', title: 'Case Escalation', subject: 'Your case has been escalated' }];
           case 'organization': return [{ requireapprovalforqueueemail: true, requireapprovalforuseremail: true }];
           case 'queueitem': return [{ queueid: {
             queueid: CARE, name: 'Care', emailaddress: 'caredemo@example.invalid',
@@ -330,6 +331,35 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     const reveal = Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Bcc')!;
     await act(() => { reveal.click(); return Promise.resolve(); });
     expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
+  });
+
+  it('inserting a template never changes the subject — the tracking token stays (2026-09-30)', async () => {
+    // Every Case template carries a subject, and applying one used to replace the reply's subject
+    // with it: "FW: RE: … CRM:0100017" became "Your case has been escalated", token and all gone.
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({
+        json: () => Promise.resolve({ value: [{ subject: 'Your case has been escalated', description: '<p>Dear customer</p>' }] }),
+      }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      const region = () => r.host.querySelector('[role=region][aria-label*="compose"]')?.textContent ?? '';
+      expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
+
+      await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template')!.click(); return Promise.resolve(); });
+      const select = r.host.querySelector<HTMLSelectElement>('select[aria-label="Template"]')!;
+      await act(async () => {
+        select.value = 'f00dcafe-0000-4000-8000-000000000001';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Insert at cursor')!.click(); return Promise.resolve(); });
+
+      expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
+      expect(region()).not.toContain('Your case has been escalated');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

@@ -442,7 +442,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
   });
 
   it('the picker keeps a FIXED height, and only real mouse movement changes the hovered template', async () => {
-    // Reported 2026-09-30: the popover opens upward and followed the preview's height, so hovering
+    // Reported 2026-09-30: the popover opened upward and followed the preview's height, so hovering
     // resized it, a neighbouring row slid under the still cursor and took the hover, and the two
     // flipped forever. jsdom cannot measure layout, so this asserts the two guards instead.
     (window as unknown as { Xrm?: unknown }).Xrm = {

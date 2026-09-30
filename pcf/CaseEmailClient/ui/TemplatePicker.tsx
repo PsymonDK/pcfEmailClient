@@ -22,8 +22,10 @@ export interface TemplateOutcome {
  * unfillable placeholder is visible before anything lands in the reply.
  *
  * A popover rather than a dialog, so the reply stays visible; absolutely positioned inside its
- * wrapper because CSW's containers carry transforms that break fixed positioning. It opens UP:
- * compose is docked at the bottom of the reading pane.
+ * wrapper because CSW's containers carry transforms that break fixed positioning. It opens DOWN,
+ * over the editor: compose fills the reading pane now (2026-09-30), so the toolbar row sits near
+ * its top and the space is below. It opened up while compose was docked at the bottom, and after
+ * the change it opened into the rows above and was cut off.
  */
 /** The popover's fixed height — the list and the preview scroll inside it. See the style below. */
 export const PICKER_HEIGHT = 300;
@@ -116,7 +118,7 @@ export const TemplatePicker: React.FC<{
         ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
-        onKeyDown={(e) => { if (e.key === 'ArrowUp' && !open) { e.preventDefault(); setOpen(true); } }}
+        onKeyDown={(e) => { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); } }}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -134,13 +136,13 @@ export const TemplatePicker: React.FC<{
         <div
           onKeyDown={onKeyDown}
           style={{
-            position: 'absolute', right: 0, bottom: '26px', zIndex: 3, width: '560px', maxWidth: '80vw',
+            position: 'absolute', right: 0, top: '26px', zIndex: 3, width: '560px', maxWidth: '80vw',
             // Reset: the compose chrome around the toolbar inherits `nowrap`, and the formatting
             // note ran 567 px wide inside a 258 px column, cut off mid-word (measured live, 1.29.0).
             whiteSpace: 'normal',
-            // A FIXED height, with the list and the preview scrolling inside it. The popover opens
-            // upward from the button, so a height that followed the preview moved every row under a
-            // still cursor: hovering a template resized the popover, the row above slid under the
+            // A FIXED height, with the list and the preview scrolling inside it. While the popover
+            // opened upward, a height that followed the preview moved every row under a still
+            // cursor: hovering a template resized the popover, the row above slid under the
             // cursor and took the hover, its preview resized it back — a loop (reported 2026-09-30).
             height: `${PICKER_HEIGHT}px`,
             display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gridTemplateRows: '100%',

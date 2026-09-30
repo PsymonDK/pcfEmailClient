@@ -195,6 +195,9 @@ const Contained: React.FC<{ html: string; muted?: boolean }> = ({ html, muted })
     style={{
       // Reset the sender's inherited context so their CSS starts from ours, not from Dynamics'.
       font: `400 14px/20px ${T.font}`,
+      // The form's control container sets `white-space: nowrap` and it inherits this far: measured
+      // 2026-09-30, every paragraph of a message ran on one line under a horizontal scrollbar.
+      whiteSpace: 'normal',
       // N7 — LITERAL white and near-black, never the themed tokens.
       //
       // Mail is written for a white background: black text, white-background logos, tables with

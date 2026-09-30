@@ -148,4 +148,4 @@ One refinement made while building: the language control also appears when every
 
 - **1.28.0:** the list showed all five Case templates with their descriptions and **no language control** (all English, English UI). The preview resolved on sight. Click and keyboard (↓, Enter) both inserted; an empty message was filled above the signature; **Undo** restored the editor HTML exactly; **Replace** left only the template. The subject kept `CRM:0100017`. Closing left no draft.
 - **1.29.0, the formatting note (#17):** *Case Auto Response* → "fonts and sizes"; *Case resolution survey invite* → "tables, fonts and sizes, colours and alignment"; the three plain templates → no note. The bar repeats it after inserting.
-- **1.30.0:** the note ran on one line and was clipped (the compose chrome inherits `nowrap`); the popover now resets `white-space`.
+- **1.30.0:** the note ran on one line and was clipped (the compose chrome inherits `nowrap`); the popover now resets `white-space`. **Verified live:** the note wraps to three lines in its 260 px column with no overflow; Escape closes the picker.

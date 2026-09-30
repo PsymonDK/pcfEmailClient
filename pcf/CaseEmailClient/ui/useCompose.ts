@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { type EmailRow } from '../domain/threading';
+import { openEmailInForm } from '../data/navigation';
 import {
   allRecipients, buildQuotedBlock, composeSubject, headerFor, resolveRecipients, type ComposeMode,
   type Recipient, type RecipientField,
@@ -604,6 +605,36 @@ export function useCompose(args: ComposeArgs) {
   openComposeRef.current = openCompose;
 
   /** N7 — continue the agent's own draft, on the same row, against the message it answers. */
+  /**
+   * #17 — the Dynamics editor could not load, and there is no second editor: hand the draft to
+   * the standard email form, which has the same editor.
+   *
+   * Saved FIRST (forced — nothing may be typed yet), then compose is let go WITHOUT
+   * `closeCompose`: its save-or-discard rule would delete a client-created draft that holds only
+   * the signature, which is exactly the draft being handed over. From here the standard form owns
+   * the row; the list reloads when its dialog closes, since the agent may have sent it there.
+   */
+  const handOffToStandardForm = React.useCallback(async (): Promise<void> => {
+    const draft = composeRef.current;
+    if (!draft) return;
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+      draftTimer.current = undefined;
+    }
+    const emailId = await flushDraft({ force: true, includeParties: true });
+    if (!emailId) {
+      setNotice({
+        headline: "Couldn't hand the draft over",
+        detail: 'It could not be saved, so it cannot be opened in the email form. Try again.',
+      });
+      return;
+    }
+    createdHere.current.delete(draft.session);
+    setCompose(undefined);
+    await openEmailInForm(emailId);
+    void load();
+  }, [flushDraft, setNotice, load]);
+
   const resumeDraft = React.useCallback(async (draftId: string): Promise<void> => {
     const draft = rows.find((r) => r.activityid === draftId);
     if (!draft) return;
@@ -983,7 +1014,7 @@ export function useCompose(args: ComposeArgs) {
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
     changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
-    resolveRecipient, resumeDraft,
+    resolveRecipient, resumeDraft, handOffToStandardForm,
   };
 }
 

@@ -28,6 +28,7 @@ import { useCompose, type Notice } from './useCompose';
 import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { Compose } from './Compose';
+import type { PlatformFactory } from './Editor';
 import { type DraftApiLike } from '../data/draft';
 import { describeSaved, draftContinuation, worthSaving } from '../domain/draft';
 import { sizeWarning } from '../domain/attachments';
@@ -58,6 +59,8 @@ export interface EmailClientRootProps {
   userId?: string;
   /** `context.userSettings.languageId` — the agent's interface language, R22's default. */
   languageId?: number;
+  /** `context.factory` — hosts the Dynamics editor in compose (#17). */
+  editorFactory?: PlatformFactory;
   allocatedHeight: number;
   allocatedWidth: number;
   /** Restored from `setControlState` after a session-switch teardown (R16/N1). */
@@ -85,7 +88,7 @@ export interface RestorableState {
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const {
-    caseId, caseIdSource, webApi, userId, languageId, allocatedHeight, allocatedWidth, restored, onStateChange,
+    caseId, caseIdSource, webApi, userId, languageId, editorFactory, allocatedHeight, allocatedWidth, restored, onStateChange,
     themeSignals,
   } = props;
 
@@ -612,7 +615,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     sendReport, sending, openCompose, openComposeRef, closeCompose, closeComposeRef,
     scheduleDraftSave, markPartiesDirty, addFiles, addRecipients, removeAttachment, sendDraft,
     changeSender, resolveTemplate, searchRecipientSuggestions, pickRecipient, addTypedAddress,
-    resolveRecipient, resumeDraft,
+    resolveRecipient, resumeDraft, handOffToStandardForm,
   } = useCompose({
     caseId, userId, webApiRef, rows, parties, ourAddresses, ensureBody, load, setNotice,
     senderState, setSenderState, chosenSender, signatureHtml, orgPolicyRef,
@@ -963,6 +966,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             uiLanguage={languageId}
             // The same rule draft saving uses for "is there anything beyond the signature?".
             hasTypedText={() => worthSaving(editorRef.current?.getHTML() ?? '', signatureHtml)}
+            editorFactory={editorFactory}
+            onOpenInStandardForm={resolveXrmNavigation() ? () => { void handOffToStandardForm(); } : undefined}
             onUseTemplate={resolveTemplate}
             sender={chosenSender}
             candidates={senderState.candidates}

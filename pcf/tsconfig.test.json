@@ -14,5 +14,5 @@
     // The base tsconfig EXCLUDES test files so `pcf-scripts build` does not type-check them.
     // That exclude is inherited, so it must be overridden or it cancels the include below.
     "exclude": ["node_modules"],
-    "include": ["CaseEmailClient/**/*.test.ts", "CaseEmailClient/**/*.test.tsx"]
+    "include": ["CaseEmailClient/**/*.test.ts", "CaseEmailClient/**/*.test.tsx", "CaseEmailClient/**/__tests__/**/*.ts"]
 }

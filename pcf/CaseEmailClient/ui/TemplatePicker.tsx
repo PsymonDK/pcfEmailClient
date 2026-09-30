@@ -1,7 +1,7 @@
 import * as React from 'react';
 import type { EmailTemplate } from '../data/templates';
 import {
-  defaultLanguage, describeLost, formattingLost, languageName, pickerSections, showLanguageControl,
+  defaultLanguage, languageName, pickerSections, showLanguageControl,
   templateLanguages, type PickerTemplate,
 } from '../domain/templatePicker';
 import { BODY_SURFACE, BODY_SURFACE_FG, RADIUS, T } from './tokens';
@@ -57,8 +57,6 @@ export const TemplatePicker: React.FC<{
   const flat = sections.flatMap((s) => s.templates);
   const active = flat.find((t) => t.templateId === activeId) ?? flat[0];
   const preview = active ? previews.get(active.templateId) : undefined;
-  // What the editor would drop from this template (#17) — said here, before anything is inserted.
-  const lost = preview && preview !== 'loading' && !preview.error ? formattingLost(preview.html) : [];
 
   const resolve = React.useCallback(async (templateId: string): Promise<TemplateOutcome> => {
     const cached = previews.get(templateId);
@@ -269,11 +267,6 @@ export const TemplatePicker: React.FC<{
                 {preview.unresolved.length > 0 && (
                   <span style={{ flex: '0 0 auto', fontSize: '12px', color: T.warnFg, background: T.warnBg2, border: `1px solid ${T.warnStroke}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
                     {preview.unresolved.length === 1 ? '1 placeholder' : `${preview.unresolved.length} placeholders`} can&apos;t be filled: {preview.unresolved.join(', ')}
-                  </span>
-                )}
-                {lost.length > 0 && (
-                  <span role="note" style={{ flex: '0 0 auto', fontSize: '12px', color: T.fg2, background: T.bg3, border: `1px solid ${T.stroke2}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
-                    Formatting will be simplified: {describeLost(lost)} won&apos;t carry over into the reply.
                   </span>
                 )}
               </>

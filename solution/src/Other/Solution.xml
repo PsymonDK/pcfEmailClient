@@ -6,7 +6,7 @@
       <LocalizedName description="Case Email Client" languagecode="1033" />
     </LocalizedNames>
     <Descriptions />
-    <Version>1.31.0.0</Version>
+    <Version>1.33.0.0</Version>
     <Managed>2</Managed>
     <Publisher>
       <UniqueName>jhrb</UniqueName>
@@ -88,6 +88,7 @@
       <RootComponent type="1" schemaName="systemuser" behavior="1" />
       <RootComponent type="20" id="{bf5009cc-46b6-f111-aaae-000d3ab16615}" behavior="0" />
       <RootComponent type="66" schemaName="jhrb_JHRB.CaseEmailClient" behavior="0" />
+      <RootComponent type="61" schemaName="jhrb_/CaseEmailClient/EmailRTEconfig.js" behavior="0" />
     </RootComponents>
     <MissingDependencies>
       <MissingDependency>

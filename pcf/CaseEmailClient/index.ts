@@ -2,6 +2,7 @@ import { IInputs, IOutputs } from './generated/ManifestTypes';
 import * as React from 'react';
 import { resolveCaseId } from './host/caseId';
 import { EmailClientRoot, type RestorableState } from './ui/EmailClientRoot';
+import type { PlatformFactory } from './ui/Editor';
 import type { DraftApiLike } from './data/draft';
 
 /**
@@ -83,6 +84,9 @@ export class CaseEmailClient
       userId: context.userSettings.userId,
       // The agent's interface language (LCID) — the template picker's default language (R22).
       languageId: context.userSettings.languageId,
+      // Hosts the Dynamics rich text editor in compose (#17). Its hosting members are untyped and
+      // undocumented; the narrow shape is declared once in ui/Editor.tsx.
+      editorFactory: context.factory as unknown as PlatformFactory,
       allocatedHeight: context.mode.allocatedHeight,
       allocatedWidth: context.mode.allocatedWidth,
       restored: this.state,

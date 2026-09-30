@@ -9,10 +9,10 @@ import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
 import { BODY_SURFACE, BODY_SURFACE_FG, formatSize, RADIUS, T } from './tokens';
 import { IconButton } from './parts';
-import { Editor, type EditorHandle } from './Editor';
+import { Editor, type EditorHandle, type PlatformFactory } from './Editor';
 import type { EmailTemplate } from '../data/templates';
 import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
-import { describeLost, formattingLost, insertPlacement } from '../domain/templatePicker';
+import { insertPlacement } from '../domain/templatePicker';
 
 /**
  * The docked compose surface (R9, R10, R11).
@@ -112,6 +112,10 @@ export interface ComposeProps {
    * an empty message is filled from the top, anything typed gets it at the cursor (decision 3).
    */
   hasTypedText: () => boolean;
+  /** `context.factory` — hosts the Dynamics editor (#17). */
+  editorFactory?: PlatformFactory;
+  /** The editor could not load: save the draft and open it in the standard email form. */
+  onOpenInStandardForm?: () => void;
 }
 
 /** The Undo / Replace links on the post-insert bar (R22). */
@@ -130,6 +134,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
     sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed, uiLanguage, hasTypedText,
+    editorFactory, onOpenInStandardForm,
   } = props;
 
   const [quoteOpen, setQuoteOpen] = React.useState(false);
@@ -142,7 +147,9 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const [ccOpen, setCcOpen] = React.useState(false);
   const [bccOpen, setBccOpen] = React.useState(false);
   /** R22 — the template just inserted, for the Undo / Replace bar. Cleared by either, or ✕. */
-  const [inserted, setInserted] = React.useState<{ title: string; html: string; unresolved: string[]; lost: string[] }>();
+  const [inserted, setInserted] = React.useState<{ title: string; html: string; unresolved: string[] }>();
+  /** The hosted editor could not become editable (#17): compose offers the standard email form. */
+  const [editorUnavailable, setEditorUnavailable] = React.useState(false);
   const fileInput = React.useRef<HTMLInputElement>(null);
   /**
    * Drag enter/leave fire for every child element the pointer crosses, so a naive boolean
@@ -402,10 +409,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
               // Click 2 inserts (R22). The subject is never touched — see the regression test.
               if (insertPlacement(hasTypedText()) === 'fill') editorApi.current?.insertHTMLAtStart(outcome.html);
               else editorApi.current?.insertHTML(outcome.html);
-              setInserted({
-                title: template.title, html: outcome.html, unresolved: outcome.unresolved,
-                lost: formattingLost(outcome.html),
-              });
+              setInserted({ title: template.title, html: outcome.html, unresolved: outcome.unresolved });
             }}
           />
         )}
@@ -425,9 +429,6 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         >
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
             Inserted &quot;{inserted.title}&quot;
-            {inserted.lost.length > 0 && (
-              <span style={{ color: T.fg3 }}> · formatting simplified ({describeLost(inserted.lost)})</span>
-            )}
             {inserted.unresolved.length > 0 && (
               <span style={{ color: T.warnFg }}>
                 {' '}· {inserted.unresolved.length === 1 ? '1 placeholder' : `${inserted.unresolved.length} placeholders`} couldn&apos;t be filled ({inserted.unresolved.join(', ')}) — fix before sending
@@ -448,7 +449,36 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         disabled={sending}
         onChange={(_html, isEmpty) => { setEmpty(isEmpty); onBodyChange?.(); }}
         onHeightChange={onHeightChange}
+        factory={editorFactory}
+        onUnavailable={() => setEditorUnavailable(true)}
       />
+
+      {/* #17 — there is no second editor. When the Dynamics editor cannot load, say so plainly and
+          hand the draft to the standard email form, which has the same editor. */}
+      {editorUnavailable && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto', padding: '10px',
+            boxSizing: 'border-box', fontSize: '12px', color: T.fg1, background: T.warnBg2,
+            borderBottom: `1px solid ${T.warnStroke}`,
+          }}
+        >
+          <span style={{ flexGrow: 1 }}>The email editor couldn&apos;t load here. Your draft is kept — open it in the email form to finish it.</span>
+          {onOpenInStandardForm && (
+            <button
+              type="button"
+              onClick={onOpenInStandardForm}
+              style={{
+                flex: '0 0 auto', height: '26px', padding: '0 12px', border: 'none', borderRadius: RADIUS.md,
+                background: T.brandBg, color: T.onBrand, font: 'inherit', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              Open in the email form
+            </button>
+          )}
+        </div>
+      )}
 
       {/* R13 — attachments. Absent entirely when there are none, rather than an empty tray
           eating pixels from a 471px-tall host. */}
@@ -906,11 +936,8 @@ const RecipientRow: React.FC<{
 };
 
 /**
- * The formatting toolbar.
- *
- * Rendered but **not wired** in this increment — the buttons are visibly disabled rather than
- * present-and-inert, which is the standard this project already applies to the compose `+` in the
- * thread list. Wiring them to `editor.chain()` is the next step.
+ * The compose actions row — attach and Template. Formatting lives in the Dynamics editor's own
+ * toolbar (#17); the disabled B/I/U placeholders that stood here were never wired.
  */
 const Toolbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
   <div
@@ -919,13 +946,6 @@ const Toolbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
       padding: '0 8px', boxSizing: 'border-box', borderBottom: `1px solid ${T.stroke3}`,
     }}
   >
-    {(['B', 'I', 'U'] as const).map((glyph) => (
-      <IconButton key={glyph} label={`${glyph} — not wired yet`} disabled>
-        <span style={{ fontSize: '13px', fontWeight: glyph === 'B' ? 700 : 400, fontStyle: glyph === 'I' ? 'italic' : 'normal' }}>
-          {glyph}
-        </span>
-      </IconButton>
-    ))}
     <span style={{ flexGrow: 1 }} />
     {children}
   </div>

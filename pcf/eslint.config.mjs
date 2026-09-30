@@ -55,7 +55,7 @@ export default [
     // them (it would fail on the vitest imports). But typescript-eslint's projectService then
     // cannot find them either, and every test file errors with "was not found by the project
     // service". Pointing this block at tsconfig.test.json is what reconciles the two.
-    files: ["**/*.test.ts", "**/*.test.tsx"],
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**/*.ts"],
     languageOptions: {
       parserOptions: {
         projectService: false,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  defaultLanguage, describeLost, formattingLost, insertPlacement, languageName, pickerSections, showLanguageControl,
+  defaultLanguage, insertPlacement, languageName, pickerSections, showLanguageControl,
   templateLanguages, type PickerTemplate,
 } from '../templatePicker';
 
@@ -72,27 +72,5 @@ describe('languageName', () => {
 
   it('says so for an unknown LCID rather than guessing', () => {
     expect(languageName(9999, 1033)).toBe('Language 9999');
-  });
-});
-
-describe('formattingLost (#17) — what the editor would drop, said BEFORE inserting', () => {
-  it('reports nothing for what the editor holds: paragraphs, bold, lists, links', () => {
-    expect(formattingLost('<p>Hej <strong>Simon</strong></p><ul><li><p>a</p></li></ul><p><a href="https://x">x</a></p>')).toEqual([]);
-  });
-
-  it('names each kind of lost formatting once, in a readable order', () => {
-    // The exact probe measured on 2026-09-30.
-    const rich = '<table><tr><td style="color:red">Cell</td></tr></table><p><span style="font-family:Arial; color:#0078d4; font-size:14pt">Styled</span></p><p style="text-align:center">Centered</p><img src="data:image/png;base64,x">';
-    expect(formattingLost(rich)).toEqual(['tables', 'images', 'fonts and sizes', 'colours', 'alignment']);
-  });
-
-  it('catches the legacy tags the Dynamics editor emits too', () => {
-    expect(formattingLost('<font face="Segoe UI" color="#333">x</font><h2>T</h2><u>u</u><hr><blockquote>q</blockquote>'))
-      .toEqual(['fonts and sizes', 'colours', 'headings', 'underline', 'quotes', 'lines']);
-  });
-
-  it('reads as one sentence', () => {
-    expect(describeLost(['tables'])).toBe('tables');
-    expect(describeLost(['tables', 'colours', 'alignment'])).toBe('tables, colours and alignment');
   });
 });

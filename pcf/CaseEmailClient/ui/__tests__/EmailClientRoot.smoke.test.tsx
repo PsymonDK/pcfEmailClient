@@ -5,6 +5,8 @@ import * as ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import { EmailClientRoot, type RestorableState } from '../EmailClientRoot';
 import type { DraftApiLike } from '../../data/draft';
+import type { PlatformFactory } from '../Editor';
+import { fakeEditorFactory } from './fakeEditorFactory';
 
 /**
  * The shell, rendered for real against a fake Dataverse — the first test that imports
@@ -151,7 +153,13 @@ afterEach(() => {
  * Renders the shell the way `index.ts` does: `setControlState` hands the state straight back as
  * `restored` and re-renders — the round trip that hung the app once already (2026-09-11).
  */
-async function renderShell(initial?: RestorableState, stateCeiling = 200) {
+async function renderShell(
+  initial?: RestorableState,
+  stateCeiling = 200,
+  // The hosted Dynamics editor (#17), faked: jsdom cannot load the platform control.
+  // null = no factory at all (an explicit undefined would pick up this default).
+  editorFactory: PlatformFactory | null = fakeEditorFactory().factory,
+) {
   const { api, calls } = fakeApi();
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -168,6 +176,7 @@ async function renderShell(initial?: RestorableState, stateCeiling = 200) {
       allocatedWidth={1200}
       restored={restored}
       onStateChange={onStateChange}
+      editorFactory={editorFactory ?? undefined}
     />,
     target,
   ); };
@@ -201,7 +210,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       compose: { mode: 'reply', activityId: SENT, emailId: DRAFT },
     });
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
-    expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
+    expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('M11 sessionsskift test');
     expect(r.stateCalls()).toBeLessThan(60);
   });
 
@@ -225,7 +234,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
-    expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('M11 sessionsskift test');
+    expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('M11 sessionsskift test');
   });
 
   it('a forward keeps the tracking token, and its header names whose message it is (N9)', async () => {
@@ -363,7 +372,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
 
-      expect(r.host.querySelector('.ProseMirror')?.textContent).toContain('Dear customer');
+      expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('Dear customer');
       expect(region()).toContain('Inserted "Case Escalation"');
       expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
       expect(region()).not.toContain('Your case has been escalated');
@@ -380,7 +389,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     };
     try {
       const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
-      const editorText = () => r.host.querySelector('.ProseMirror')?.textContent ?? '';
+      const editorText = () => r.host.querySelector('.ck-editor__editable')?.textContent ?? '';
       const before = editorText();
       const insert = async () => {
         await act(async () => {
@@ -407,31 +416,6 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       await insert();
       await click('Replace the whole message instead');
       expect(editorText()).toBe('Dear customer');
-    } finally {
-      delete (window as unknown as { Xrm?: unknown }).Xrm;
-    }
-  });
-
-  it('#17: a template with formatting the editor cannot hold says so, before and after inserting', async () => {
-    (window as unknown as { Xrm?: unknown }).Xrm = {
-      WebApi: { online: { execute: () => Promise.resolve({
-        json: () => Promise.resolve({ value: [{ subject: 'x', description: '<table><tr><td style="color:red">Pris</td></tr></table><p>Tekst</p>' }] }),
-      }) } },
-    };
-    try {
-      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
-      await act(async () => {
-        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
-        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-      });
-      expect(r.host.querySelector('[role=note]')?.textContent)
-        .toBe("Formatting will be simplified: tables and colours won't carry over into the reply.");
-      await act(async () => {
-        r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!
-          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-      });
-      expect(r.host.textContent).toContain('formatting simplified (tables and colours)');
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
@@ -466,6 +450,38 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
+  });
+
+  it('#17: when the Dynamics editor cannot load, compose says so and offers the standard form', async () => {
+    const opened: unknown[] = [];
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      Navigation: { navigateTo: (page: unknown) => { opened.push(page); return Promise.resolve(); } },
+    };
+    try {
+      const r = await renderShell(
+        { selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } },
+        200,
+        fakeEditorFactory({ throwOnCreate: true }).factory,
+      );
+      const alert = Array.from(r.host.querySelectorAll('[role=alert]')).find((a) => a.textContent?.includes("couldn't load"));
+      expect(alert?.textContent).toContain('open it in the email form');
+      expect(r.host.querySelector('.ck-editor__editable')).toBeNull();
+
+      // Hand-off: the draft is saved (forced — nothing typed), compose closes, the form opens on it.
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Open in the email form')!.click();
+        for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(opened[0]).toMatchObject({ pageType: 'entityrecord', entityName: 'email' });
+      expect(r.host.querySelector('button[aria-label="Close compose"]')).toBeNull();
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('#17: with no factory at all there is no editor, only the way out', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } }, 200, null);
+    expect(Array.from(r.host.querySelectorAll('[role=alert]')).some((a) => a.textContent?.includes("couldn't load"))).toBe(true);
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

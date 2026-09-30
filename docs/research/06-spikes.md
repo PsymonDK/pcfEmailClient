@@ -2072,3 +2072,16 @@ Then, on the editable instance:
 **What made the difference against S10:** `configUrl` (the editor loads its whole configuration from it) and `isReadOnly: false`. **Why S10's shell was inert** is therefore explained, and S10's verdict — "do not depend on it" — becomes a **risk decision** rather than an impossibility: `createComponent`/`bindDOMComponent` and the parameter shape are still **undocumented** (the typings expose 2 of the factory's 11 members); `configUrl` and the configuration format **are** documented.
 
 Still to measure before a product decision: our own copy of the config (which keys the modern editor honours); sizing inside compose; dark theme; the Copilot/Email Assist buttons it brings; behaviour across a CSW session switch (we would persist `getData()` ourselves, as today); and what happens on a machine where the RTE bundle is not yet cached (it is 4.7 MB, loaded from the platform, not from our bundle).
+
+#### S14 — our own copy of the email config (2026-09-30)
+
+A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **outside any solution** (`jhrb_/CaseEmailClient/spike/EmailRTEconfig.js`, id `7fc4529b-d3bc-f111-aaaf-0022489d55b0`, safe to delete), mounted through `configUrl` exactly like Microsoft's. The file uses **CKEditor 4 names**; the modern editor **translates** them (`CopyFormatting`→`formatPainter`, `Font`→`fontFamily`, `Justify*`→`alignment`, `Image`→`imagePicker`, `Table`→`insertTable`, …).
+
+| Change in the copy | Honoured by the modern editor? |
+|---|---|
+| `toolbar` cut to Bold, Italic, Underline, lists, Link, Table, Undo, Redo | **Yes** — exactly those items, font/size/format painter/colours/indent/alignment/image/table-of-contents gone |
+| `stickyStyle` Calibri 11 pt (+ labels) | **Yes** — content computes to Calibri 14.67 px (= 11 pt) vs Segoe UI 12 px (= 9 pt) |
+| `height` 200px | **Yes** — editable 202 px vs 602 px |
+| `removePlugins` += CopilotInitializer, EmailAssist, EmailAssistEditing, Translate, TranslateUI | **Partly** — `CopilotInitializer` no longer loads, but **the Copilot ("Adjust with Copilot"), Email Assist and Translate ("All languages") buttons stay** — they are prepended to every toolbar whatever the config says. Governed elsewhere (environment/app Copilot and email-assist settings), not by this file |
+
+So the product owner's suggestion holds: **a config copy shipped as our own web resource is a working, documented way to tailor the hosted editor** — toolbar, default font and height all took effect. The Copilot / Translate buttons are the exception.

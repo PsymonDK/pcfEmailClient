@@ -103,7 +103,7 @@ runbook step. A runbook step is an acceptable answer; an *undocumented* one is n
 **Progress (2026-09-30, branch `n3-shippable`):**
 
 - **Runbook written** — [`docs/deploy/install.md`](deploy/install.md): what the solution contains (verified from the managed build), prerequisites, build, import, post-import, the remaining manual steps, verification, upgrade and uninstall.
-- **Post-import script** — [`scripts/install/post-import.mjs`](../scripts/install/post-import.mjs): checks the import, registers the form with the CSW app, seeds the default settings row, and (with `--team`) assigns the role. Additive only, dry run unless `--confirm`, and the target must be named with `--org` every time.
+- **Post-import script** — [`scripts/install/post-import.mjs`](../scripts/install/post-import.mjs): checks the import, registers the form with the CSW app, seeds the default settings row, and (with `--team`) assigns the role. Additive only, dry run unless `--confirm`, and the target must be named with `--org` every time. **Dry-run verified against the demo environment** (2026-09-30): every check passed and it reported nothing to do; the `--team` path found the team, the role's copy in its business unit, and would assign it.
 - **Solution version** now tracks the control version (it had stayed at `1.0`), enforced by a test.
 - **Still manual, by nature:** role assignment to individual users (or `--team`), mailbox approval, and the optional session-tab template.
 - **Still open:** an import of the managed package into a clean environment — needs one that is not the shared demo.

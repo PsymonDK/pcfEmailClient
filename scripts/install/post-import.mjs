@@ -17,7 +17,7 @@
 // environments. So the target must be NAMED with --org every time (no default, no pac profile, no
 // env var fallback), the organisation's own name is printed before anything happens, and nothing
 // is written without --confirm. The token comes from DV_TOKEN or `az account get-access-token`.
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { normaliseOrg } from '../lib/dv.mjs';
 import { DEFAULT_SETTINGS_ROW } from '../lib/settings-defaults.mjs';
 
@@ -42,10 +42,11 @@ if (!ORG) {
 let token = process.env.DV_TOKEN;
 if (!token) {
   try {
-    token = execFileSync(
-      process.platform === 'win32' ? 'az.cmd' : 'az',
-      ['account', 'get-access-token', '--resource', ORG, '--query', 'accessToken', '-o', 'tsv'],
-      { encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] },
+    // One command string, not args + shell: Node deprecates the latter (DEP0190). Safe to
+    // interpolate: ORG has been through normaliseOrg, so it is a bare scheme://host origin.
+    token = execSync(
+      `az account get-access-token --resource ${ORG} --query accessToken -o tsv`,
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     ).trim();
   } catch (e) {
     // One line, not a stack trace: the usual cause is an expired sign-in or MFA, and the fix is

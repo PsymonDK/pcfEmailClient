@@ -39,11 +39,23 @@ if (!ORG) {
   process.exit(2);
 }
 
-const token = process.env.DV_TOKEN ?? execFileSync(
-  process.platform === 'win32' ? 'az.cmd' : 'az',
-  ['account', 'get-access-token', '--resource', ORG, '--query', 'accessToken', '-o', 'tsv'],
-  { encoding: 'utf8', shell: process.platform === 'win32' },
-).trim();
+let token = process.env.DV_TOKEN;
+if (!token) {
+  try {
+    token = execFileSync(
+      process.platform === 'win32' ? 'az.cmd' : 'az',
+      ['account', 'get-access-token', '--resource', ORG, '--query', 'accessToken', '-o', 'tsv'],
+      { encoding: 'utf8', shell: process.platform === 'win32', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+  } catch (e) {
+    // One line, not a stack trace: the usual cause is an expired sign-in or MFA, and the fix is
+    // a command, not a debugger.
+    const reason = /AADSTS\d+[^.]*/.exec(String(e.stderr ?? e.message))?.[0] ?? 'az could not issue a token';
+    console.error(`REFUSING: no token for ${ORG} — ${reason}.`);
+    console.error(`Sign in:  az login --scope "${ORG}/.default"   (or set DV_TOKEN)`);
+    process.exit(2);
+  }
+}
 
 const API = `${ORG}/api/data/v9.2`;
 async function call(path, { method = 'GET', body } = {}) {

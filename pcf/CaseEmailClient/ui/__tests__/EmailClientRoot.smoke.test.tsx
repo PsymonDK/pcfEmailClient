@@ -87,7 +87,10 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             return options?.includes("startswith(fullname,'sim")
               ? [{ contactid: CONTACT, fullname: 'Simon Jehrbo', emailaddress1: 'simon.jehrbo@example.com' }]
               : [];
-          case 'template': return [{ templateid: 'f00dcafe-0000-4000-8000-000000000001', title: 'Case Escalation', subject: 'Your case has been escalated' }];
+          case 'template': return [
+            { templateid: 'f00dcafe-0000-4000-8000-000000000001', title: 'Case Escalation', subject: 'Your case has been escalated' },
+            { templateid: 'f00dcafe-0000-4000-8000-000000000002', title: 'Welcome', subject: 'Welcome' },
+          ];
           case 'organization': return [{ requireapprovalforqueueemail: true, requireapprovalforuseremail: true }];
           case 'queueitem': return [{ queueid: {
             queueid: CARE, name: 'Care', emailaddress: 'caredemo@example.invalid',
@@ -429,6 +432,37 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
       expect(r.host.textContent).toContain('formatting simplified (tables and colours)');
+    } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('the picker keeps a FIXED height, and only real mouse movement changes the hovered template', async () => {
+    // Reported 2026-09-30: the popover opens upward and followed the preview's height, so hovering
+    // resized it, a neighbouring row slid under the still cursor and took the hover, and the two
+    // flipped forever. jsdom cannot measure layout, so this asserts the two guards instead.
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({ json: () => Promise.resolve({ value: [{ subject: 'x', description: '<p>x</p>' }] }) }) } },
+    };
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      const listbox = r.host.querySelector<HTMLElement>('[role=listbox][aria-label="Templates"]')!;
+      const popover = listbox.parentElement!.parentElement!;
+      expect(popover.style.height).toBe('300px');
+
+      const rows = () => Array.from(listbox.querySelectorAll<HTMLElement>('[role=option]'));
+      const selected = () => rows().find((o) => o.getAttribute('aria-selected') === 'true')?.textContent;
+      expect(selected()).toContain('Case Escalation');
+      // Content moving under a still cursor fires mouseenter/over — that must NOT change the hover.
+      await act(() => { rows()[1].dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return Promise.resolve(); });
+      expect(selected()).toContain('Case Escalation');
+      // A real move does.
+      await act(() => { rows()[1].dispatchEvent(new MouseEvent('mousemove', { bubbles: true })); return Promise.resolve(); });
+      expect(selected()).toContain('Welcome');
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }

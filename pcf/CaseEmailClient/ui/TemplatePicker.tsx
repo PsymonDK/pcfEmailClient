@@ -25,6 +25,9 @@ export interface TemplateOutcome {
  * wrapper because CSW's containers carry transforms that break fixed positioning. It opens UP:
  * compose is docked at the bottom of the reading pane.
  */
+/** The popover's fixed height — the list and the preview scroll inside it. See the style below. */
+export const PICKER_HEIGHT = 300;
+
 export const TemplatePicker: React.FC<{
   templates: readonly EmailTemplate[];
   /** `context.userSettings.languageId` — the default language (decision 1). */
@@ -137,11 +140,16 @@ export const TemplatePicker: React.FC<{
             // Reset: the compose chrome around the toolbar inherits `nowrap`, and the formatting
             // note ran 567 px wide inside a 258 px column, cut off mid-word (measured live, 1.29.0).
             whiteSpace: 'normal',
-            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+            // A FIXED height, with the list and the preview scrolling inside it. The popover opens
+            // upward from the button, so a height that followed the preview moved every row under a
+            // still cursor: hovering a template resized the popover, the row above slid under the
+            // cursor and took the hover, its preview resized it back — a loop (reported 2026-09-30).
+            height: `${PICKER_HEIGHT}px`,
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gridTemplateRows: '100%',
             background: T.bg1, border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.md, overflow: 'hidden',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.stroke2}`, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', borderRight: `1px solid ${T.stroke2}`, minWidth: 0, minHeight: 0 }}>
             <div style={{ display: 'flex', gap: '6px', padding: '6px', borderBottom: `1px solid ${T.stroke2}` }}>
               <input
                 ref={searchRef}
@@ -175,7 +183,7 @@ export const TemplatePicker: React.FC<{
               )}
             </div>
 
-            <div id={listId} role="listbox" aria-label="Templates" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+            <div id={listId} role="listbox" aria-label="Templates" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }}>
               {sections.map((s) => (
                 <div key={s.heading} role="group" aria-label={s.heading}>
                   {sections.length > 1 && (
@@ -189,7 +197,9 @@ export const TemplatePicker: React.FC<{
                         id={`${listId}-${tpl.templateId}`}
                         role="option"
                         aria-selected={isActive}
-                        onMouseEnter={() => setActiveId(tpl.templateId)}
+                        // mousemove, not mouseenter: mouseenter also fires when content moves under a
+                        // STILL cursor, which is how the resize loop kept re-selecting rows.
+                        onMouseMove={() => { if (tpl.templateId !== activeId) setActiveId(tpl.templateId); }}
                         // mousedown, not click: a click would first blur the search box.
                         onMouseDown={(e) => { e.preventDefault(); void pick(tpl); }}
                         style={{
@@ -237,7 +247,7 @@ export const TemplatePicker: React.FC<{
             </div>
           </div>
 
-          <div aria-live="polite" style={{ padding: '8px 10px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div aria-live="polite" style={{ padding: '8px 10px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <span style={{ fontSize: '11px', color: T.fg3 }}>Preview · resolved for this case</span>
             {!active && <span style={{ fontSize: '12px', color: T.fg3 }}>Nothing selected.</span>}
             {preview === 'loading' && <span style={{ fontSize: '12px', color: T.fg3 }}>Resolving…</span>}
@@ -250,19 +260,19 @@ export const TemplatePicker: React.FC<{
                 <div
                   dangerouslySetInnerHTML={{ __html: preview.html }}
                   style={{
-                    maxHeight: '190px', overflowY: 'auto', padding: '6px 8px', boxSizing: 'border-box',
+                    flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '6px 8px', boxSizing: 'border-box',
                     background: BODY_SURFACE, colorScheme: 'light', color: BODY_SURFACE_FG,
                     font: `400 12px/17px ${T.font}`, border: `1px solid ${T.stroke2}`,
                     borderRadius: RADIUS.sm, contain: 'content',
                   }}
                 />
                 {preview.unresolved.length > 0 && (
-                  <span style={{ fontSize: '12px', color: T.warnFg, background: T.warnBg2, border: `1px solid ${T.warnStroke}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
+                  <span style={{ flex: '0 0 auto', fontSize: '12px', color: T.warnFg, background: T.warnBg2, border: `1px solid ${T.warnStroke}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
                     {preview.unresolved.length === 1 ? '1 placeholder' : `${preview.unresolved.length} placeholders`} can&apos;t be filled: {preview.unresolved.join(', ')}
                   </span>
                 )}
                 {lost.length > 0 && (
-                  <span role="note" style={{ fontSize: '12px', color: T.fg2, background: T.bg3, border: `1px solid ${T.stroke2}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
+                  <span role="note" style={{ flex: '0 0 auto', fontSize: '12px', color: T.fg2, background: T.bg3, border: `1px solid ${T.stroke2}`, borderRadius: RADIUS.sm, padding: '3px 6px' }}>
                     Formatting will be simplified: {describeLost(lost)} won&apos;t carry over into the reply.
                   </span>
                 )}

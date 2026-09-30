@@ -2085,3 +2085,16 @@ A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **out
 | `removePlugins` += CopilotInitializer, EmailAssist, EmailAssistEditing, Translate, TranslateUI | **Partly** — `CopilotInitializer` no longer loads, but **the Copilot ("Adjust with Copilot"), Email Assist and Translate ("All languages") buttons stay** — they are prepended to every toolbar whatever the config says. Governed elsewhere (environment/app Copilot and email-assist settings), not by this file |
 
 So the product owner's suggestion holds: **a config copy shipped as our own web resource is a working, documented way to tailor the hosted editor** — toolbar, default font and height all took effect. The Copilot / Translate buttons are the exception.
+
+#### S14 — fit, session switch, load cost (2026-09-30, spike build 1.32.0)
+
+**1. Fit inside compose.** Mounted over our compose's toolbar row + editor area (1083 × 134 px; viewport 1978 px wide):
+- **The toolbar fits** — one 41 px row, the rest collapsing into *More items*, so narrower panes degrade gracefully.
+- **The height does not come from the container.** Microsoft's config fixes the editable at 600 px (602 measured), so in 134 px it is simply clipped. Sizing must come from us: a small `height` in **our** config copy (honoured, measured above) plus compose measuring the editor's real height, as it does for TipTap today. (Setting the editable's height from outside also works — 86 px, text visible, the quote strip and Send row stay visible — but that reaches into Microsoft's DOM and is the fallback, not the plan.)
+- **Dark theme: not verified.** The editor's CSS runs on CKEditor's theme variables (`--ck-content-font-color` …) and Learn documents dark mode for the modern editor, but confirming it inside our control needs a user switched to dark mode.
+
+**2. CSW session switch.** Typed into the hosted editor, switched to the Home session and back:
+- On Home the case session's DOM is gone entirely — the hosted editor with it, no leftover editables.
+- Back on the case, our control is rebuilt (**new `context`**) and our own M11 restore reopens compose. The hosted editor is not there (it lived in the torn-down control) — **re-mounting it with the new context's factory, under the same component id, works**, and `setData` of the text saved before the switch restores it. The Case form stays not dirty. So the design holds: we persist `getData()` ourselves (draft autosave + `setControlState`, as today) and re-mount on restore.
+
+**3. Load cost.** First mount on a freshly loaded page: **~0.77 s** to editable (first markup 0.31 s); a second mount **0.35 s**. The bundle never appeared as a network request — the platform served it from its own client cache. A cache-bypassing download of the bundle (4.9 MB decoded) took **0.75–0.85 s** here (three runs), so a truly first load costs roughly **1.5–2 s**, once per browser. Agents who have opened the standard email form already have it cached — it is the same editor.

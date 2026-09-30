@@ -1,5 +1,12 @@
 # Deployment scripts
 
+> **These scripts are for the demo environment only** (see *Environment guard*). To install the
+> client anywhere else, import the managed solution and follow
+> [`docs/deploy/install.md`](../../docs/deploy/install.md), which uses
+> [`scripts/install/post-import.mjs`](../install/post-import.mjs). Since the code review (R7) the
+> tables, the role and the form travel **in the solution**, so steps 1–4 and 6 below are how the
+> demo environment was built, not something a downstream install repeats.
+
 Environment changes the email client needs beyond the solution import: two custom tables, the
 role agents need to use them, the default settings row, and the dedicated Case form. Every script
 here is **dry-run unless you pass `--confirm`**: without it, it reads the environment and prints

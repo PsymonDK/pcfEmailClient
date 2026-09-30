@@ -100,6 +100,14 @@ Today it does not: two steps are manual, and the managed path has never been imp
 Decide per item whether it can be automated into the solution or has to become a documented
 runbook step. A runbook step is an acceptable answer; an *undocumented* one is not.
 
+**Progress (2026-09-30, branch `n3-shippable`):**
+
+- **Runbook written** — [`docs/deploy/install.md`](deploy/install.md): what the solution contains (verified from the managed build), prerequisites, build, import, post-import, the remaining manual steps, verification, upgrade and uninstall.
+- **Post-import script** — [`scripts/install/post-import.mjs`](../scripts/install/post-import.mjs): checks the import, registers the form with the CSW app, seeds the default settings row, and (with `--team`) assigns the role. Additive only, dry run unless `--confirm`, and the target must be named with `--org` every time.
+- **Solution version** now tracks the control version (it had stayed at `1.0`), enforced by a test.
+- **Still manual, by nature:** role assignment to individual users (or `--team`), mailbox approval, and the optional session-tab template.
+- **Still open:** an import of the managed package into a clean environment — needs one that is not the shared demo.
+
 ### 3.2 R22 (S) — email template handling that an agent will actually use
 
 **Tracked as [issue #8](https://github.com/PsymonDK/modeldriven-emailclient/issues/8). Requires design

@@ -14,25 +14,15 @@
 import {
   CONFIRM, api as dvApi, getEnv, writeIds,
 } from '../lib/dv.mjs';
+import { DEFAULT_SETTINGS_ROW } from '../lib/settings-defaults.mjs';
 
 const { org: ORG } = getEnv();
 
 const TABLE = 'jhrb_emailclientsetting';
 const IDS_FILE = `${import.meta.dirname}/settings-row-ids.json`;
 
-const DEFAULT_ROW = {
-  jhrb_name: 'Default',
-  jhrb_isdefault: true,
-  // The point of the feature: a customer replying to a case reaches the queue, not a person.
-  jhrb_sendfromqueue: true,
-  // The agent can still send as themselves when that is genuinely the right thing — pre-flight
-  // will tell them if their own mailbox cannot deliver.
-  jhrb_allowsenderoverride: true,
-  // Where a NEW message's default recipient comes from. `customerid` because it is populated on
-  // virtually every Case and accepts either an account or a contact — both valid party targets.
-  jhrb_recipiententity: 'incident',
-  jhrb_recipientlookup: 'customerid',
-};
+// Shared with scripts/install/post-import.mjs so the two installers cannot seed different defaults.
+const DEFAULT_ROW = DEFAULT_SETTINGS_ROW;
 
 // Data rows, not components — no solution header.
 const api = (path, method = 'GET', body) => dvApi(path, { method, body });

@@ -30,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **722 tests**, lint and typecheck clean.
+helpers — **724 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -206,6 +206,11 @@ Two traps to know about:
 - **A `Condition="'$(SolutionPackageType)' == ''"` guard on it never fires** — the PowerApps `.props`
   import assigns `Managed` before the project's own `PropertyGroup` is evaluated. Set it
   unconditionally.
+
+**Bump the SOLUTION version with the control version** (`solution/src/Other/Solution.xml`). A
+managed solution upgrades by its own version; it sat at `1.0` through 26 control releases until
+2026-09-30. `host/__tests__/release.test.ts` fails when they differ. The downstream install is
+[`docs/deploy/install.md`](docs/deploy/install.md).
 
 Release build, only when shipping downstream:
 

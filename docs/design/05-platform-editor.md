@@ -1,12 +1,20 @@
 # Hosting the Dynamics editor in compose · recommendation and build plan
 
 Issue [#17](https://github.com/PsymonDK/modeldriven-emailclient/issues/17), spike **S14**
-([`docs/research/06-spikes.md`](../research/06-spikes.md) → S14). **Status: recommendation,
-awaiting a decision — nothing here is built.**
+([`docs/research/06-spikes.md`](../research/06-spikes.md) → S14). **Status: DECIDED 2026-09-30 — building** (branch `platform-editor`). The decisions below override parts of the recommendation that follows.
+
+## Decisions — 2026-09-30 (product owner)
+
+1. **Go.** Host the platform editor in compose.
+2. **No kill switch.**
+3. **Full toolbar** — Microsoft's email toolbar. Our config file must stay **editable in a managed solution**, so the web resource ships with *Can be customized* = true and admins can change the toolbar later without a release.
+4. **No TipTap — not even as a fallback.** Nothing has shipped yet, and an unused second editor is wasted bundle, wasted resources and a worse experience. **When the platform editor cannot load, the fallback is the standard email form**: compose says so and offers *Open in the email form*, which saves the draft and opens it there (the dialog the reading pane already uses).
+
+Consequences for the plan below: phase A's seam shrinks to replacing `ui/Editor.tsx` in place behind the existing `EditorHandle`; phase D becomes "mount or offer the standard form"; the R22 formatting note goes away (nothing is simplified any more); TipTap and its link extension leave `package.json`.
 
 ---
 
-## Recommendation
+## Recommendation (as written before the decisions)
 
 **Build it, behind an automatic fallback.** Replace TipTap as the compose editor with the Dynamics
 rich text editor (`MscrmControls.RichTextEditorV2.RichTextEditorControlV2`), hosted inside our

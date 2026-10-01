@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { addressFilter, enrichRecipients, resolveAddress } from '../recipients';
+import {
+  addressFilter, DEFAULT_RECIPIENT_SOURCE, enrichRecipients, fetchDefaultRecipient, resolveAddress,
+} from '../recipients';
 import type { WebApiLike } from '../emailQueries';
 
 /** What the server sees: the options string URL-decoded once, as the query string is. */
@@ -80,5 +82,50 @@ describe('resolveAddress', () => {
     expect(await resolveAddress(api, 'two@a.invalid; three@b.invalid')).toEqual({ kind: 'none' });
     expect(await resolveAddress(api, '   ')).toEqual({ kind: 'none' });
     expect(calls).toBe(0);
+  });
+});
+
+describe('fetchDefaultRecipient — who a NEW email goes to (2026-10-01)', () => {
+  const CASE = '71cdb358-2abb-f111-aaad-000d3ab16615';
+  const CONTACT = 'b5e30418-23f2-f011-8406-0022489cf5dd';
+  /** A case whose customer lookup points at `entity`, and that record's address. */
+  const api = (entity: string | undefined, address?: string, log: string[] = []): WebApiLike => ({
+    retrieveMultipleRecords: () => Promise.resolve({ entities: [] }),
+    retrieveRecord: (table: string, _id: string, options?: string) => {
+      log.push(`${table} ${options ?? ''}`);
+      if (table === 'incident') {
+        return Promise.resolve(entity ? {
+          _customerid_value: CONTACT,
+          '_customerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': entity,
+          '_customerid_value@OData.Community.Display.V1.FormattedValue': 'Simon Jehrbo',
+        } : {});
+      }
+      return Promise.resolve(address ? { emailaddress1: address, emailaddress: address } : {});
+    },
+  });
+
+  it("names the case's customer as a BOUND recipient", async () => {
+    expect(await fetchDefaultRecipient(api('contact', 'simon.jehrbo@example.com'), CASE, DEFAULT_RECIPIENT_SOURCE)).toEqual({
+      name: 'Simon Jehrbo', address: 'simon.jehrbo@example.com', partyId: CONTACT,
+      partyEntity: 'contact', partyNav: 'partyid_contact',
+    });
+  });
+
+  it('prefills nothing rather than guess: no customer, no address, or a queue', async () => {
+    expect(await fetchDefaultRecipient(api(undefined), CASE, DEFAULT_RECIPIENT_SOURCE)).toBeUndefined();
+    expect(await fetchDefaultRecipient(api('contact', undefined), CASE, DEFAULT_RECIPIENT_SOURCE)).toBeUndefined();
+    // A queue is our own service mailbox — never a default recipient.
+    expect(await fetchDefaultRecipient(api('queue', 'care@example.invalid'), CASE, DEFAULT_RECIPIENT_SOURCE)).toBeUndefined();
+    expect(await fetchDefaultRecipient(api('incident', 'x@example.invalid'), CASE, DEFAULT_RECIPIENT_SOURCE)).toBeUndefined();
+  });
+
+  it('reads the configured lookup, and refuses anything that is not a plain column name', async () => {
+    const log: string[] = [];
+    await fetchDefaultRecipient(api('contact', 'a@example.invalid', log), CASE, { entity: 'incident', lookup: 'primarycontactid' });
+    expect(log[0]).toBe('incident ?$select=_primarycontactid_value');
+    const none: string[] = [];
+    expect(await fetchDefaultRecipient(api('contact', 'a@example.invalid', none), CASE, { entity: 'incident', lookup: 'x,description' })).toBeUndefined();
+    expect(await fetchDefaultRecipient(api('contact', 'a@example.invalid', none), CASE, { entity: 'account', lookup: 'primarycontactid' })).toBeUndefined();
+    expect(none).toEqual([]);
   });
 });

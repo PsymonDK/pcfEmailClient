@@ -100,7 +100,9 @@ export function draftArgsFrom(
     to: draft.to,
     cc: draft.cc,
     bcc: draft.bcc,
-    inReplyToId: draft.mode === 'forward' ? undefined : draft.activityId,
+    // Only a reply links to what it answers. A forward is a new message to new people, and a new
+    // email answers nothing — both resume by their own row id, never by a parent.
+    inReplyToId: draft.mode === 'reply' || draft.mode === 'replyAll' ? draft.activityId : undefined,
   };
 }
 
@@ -268,10 +270,13 @@ export function describeSaved(at: Date | undefined, now: Date = new Date()): str
  * not something to answer; it is something to finish. Continuing it reopens compose on the SAME
  * row against the message it answers, so nothing is duplicated.
  *
- * - `resume` — the agent's own draft, answering a message on this case.
+ * - `resume` — the agent's own draft: answering a message on this case, or, with no parent at
+ *   all, a NEW email (`answeringId` empty). A new email has no quote to sit under, so it needs none;
+ *   a draft the standard email form left behind resumes the same way, and any quote it carries is
+ *   split off and kept verbatim, exactly as on a reply.
  * - `otherAgent` — somebody else's. Their unsent work is theirs to finish.
- * - `cannotResume` — no answered message on the case (a draft from the standard email form, say),
- *   or no user id to prove ownership. Nothing here can give it a quote to sit under.
+ * - `cannotResume` — it answers a message that is not on this case, it is a forward with nothing
+ *   to forward, or there is no user id to prove ownership.
  */
 export type DraftContinuation =
   | { kind: 'resume'; mode: ComposeMode; answeringId: string }
@@ -293,10 +298,15 @@ export function draftContinuation(
   if (message.ownerid && userId && bareId(message.ownerid) !== bareId(userId)) {
     return { kind: 'otherAgent' };
   }
+  if (!userId || !message.ownerid) return { kind: 'cannotResume' };
   const answering = message.parentactivityid ? bareId(message.parentactivityid) : undefined;
-  if (!userId || !message.ownerid || !answering || !idsOnCase.has(answering)) {
-    return { kind: 'cannotResume' };
+  if (!answering) {
+    // No parent: a new email — unless its subject says forward, which has lost what it forwarded.
+    return isForwardSubject(message.subject)
+      ? { kind: 'cannotResume' }
+      : { kind: 'resume', mode: 'new', answeringId: '' };
   }
+  if (!idsOnCase.has(answering)) return { kind: 'cannotResume' };
   // Only the kind matters on resume: the recipients shown are the ones stored on the row, and
   // reply and reply-all differ only in how recipients are derived.
   return {

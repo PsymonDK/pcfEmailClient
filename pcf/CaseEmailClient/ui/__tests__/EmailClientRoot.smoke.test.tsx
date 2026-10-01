@@ -124,11 +124,22 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
       }
       if (entity === 'mailbox') return Promise.resolve({ outgoingemailstatus: 1 });
       if (entity === 'contact') return Promise.resolve({ emailaddress1: 'simon.jehrbo@example.com' });
+      if (entity === 'incident') {
+        return Promise.resolve({
+          _customerid_value: CONTACT,
+          '_customerid_value@Microsoft.Dynamics.CRM.lookuplogicalname': 'contact',
+          '_customerid_value@OData.Community.Display.V1.FormattedValue': 'Simon Jehrbo',
+        });
+      }
       if (entity === 'email') return Promise.resolve({ activityid: IN, description: '<p>Hej Care</p>' });
       if (entity === 'organization') return Promise.resolve({ maxuploadfilesize: 5242880 });
       return Promise.resolve({});
     },
-    createRecord: () => { count('create'); return Promise.resolve({ id: 'c0ffee00-0000-0000-0000-000000000001' }); },
+    createRecord: (entity: string, data: Record<string, unknown>) => {
+      count('create');
+      creates.push({ entity, data });
+      return Promise.resolve({ id: 'c0ffee00-0000-0000-0000-000000000001' });
+    },
     updateRecord: (entity: string, id: string, data: Record<string, unknown>) => {
       count('update');
       updates.push({ entity, id, data });
@@ -147,12 +158,14 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
 let readStateRows: Record<string, unknown>[] = [];
 let deleted: string[] = [];
 let updates: { entity: string; id: string; data: Record<string, unknown> }[] = [];
+let creates: { entity: string; data: Record<string, unknown> }[] = [];
 
 let host: HTMLDivElement | undefined;
 afterEach(() => {
   readStateRows = [];
   deleted = [];
   updates = [];
+  creates = [];
   if (host) { ReactDOM.unmountComponentAtNode(host); host.remove(); host = undefined; }
 });
 
@@ -350,6 +363,50 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     const reveal = Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Bcc')!;
     await act(() => { reveal.click(); return Promise.resolve(); });
     expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
+  });
+
+  it('a case with NO email can get its first one: + opens a new email to the customer (2026-10-01)', async () => {
+    const saved = emailRows.splice(0);
+    try {
+      const r = await renderShell();
+      expect(r.host.textContent).toContain('No email on this case yet');
+      const plus = r.host.querySelector<HTMLButtonElement>('button[aria-label="New email"]')!;
+      expect(plus.disabled).toBe(false);
+      await act(async () => {
+        plus.click();
+        for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+
+      const region = r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!;
+      expect(region.getAttribute('aria-label')).toBe('New email — compose');
+      // To is the case's customer, bound to the record; the subject is open and empty; no quote.
+      expect(region.querySelector('[aria-label="Remove Simon Jehrbo"]')).not.toBeNull();
+      expect(region.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!.value).toBe('');
+      expect(region.textContent).not.toContain('Quoted message');
+      const send = () => Array.from(region.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Send')!;
+      expect(send().disabled).toBe(true);
+
+      // Write something and close: the draft is created with the customer, and links to NOTHING.
+      await act(async () => {
+        const editable = region.querySelector<HTMLElement>('.ck-editor__editable')!;
+        (editable as unknown as { ckeditorInstance: { model: { insertContent(html: string): void } } })
+          .ckeditorInstance.model.insertContent('<p>Hej Simon</p>');
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(send().disabled).toBe(false);
+      await act(async () => {
+        region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+        for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      const created = creates.find((c) => c.entity === 'email')!;
+      expect(created).toBeDefined();
+      expect(created.data).not.toHaveProperty('parentactivityid@odata.bind');
+      expect(created.data.email_activity_parties).toContainEqual(expect.objectContaining({
+        participationtypemask: 2, 'partyid_contact@odata.bind': `/contacts(${CONTACT})`,
+      }));
+    } finally {
+      emailRows.push(...saved);
+    }
   });
 
   it('compose takes over the reading pane, and closing it gives the thread back as it was (2026-09-30)', async () => {

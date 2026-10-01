@@ -30,6 +30,7 @@ export interface SendInput {
   to: readonly Recipient[];
   cc: readonly Recipient[];
   bcc: readonly Recipient[];
+  subject: string;
   /** Who the row goes out as. The save must write THIS sender — see `save`. */
   sender: SenderCandidate;
   allowUnresolved: boolean;
@@ -59,6 +60,7 @@ export async function runSend(input: SendInput, deps: SendDeps): Promise<SendOut
   const before = blockingReasonBeforeSend({
     // A Bcc-only message is a real message: it has recipients.
     recipientCount: input.to.length + input.cc.length + input.bcc.length,
+    subject: input.subject,
     attachments: deps.attachments(),
     unresolvedAddresses: unresolvedAddresses(input.to, input.cc, input.bcc),
     ambiguousAddresses: ambiguousAddresses(input.to, input.cc, input.bcc),

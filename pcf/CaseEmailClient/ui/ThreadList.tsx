@@ -42,6 +42,8 @@ export interface ThreadListProps {
   onRetry: () => void;
   onSelect: (key: string) => void;
   onRefresh: () => void;
+  /** Opens compose on a NEW email. Absent while there is no case to write on. */
+  onNewEmail?: () => void;
   /** Total count including anything the filters are hiding — see the zero-results rule. */
   totalThreadCount: number;
   filterActive: boolean;
@@ -72,7 +74,7 @@ export interface ThreadListProps {
 
 export const ThreadList: React.FC<ThreadListProps> = (props) => {
   const {
-    summaries, selectedKey, unreadTotal, loading, error, onRetry, onSelect, onRefresh,
+    summaries, selectedKey, unreadTotal, loading, error, onRetry, onSelect, onRefresh, onNewEmail,
     totalThreadCount, filterActive, onClearFilters, parentCaseThreadCount,
     filter, onFilterChange, participantOptions, includeParent, onIncludeParentChange,
     ancestorCount, expandedThreadKeys, onToggleExpand, onSelectMessage, selectedMessageId, readIds,
@@ -191,9 +193,8 @@ export const ThreadList: React.FC<ThreadListProps> = (props) => {
           </span>
         )}
         <span style={{ flexGrow: 1 }} />
-        {/* Compose is Phase 2. A button that renders and does nothing teaches agents the client is
-            broken, so it says so rather than sitting there inert. */}
-        <IconButton label="New email — not built yet" disabled>
+        {/* A new message on this case — the only way to write the FIRST one (2026-10-01). */}
+        <IconButton label="New email" disabled={!onNewEmail} onClick={onNewEmail}>
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 4.5v11M4.5 10h11" /></svg>
         </IconButton>
         <IconButton

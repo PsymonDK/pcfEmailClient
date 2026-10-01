@@ -177,6 +177,11 @@ export function attachmentBlocker(
  */
 export function blockingReasonBeforeSend(args: {
   recipientCount: number;
+  /**
+   * The subject as it will be saved. Required, like the rest. A reply always inherits one; a new
+   * email starts empty, and a case email with no subject is one the customer cannot find again.
+   */
+  subject: string;
   /** The tray as it stands. Required: a boolean the caller computes is how guards go inert. */
   attachments: readonly PendingAttachment[];
   /**
@@ -193,6 +198,7 @@ export function blockingReasonBeforeSend(args: {
   allowUnresolved: boolean;
 }): string | undefined {
   if (args.recipientCount === 0) return 'Add at least one recipient first.';
+  if (args.subject.trim() === '') return 'Add a subject first.';
   const attachments = attachmentBlocker(args.attachments, false);
   if (attachments) return attachments;
   // Checked last: it is the most specific complaint, and the least useful to show while

@@ -201,6 +201,10 @@ describe('stripQuoteMarkers — the paste trap', () => {
 });
 
 describe('composeSubject', () => {
+  it('gives a new email no subject to start from — the agent writes it (2026-10-01)', () => {
+    expect(composeSubject('new', 'Ordrestatus')).toBe('');
+  });
+
   it('prefixes RE: and FW:', () => {
     expect(composeSubject('reply', 'Ordrestatus')).toBe('RE: Ordrestatus');
     expect(composeSubject('replyAll', 'Ordrestatus')).toBe('RE: Ordrestatus');

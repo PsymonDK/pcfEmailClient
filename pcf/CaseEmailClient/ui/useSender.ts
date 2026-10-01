@@ -4,6 +4,7 @@ import { type DraftApiLike } from '../data/draft';
 import { bareId } from '../domain/guid';
 import { fetchCaseQueue, fetchQueueById } from '../data/caseQueue';
 import { fetchSettings } from '../data/settings';
+import { DEFAULT_RECIPIENT_SOURCE, type RecipientSource } from '../data/recipients';
 import {
   fetchAgentIdentity, fetchOrgApprovalPolicy, preflightCandidate, type OrgApprovalPolicy,
 } from '../data/preflight';
@@ -28,6 +29,8 @@ interface SenderState {
   chosenId: string;
   /** Keyed by candidate id. A missing entry means "not checked yet", which blocks Send. */
   verdicts: Map<string, PreflightVerdict>;
+  /** Where a NEW email's default recipient comes from — the same settings row as the sender. */
+  recipientSource: RecipientSource;
 }
 
 /**
@@ -80,6 +83,7 @@ export function useSender(
     candidates: [FALLBACK_SENDER],
     chosenId: FALLBACK_SENDER.id,
     verdicts: new Map<string, PreflightVerdict>(),
+    recipientSource: DEFAULT_RECIPIENT_SOURCE,
   }));
 
   /**
@@ -159,7 +163,11 @@ export function useSender(
       }));
       if (cancelled) return;
 
-      setSenderState({ candidates, chosenId: chosen.id, verdicts });
+      // Only a complete pair overrides the default: half a configuration names nothing.
+      const recipientSource = setting?.recipientEntity && setting.recipientLookup
+        ? { entity: setting.recipientEntity, lookup: setting.recipientLookup }
+        : DEFAULT_RECIPIENT_SOURCE;
+      setSenderState({ candidates, chosenId: chosen.id, verdicts, recipientSource });
     })();
 
     return () => { cancelled = true; };

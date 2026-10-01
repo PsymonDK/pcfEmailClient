@@ -12,6 +12,7 @@ const input: SendInput = {
   to: [{ name: 'Kunde', address: 'kunde@example.invalid', partyId: 'p1', partyEntity: 'contact' }],
   cc: [],
   bcc: [],
+  subject: 'RE: Test',
   sender: { kind: 'queue', id: QUEUE, displayName: 'Care', address: 'care@example.invalid' },
   allowUnresolved: false,
 };
@@ -98,6 +99,13 @@ describe('runSend — the order is the contract', () => {
     const { api, log } = platform();
     const out = await runSend({ ...input, to: [] }, deps(api, log));
     expect(out.ok).toBe(false);
+    expect(log).not.toContain('save');
+  });
+
+  it('refuses before saving when there is no subject (a new email, 2026-10-01)', async () => {
+    const { api, log } = platform();
+    const out = await runSend({ ...input, subject: ' ' }, deps(api, log));
+    expect(out).toMatchObject({ ok: false, detail: 'Add a subject first.' });
     expect(log).not.toContain('save');
   });
 

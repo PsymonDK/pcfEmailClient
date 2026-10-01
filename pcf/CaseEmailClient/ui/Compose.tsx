@@ -168,7 +168,13 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const editorApi = React.useRef<EditorHandle>(null);
   React.useImperativeHandle(ref, () => editorApi.current!, []);
 
-  const verb = mode === 'forward' ? 'Forward' : mode === 'replyAll' ? 'Reply all' : 'Reply';
+  const verb = mode === 'new' ? 'New email'
+    : mode === 'forward' ? 'Forward' : mode === 'replyAll' ? 'Reply all' : 'Reply';
+  /**
+   * A reply's subject is inherited and hidden behind a link, because editing it breaks threading.
+   * A new email has nothing to inherit and nothing to break: its subject field is simply open.
+   */
+  const subjectOpen = mode === 'new' || editingSubject;
   const canSend = !sendBlockedReason && !sending && (!empty || mode === 'forward');
 
   return (
@@ -245,15 +251,18 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         }}
       >
         <span style={{ fontSize: '13px', fontWeight: 600, color: T.fg1 }}>{verb}</span>
-        <span
-          style={{
-            fontSize: '12px', color: T.fg2, overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
-          }}
-        >
-          {/* A forward has no recipient yet: the label says whose message it carries (N9). */}
-          {mode === 'forward' ? 'message from' : 'to'} {answeringLabel}
-        </span>
+        {/* A new email answers nobody, so there is nobody to name. */}
+        {mode !== 'new' && (
+          <span
+            style={{
+              fontSize: '12px', color: T.fg2, overflow: 'hidden',
+              textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
+            }}
+          >
+            {/* A forward has no recipient yet: the label says whose message it carries (N9). */}
+            {mode === 'forward' ? 'message from' : 'to'} {answeringLabel}
+          </span>
+        )}
         <span style={{ flexGrow: 1 }} />
         {/* Cc is hidden until asked for. An always-visible empty Cc row would spend 30 of the
             471 measured vertical pixels saying nothing. */}
@@ -354,13 +363,15 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
           padding: '0 10px', boxSizing: 'border-box', fontSize: '12px', color: T.fg3,
         }}
       >
-        {editingSubject ? (
+        {subjectOpen ? (
           <input
-            autoFocus
+            // A new email with a To already filled in: the subject is the next thing to write.
+            autoFocus={editingSubject || (mode === 'new' && subject === '')}
             value={subject}
             onChange={(e) => onSubjectChange(e.target.value)}
             onBlur={() => setEditingSubject(false)}
             aria-label="Subject"
+            placeholder="Subject"
             style={{
               flexGrow: 1, minWidth: 0, height: '20px', padding: '0 6px', boxSizing: 'border-box',
               border: `1px solid ${T.stroke1}`, borderRadius: RADIUS.sm, background: T.bg1,

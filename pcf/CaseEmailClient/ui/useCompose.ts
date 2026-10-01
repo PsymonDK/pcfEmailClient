@@ -29,7 +29,8 @@ import {
   partyNavFor, recipientFromParty, replaceUnresolved, withoutDuplicates, type ResolutionOutcome,
 } from '../domain/recipients';
 import {
-  enrichRecipients, fetchPartyAddress, openRecipientLookup, pickedEntity, searchRecipients,
+  enrichRecipients, fetchDefaultRecipient, fetchPartyAddress, openRecipientLookup, pickedEntity,
+  searchRecipients, type RecipientSource,
 } from '../data/recipients';
 import { pollUntilSettled } from '../data/send';
 import type { RecipientSuggestion } from '../domain/recipientSearch';
@@ -401,8 +402,105 @@ export function useCompose(args: ComposeArgs) {
   const closeComposeRef = React.useRef(closeCompose);
   closeComposeRef.current = closeCompose;
 
+  /**
+   * Make a prepared compose the open one. Every opening ends here, so a new email and a reply
+   * start from the same clean slate — the tray, the rejections, the send report, the signature
+   * owner — and nothing from the previous compose leaks into the next (H2).
+   */
+  const startSession = React.useCallback((
+    draft: Omit<ComposeDraft, 'session'>,
+    trayRows: PendingAttachment[],
+    inline: number,
+  ) => {
+    const session = ++sessionCounter.current;
+    signatureOwner.current = senderRef.current?.id;
+    bodyTouched.current = draft.emailId !== undefined;
+    latestHtml.current = undefined;
+    removedKeys.current.clear();
+    setRejections([]);
+    updateAttachments(() => trayRows);
+    setInlineBytes(inline);
+    setSendReport(undefined);
+    // The chosen sender may differ from the one stored on a resumed draft, and the displayed
+    // recipients are the stored ones only when they could be read — so the first save rewrites
+    // the parties either way, and the row always matches the screen.
+    if (draft.emailId) markPartiesDirty();
+    setCompose({ ...draft, session });
+  }, [updateAttachments, markPartiesDirty]);
+
   /** R9 — open compose against one message. */
   const openSeq = React.useRef(0);
+
+  /** Read at open time, so a settings change does not rebuild `openNew`. */
+  const recipientSourceRef = React.useRef<RecipientSource>(senderState.recipientSource);
+  recipientSourceRef.current = senderState.recipientSource;
+
+  /**
+   * A NEW email on this case (2026-10-01) — no message answered, so no quote and no parent.
+   *
+   * To is the case's customer when the configured lookup names a deliverable record, and empty
+   * otherwise; the agent writes the subject. A new email is a new row each time, like a forward,
+   * so it never looks for an existing draft — only a resumed one (`resumeEmailId`) reopens a row.
+   */
+  const openNew = React.useCallback(async (resumeEmailId?: string, resumeOnly = false) => {
+    const seq = ++openSeq.current;
+    const superseded = () => seq !== openSeq.current;
+    if (!caseId) return;
+    const api = webApiRef.current;
+    try {
+      const existing = resumeEmailId ? await fetchDraftById(api, resumeEmailId, userId) : undefined;
+      if (superseded()) return;
+      if (resumeOnly && !existing) {
+        setNotice({
+          headline: "Couldn't continue that draft",
+          detail: 'It is no longer an open draft of yours — it may have been sent or discarded since '
+            + 'the list loaded. Refresh the list to see where it went.',
+        });
+        return;
+      }
+
+      let to: Recipient[] = [];
+      let cc: Recipient[] = [];
+      let bcc: Recipient[] = [];
+      let trayRows: PendingAttachment[] = [];
+      let inline = 0;
+      // A draft the standard form left behind may still carry a quote: split it off and keep it
+      // verbatim, exactly as a reply does, rather than hand it to the editor.
+      const split = existing ? splitQuotedHistory(existing.bodyHtml) : undefined;
+      if (existing) {
+        const stored = await rehydrateDraft(api, existing.emailId);
+        if (stored.parties) ({ to, cc, bcc } = stored.parties);
+        trayRows = stored.trayRows;
+        inline = stored.inline;
+      } else {
+        const customer = await fetchDefaultRecipient(api, caseId, recipientSourceRef.current);
+        if (customer) to = [customer];
+      }
+      if (superseded()) return;
+
+      await closeCompose();
+      if (superseded()) return;
+
+      startSession({
+        caseId,
+        mode: 'new',
+        activityId: '',
+        to,
+        cc,
+        bcc,
+        emailId: existing?.emailId,
+        resumedHtml: split?.newHtml,
+        subject: existing?.subject ?? '',
+        quotedBlock: split?.quotedHtml ?? '',
+        answeringLabel: '',
+      }, trayRows, inline);
+    } catch (e) {
+      if (superseded()) return;
+      const normalised = e instanceof DataverseError ? e.normalised : { message: String(e), raw: e };
+      setNotice({ headline: "Couldn't open a new email", detail: agentFacingMessage(normalised, 'body').detail });
+    }
+  }, [caseId, webApiRef, userId, setNotice, closeCompose, startSession]);
+
   const openCompose = React.useCallback(async (
     mode: ComposeMode,
     activityId: string,
@@ -416,6 +514,10 @@ export function useCompose(args: ComposeArgs) {
      */
     resumeOnly = false,
   ) => {
+    if (mode === 'new') {
+      await openNew(resumeEmailId, resumeOnly);
+      return;
+    }
     // A second click while the first is still loading wins; the first must not land on top of it.
     const seq = ++openSeq.current;
     const superseded = () => seq !== openSeq.current;
@@ -490,44 +592,10 @@ export function useCompose(args: ComposeArgs) {
       let trayRows: PendingAttachment[] = [];
       let inline = 0;
       if (existing) {
-        /*
-         * A resumed draft shows the recipients STORED on it (H1). Re-deriving them from the
-         * original message showed one set while the row kept another — a Cc the agent had
-         * removed, say — and the row's set is what gets sent.
-         */
-        const stored = (await fetchParties(api, [existing.emailId])).get(existing.emailId);
-        if (stored && stored.to.length + stored.cc.length + stored.bcc.length > 0) {
-          to = stored.to.map(toRecipient);
-          cc = stored.cc.map(toRecipient);
-          // Rehydrated, not dropped: the first save after resume rewrites every party, and a Bcc
-          // left out of compose would be deleted from the row (issue #11, measured 2026-09-29).
-          bcc = stored.bcc.map(toRecipient);
-        }
-
-        /*
-         * Rehydrate the resumed draft's attachments.
-         *
-         * Not cosmetic: the files are already rows on that email, so they WILL be sent. Showing
-         * an empty tray would mean the agent sees no attachments while the customer receives
-         * them — and they could not remove one they cannot see.
-         *
-         * Inline images are NOT attachments, and must not be offered as ones. Measured
-         * 2026-09-25: saving a draft whose quoted history contains `<img src="cid:…">` makes the
-         * platform create an `activitymimeattachment` for it, reusing the original's blob.
-         * Listing it would invite an agent to "remove" part of the quoted message. It is still on
-         * the wire, so its bytes are counted toward the size limit.
-         */
-        const saved = await fetchAttachments(api, existing.emailId);
-        trayRows = saved.filter((r) => !r.contentId).map((r) => ({
-          key: r.id,
-          filename: r.filename,
-          mimeType: r.mimeType,
-          size: r.fileSize,
-          status: 'done' as const,
-          progress: 100,
-          attachmentId: r.id,
-        }));
-        inline = saved.filter((r) => r.contentId).reduce((sum, r) => sum + r.fileSize, 0);
+        const stored = await rehydrateDraft(api, existing.emailId);
+        if (stored.parties) ({ to, cc, bcc } = stored.parties);
+        trayRows = stored.trayRows;
+        inline = stored.inline;
       } else if (mode === 'forward') {
         /*
          * Forward carries the original's attachments (R13).
@@ -555,21 +623,7 @@ export function useCompose(args: ComposeArgs) {
       await closeCompose();
       if (superseded()) return;
 
-      const session = ++sessionCounter.current;
-      signatureOwner.current = senderRef.current?.id;
-      bodyTouched.current = existing !== undefined;
-      latestHtml.current = undefined;
-      removedKeys.current.clear();
-      setRejections([]);
-      updateAttachments(() => trayRows);
-      setInlineBytes(inline);
-      setSendReport(undefined);
-      // The chosen sender may differ from the one stored on a resumed draft, and the displayed
-      // recipients are the stored ones only when they could be read — so the first save rewrites
-      // the parties either way, and the row always matches the screen.
-      if (existing) markPartiesDirty();
-      setCompose({
-        session,
+      startSession({
         caseId,
         mode,
         activityId,
@@ -587,7 +641,7 @@ export function useCompose(args: ComposeArgs) {
         answeringLabel: firstNonEmpty(
           original.sender?.name, original.sender?.address, '(unknown sender)',
         ),
-      });
+      }, trayRows, inline);
     } catch (e) {
       // `fetchAttachments` and `fetchParties` throw. Silently doing nothing on Reply was the old
       // failure; refusing with a reason is the honest one — the tray could not be made truthful.
@@ -595,7 +649,7 @@ export function useCompose(args: ComposeArgs) {
       const normalised = e instanceof DataverseError ? e.normalised : { message: String(e), raw: e };
       setNotice({ headline: "Couldn't open the reply", detail: agentFacingMessage(normalised, 'body').detail });
     }
-  }, [setNotice, webApiRef, rows, parties, ourAddresses, caseId, userId, closeCompose, updateAttachments, markPartiesDirty, ensureBody]);
+  }, [setNotice, webApiRef, rows, parties, ourAddresses, caseId, userId, closeCompose, ensureBody, startSession, openNew]);
   const openComposeRef = React.useRef(openCompose);
   openComposeRef.current = openCompose;
 
@@ -635,6 +689,7 @@ export function useCompose(args: ComposeArgs) {
     if (!draft) return;
     const next = draftContinuation(draft, new Set(rows.map((r) => r.activityid)), userId);
     if (next?.kind !== 'resume') return;
+    // A new email (no answered message) is routed to `openNew` by `openCompose`.
     await openCompose(next.mode, next.answeringId, draftId, true);
   }, [rows, userId, openCompose]);
 
@@ -864,7 +919,10 @@ export function useCompose(args: ComposeArgs) {
     let outcome: SendOutcome;
     try {
       outcome = await runSend(
-        { to: draft.to, cc: draft.cc, bcc: draft.bcc, sender, allowUnresolved: orgPolicyRef.current.allowUnresolved },
+        {
+          to: draft.to, cc: draft.cc, bcc: draft.bcc, subject: draft.subject, sender,
+          allowUnresolved: orgPolicyRef.current.allowUnresolved,
+        },
         {
           api: webApiRef.current,
           attachments: () => attachmentsRef.current,
@@ -1018,6 +1076,45 @@ export function useCompose(args: ComposeArgs) {
  * One function so no call site can flatten the record away again — which is precisely how the
  * unresolved-recipient bug got in, as a `.map()` that kept only name and address.
  */
+/**
+ * What a resumed draft already holds: its stored recipients and its attachments.
+ *
+ * - **Recipients** are the ones STORED on the row (H1). Re-deriving them from the original
+ *   message showed one set while the row kept another — a Cc the agent had removed, say — and
+ *   the row's set is what gets sent. Bcc is rehydrated, not dropped: the first save after resume
+ *   rewrites every party, and a Bcc left out of compose would be deleted (issue #11). `parties`
+ *   is absent when none could be read, so the caller keeps what it derived.
+ * - **Attachments** are already rows on that email, so they WILL be sent; an empty tray would
+ *   show none while the customer receives them. Inline images are NOT attachments (measured
+ *   2026-09-25: the platform creates one for every `cid:` image in the quote, reusing the
+ *   original's blob) — listing one would invite removing part of the quote. Their bytes are
+ *   still on the wire, so they count toward the size limit.
+ */
+async function rehydrateDraft(api: DraftApiLike, emailId: string): Promise<{
+  parties?: { to: Recipient[]; cc: Recipient[]; bcc: Recipient[] };
+  trayRows: PendingAttachment[];
+  inline: number;
+}> {
+  const stored = (await fetchParties(api, [emailId])).get(emailId);
+  const parties = stored && stored.to.length + stored.cc.length + stored.bcc.length > 0
+    ? { to: stored.to.map(toRecipient), cc: stored.cc.map(toRecipient), bcc: stored.bcc.map(toRecipient) }
+    : undefined;
+  const saved = await fetchAttachments(api, emailId);
+  return {
+    parties,
+    trayRows: saved.filter((r) => !r.contentId).map((r) => ({
+      key: r.id,
+      filename: r.filename,
+      mimeType: r.mimeType,
+      size: r.fileSize,
+      status: 'done' as const,
+      progress: 100,
+      attachmentId: r.id,
+    })),
+    inline: saved.filter((r) => r.contentId).reduce((sum, r) => sum + r.fileSize, 0),
+  };
+}
+
 function toRecipient(p: Party): Recipient {
   return {
     name: p.name,

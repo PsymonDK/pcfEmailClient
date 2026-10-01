@@ -108,6 +108,56 @@ export async function fetchPartyAddress(
   }
 }
 
+/** Where a new message's default recipient comes from — see `EmailClientSetting.recipientLookup`. */
+export interface RecipientSource {
+  /** The table the control is hosted on. Only `incident` is a placement today. */
+  entity: string;
+  /** The lookup on it that names the recipient. */
+  lookup: string;
+}
+
+/** The documented default when no settings row says otherwise: the Case's customer. */
+export const DEFAULT_RECIPIENT_SOURCE: RecipientSource = { entity: 'incident', lookup: 'customerid' };
+
+/**
+ * The record a NEW email on this case goes to by default (2026-10-01) — the case's customer,
+ * unless a settings row names another lookup.
+ *
+ * `undefined` whenever it cannot name a deliverable record: a lookup that is empty, points at
+ * something that is not a party, points at a QUEUE (that would address our own service mailbox),
+ * or a record with no address. Pre-filling is a convenience; a guess would be worse than an empty
+ * To line, so nothing here falls back to an unresolved address.
+ */
+export async function fetchDefaultRecipient(
+  webApi: WebApiLike,
+  caseId: string,
+  source: RecipientSource,
+): Promise<Recipient | undefined> {
+  // The lookup name comes from a settings row and is spliced into a query: allow a name only.
+  if (source.entity !== 'incident' || !/^[a-z_][a-z0-9_]*$/i.test(source.lookup)) return undefined;
+  const field = `_${source.lookup.toLowerCase()}_value`;
+  try {
+    const row = await webApi.retrieveRecord('incident', bareId(caseId), `?$select=${field}`);
+    const id = row[field];
+    // `context.webAPI` returns annotations, and the polymorphic lookup's target comes only from them.
+    const entity = row[`${field}@Microsoft.Dynamics.CRM.lookuplogicalname`];
+    const name = row[`${field}@OData.Community.Display.V1.FormattedValue`];
+    if (typeof id !== 'string' || typeof entity !== 'string') return undefined;
+    if (!isPartyEntity(entity) || entity === 'queue') return undefined;
+    const address = await fetchPartyAddress(webApi, entity, id);
+    if (!address) return undefined;
+    return {
+      name: typeof name === 'string' && name ? name : address,
+      address,
+      partyId: bareId(id),
+      partyEntity: entity,
+      partyNav: partyNavFor(entity),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The lookup query for one address.
  *

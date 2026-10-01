@@ -127,6 +127,7 @@ describe('POLL_DELAYS', () => {
 describe('blockingReasonBeforeSend', () => {
   const ok = {
     recipientCount: 1,
+    subject: 'RE: Test',
     attachments: [] as PendingAttachment[],
     unresolvedAddresses: [] as string[],
     ambiguousAddresses: [] as string[],
@@ -139,6 +140,13 @@ describe('blockingReasonBeforeSend', () => {
 
   it('refuses a message with nobody to send it to', () => {
     expect(blockingReasonBeforeSend({ ...ok, recipientCount: 0 })).toContain('recipient');
+  });
+
+  it('refuses a message with no subject — a new email starts with none (2026-10-01)', () => {
+    expect(blockingReasonBeforeSend({ ...ok, subject: '' })).toBe('Add a subject first.');
+    expect(blockingReasonBeforeSend({ ...ok, subject: '   ' })).toBe('Add a subject first.');
+    // The recipient is the more basic complaint, so it is the one shown first.
+    expect(blockingReasonBeforeSend({ ...ok, subject: '', recipientCount: 0 })).toContain('recipient');
   });
 
   it('waits for attachments rather than sending half of them', () => {

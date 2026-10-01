@@ -29,7 +29,11 @@ import { sanitiseEmailBody } from './sanitise';
  */
 export const QUOTE_CONTAINER_ID = 'divRplyFwdMsg';
 
-export type ComposeMode = 'reply' | 'replyAll' | 'forward';
+/**
+ * How compose was opened. `new` answers nothing — a first message on the case, or one starting a
+ * new conversation (2026-10-01): no quote, no parent, and a subject the agent writes.
+ */
+export type ComposeMode = 'reply' | 'replyAll' | 'forward' | 'new';
 
 export interface Recipient {
   name: string;
@@ -102,7 +106,8 @@ export function resolveRecipients(
 ): ResolvedRecipients {
   // Forward addresses nobody: the agent chooses, and silently carrying the original recipients
   // into a forward is how mail reaches people it was never meant to.
-  if (mode === 'forward') return { to: [], cc: [] };
+  // A new message has nothing to derive from — its default recipient comes from the case.
+  if (mode === 'forward' || mode === 'new') return { to: [], cc: [] };
 
   const ours = new Set([...ourAddresses].map((a) => a.trim().toLowerCase()).filter(Boolean));
   const seen = new Set<string>();
@@ -249,6 +254,8 @@ export function headerFor(
  * The helper that stripped it was deleted so it cannot creep back.
  */
 export function composeSubject(mode: ComposeMode, originalSubject: string | null): string {
+  // Nothing to inherit: the agent writes it.
+  if (mode === 'new') return '';
   const base = (originalSubject ?? '').trim();
   const forward = mode === 'forward';
   /*

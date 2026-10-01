@@ -315,6 +315,12 @@ describe('draftArgsFrom — what a save writes, from what is on screen', () => {
     expect(draftArgsFrom({ ...snapshot, mode: 'forward' }, '', AGENT, 'case-1').inReplyToId)
       .toBeUndefined();
   });
+
+  it('links a NEW email to nothing, and adds nothing to its body (2026-10-01)', () => {
+    const out = draftArgsFrom({ ...snapshot, mode: 'new', activityId: '', quotedBlock: '' }, '<p>Hej</p>', CARE, 'case-1');
+    expect(out.inReplyToId).toBeUndefined();
+    expect(out.bodyHtml).toBe('<p>Hej</p>');
+  });
 });
 
 describe('draftContinuation — a draft is finished, not answered (N7)', () => {
@@ -347,8 +353,19 @@ describe('draftContinuation — a draft is finished, not answered (N7)', () => {
       .toEqual({ kind: 'otherAgent' });
   });
 
-  it('cannot resume without an answered message on the case, an owner, or a user', () => {
-    expect(draftContinuation({ ...draft, parentactivityid: null }, onCase, ME)).toEqual({ kind: 'cannotResume' });
+  it('a draft answering nothing is a NEW email, and resumes as one (2026-10-01)', () => {
+    expect(draftContinuation({ ...draft, subject: 'Opfølgning', parentactivityid: null }, onCase, ME))
+      .toEqual({ kind: 'resume', mode: 'new', answeringId: '' });
+    // …but a forward with no parent has lost what it forwarded.
+    expect(draftContinuation({ ...draft, subject: 'FW: Test', parentactivityid: null }, onCase, ME))
+      .toEqual({ kind: 'cannotResume' });
+    // Ownership still decides first.
+    expect(draftContinuation({ ...draft, parentactivityid: null, ownerid: '11111111-1111-1111-1111-111111111111' }, onCase, ME))
+      .toEqual({ kind: 'otherAgent' });
+    expect(draftContinuation({ ...draft, parentactivityid: null }, onCase, undefined)).toEqual({ kind: 'cannotResume' });
+  });
+
+  it('cannot resume an answer to a message not on the case, or without an owner or a user', () => {
     expect(draftContinuation(draft, new Set(), ME)).toEqual({ kind: 'cannotResume' });
     expect(draftContinuation({ ...draft, ownerid: null }, onCase, ME)).toEqual({ kind: 'cannotResume' });
     expect(draftContinuation(draft, onCase, undefined)).toEqual({ kind: 'cannotResume' });

@@ -664,8 +664,8 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       includeParent,
       expandedThreadKeys: [...expandedThreadKeys],
       selectedMessageId,
-      compose: composeMode && composeActivity
-        ? { mode: composeMode, activityId: composeActivity, emailId: composeEmailId }
+      compose: composeMode && (composeActivity || composeMode === 'new')
+        ? { mode: composeMode, activityId: composeActivity ?? '', emailId: composeEmailId }
         : pending?.compose,
     });
   }, [
@@ -682,7 +682,17 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
    * entirely when `setControlState` already restored a choice.
    */
   React.useEffect(() => {
-    if (landed.current || !loaded || threads.length === 0) return;
+    if (landed.current || !loaded) return;
+    if (threads.length === 0) {
+      // Nothing to land on — but a new email may have been open before a teardown, and on a case
+      // with no mail yet that is the only compose there can be.
+      const pendingNew = restoredAtMount.current?.compose;
+      if (pendingNew?.mode === 'new') {
+        landed.current = true;
+        void openComposeRef.current?.('new', '', pendingNew.emailId);
+      }
+      return;
+    }
     landed.current = true;
     const restoredState = restoredAtMount.current;
 
@@ -817,7 +827,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       )}
 
       {/* Below 900px the list and the reading pane share one column; above it, two panes. */}
-      {(layout.layout === 'two-pane' || !selected) && (
+      {(layout.layout === 'two-pane' || (!selected && !compose)) && (
         <ThreadList
           summaries={summaries}
           selectedKey={selectedKey}
@@ -833,6 +843,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           readIds={readIds}
           parties={parties}
           onRefresh={() => void load()}
+          onNewEmail={caseId ? () => { void openCompose('new', ''); } : undefined}
           // The REAL total, not the filtered one: "no results" and "this customer has never
           // emailed" look identical unless the count says which.
           totalThreadCount={threads.length}
@@ -856,7 +867,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           its toolbar alone is a row, and docked under the thread it left one line of either.
           The message being answered stays one click away in the quote fold. The pane is hidden,
           not unmounted, so closing compose returns to the thread exactly as it was left. */}
-      {(layout.layout === 'two-pane' || selected) && (
+      {(layout.layout === 'two-pane' || selected !== undefined || compose !== undefined) && (
         <div
           style={{
             display: 'flex', flexDirection: 'column', flexGrow: 1,

@@ -334,8 +334,17 @@ export function useCompose(args: ComposeArgs) {
     });
   }, [webApiRef, saveQueue, carryForwardAttachments]);
 
-  /** Typing restarts the clock; a pause of ~2s commits. */
+  /**
+   * Typing restarts the clock; a pause of ~2s commits.
+   *
+   * Every edit the agent makes comes through here, so it is also where a REFUSED send stops being
+   * true. Measured 2026-10-01: "Not sent — Add a subject first." stayed on the Send row after the
+   * subject was typed, and — since a send report outranks everything on that row — hid "Saved"
+   * too. Only a refusal is cleared: compose closes on acceptance, and nothing is editable while
+   * a send is in flight.
+   */
   const scheduleDraftSave = React.useCallback(() => {
+    if (!sendingRef.current) setSendReport((r) => (r?.phase === 'failed' ? undefined : r));
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
       draftTimer.current = undefined;

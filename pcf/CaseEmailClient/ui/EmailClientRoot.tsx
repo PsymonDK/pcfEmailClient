@@ -948,7 +948,14 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             onClose={() => {
               // Save on the way out, or clean up a blank draft this client created. The save
               // snapshots the editor before compose unmounts, so closing loses nothing.
-              void closeCompose();
+              //
+              // Then reload, so the list shows what closing left behind. Measured 2026-10-01: a
+              // new email on an empty case closed to "No email on this case yet" while its draft
+              // sat saved on the case — the agent's work looked lost until they pressed Refresh.
+              void (async () => {
+                await closeCompose();
+                await load();
+              })();
               setCompose(undefined);
             }}
             onSubjectChange={(next) => {

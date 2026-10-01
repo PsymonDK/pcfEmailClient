@@ -394,6 +394,34 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
       expect(send().disabled).toBe(false);
+
+      // Send with no subject is refused before anything is saved…
+      await act(async () => {
+        send().click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(region.textContent).toContain('Add a subject first.');
+      expect(creates.filter((c) => c.entity === 'email')).toHaveLength(0);
+      // …and the refusal goes the moment the agent fixes it, rather than outliving the cause.
+      await act(async () => {
+        const subject = region.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
+        // The native setter: React 16 ignores an input event whose value was assigned directly.
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+        setter.call(subject, 'Opfølgning på din sag');
+        subject.dispatchEvent(new Event('input', { bubbles: true }));
+        await Promise.resolve();
+      });
+      expect(region.textContent).not.toContain('Add a subject first.');
+
+      // What the server holds once the close-time save lands — the list must show it after
+      // closing, not keep saying the case has no email until the agent presses Refresh.
+      emailRows.push({
+        activityid: 'c0ffee00-0000-0000-0000-000000000001', subject: 'Opfølgning på din sag',
+        directioncode: true, statecode: 0, statuscode: 1, createdon: '2026-10-01T07:42:17Z',
+        baseconversationindexhash: null, conversationindex: null, _regardingobjectid_value: CASE,
+        _ownerid_value: '4f2d39f5-23cc-f011-8544-6045bde0fa7e', modifiedon: '2026-10-01T07:42:17Z',
+      } as typeof emailRows[number]);
       await act(async () => {
         region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
         for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
@@ -401,11 +429,14 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       const created = creates.find((c) => c.entity === 'email')!;
       expect(created).toBeDefined();
       expect(created.data).not.toHaveProperty('parentactivityid@odata.bind');
+      expect(created.data.subject).toBe('Opfølgning på din sag');
+      expect(r.host.textContent).not.toContain('No email on this case yet');
+      expect(r.host.textContent).toContain('Opfølgning på din sag');
       expect(created.data.email_activity_parties).toContainEqual(expect.objectContaining({
         participationtypemask: 2, 'partyid_contact@odata.bind': `/contacts(${CONTACT})`,
       }));
     } finally {
-      emailRows.push(...saved);
+      emailRows.splice(0, emailRows.length, ...saved);
     }
   });
 

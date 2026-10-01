@@ -2098,3 +2098,37 @@ So the product owner's suggestion holds: **a config copy shipped as our own web 
 - Back on the case, our control is rebuilt (**new `context`**) and our own M11 restore reopens compose. The hosted editor is not there (it lived in the torn-down control) — **re-mounting it with the new context's factory, under the same component id, works**, and `setData` of the text saved before the switch restores it. The Case form stays not dirty. So the design holds: we persist `getData()` ourselves (draft autosave + `setControlState`, as today) and re-mount on restore.
 
 **3. Load cost.** First mount on a freshly loaded page: **~0.77 s** to editable (first markup 0.31 s); a second mount **0.35 s**. The bundle never appeared as a network request — the platform served it from its own client cache. A cache-bypassing download of the bundle (4.9 MB decoded) took **0.75–0.85 s** here (three runs), so a truly first load costs roughly **1.5–2 s**, once per browser. Agents who have opened the standard email form already have it cached — it is the same editor.
+
+### S15 — Copilot "Draft with Copilot" and Translate in the hosted editor *(investigation, 2026-10-01)*
+
+**Question.** Can the Copilot features of the hosted Dynamics editor — Draft with Copilot and Translate — work inside our compose, as they do on the standard email form? Not by configuration (S14: the Copilot buttons ignore the config file). By supplying the context the editor expects?
+
+**Measured live (control 1.38.0, editor `RichTextEditorControlV2`, CAS-01116):**
+
+| Feature | Standard email form | Our compose |
+|---|---|---|
+| **Translate** ("aあ", All languages) | works | **works already** — "Venlig hilsen" → "Kind regards" in place. Nothing to do |
+| **Adjust with Copilot** (`EmailAssist`: length + tone, Update) | present | **present** — the first toolbar button |
+| **Draft with Copilot** (`copilot` toolbar item, plugin `CopilotInitializer`) | present, with the side pane's *Write an email* prompts | **absent** — plugin not loaded (207 plugins vs 210) |
+
+**Why it is absent — read from the editor bundle** (`cc_MscrmControls.RichTextEditorV2.RichTextEditorControlV2/bundle.js`, 4.9 MB, minified):
+
+- The `copilot` plugin's `renderOnToolbar` returns false unless **`parentEntity.typeName === "email"`** and the org's feature flags (`isEmailAssistEnabled`, `isEnableInlineCopilotForEmailRTEv2` or `isAdjustWithCopilotEnabled`) are on; with the app-profile flag on, it also needs `copilotToolBox.isDraftWithCopilotEnabledForAppProfile` (prefetched from `msdyn_agentcopilotsetting.msdyn_draftwithcopilotappprofileenabled`).
+- `parentEntity` is built in the control's init as `{ typeName: context.page.entityTypeName, id: context.page.entityId, fieldName: parameters.value.attributes.LogicalName, … }`. Ours reads `incident` — the child inherits our host's page. **`fieldName` is ours to set** (in the `value` parameter we pass); **`typeName` is not** — no prop reaches it.
+- `copilotToolBox` (`getCopilotToolboxValues(context)`) reads the Regarding from **`window.Xrm.Page.getAttribute("regardingobjectid")`, falling back to `window.OpenEmailInfo.formContext`**, and the recipients from `Xrm.Page.getAttribute("to")`; `isCopilotFeatureEnabled` comes from `context.copilot`.
+- **`window.OpenEmailInfo.formContext` is Microsoft's own fallback form context**, consulted across the bundle for `regardingobjectid`, `to`, the email id (`data.entity.getId()`), `subject` and `description` — template insertion even calls `setValue` + `fireOnChange` on the subject through it. A fake that mirrors our compose would feed most of what Copilot reads.
+
+**Correction to S14.** S14 recorded that adding `CopilotInitializer` to `removePlugins` "stopped it loading". In our host it never loads anyway — the `parentEntity` gate excludes it — so that observation did not show the config had any effect on it.
+
+**Open — what a spike would have to prove:**
+1. Whether the child component's `context.page.entityTypeName` can be made `email` (a `createComponent` property, or the descriptor); without it the button never renders, whatever else is faked.
+2. That a scoped `window.OpenEmailInfo` (set while compose is open, removed on close) carries Regarding = the Case, To = our recipients, the draft id, subject and description — and that nothing else on the CSW page acts on it unexpectedly.
+3. That a draft produced by Copilot lands in our editor (new text only — R12) and is saved like typed text.
+
+Risk: all of this is undocumented Microsoft internals and can change in any release; the fallback is what exists today — the side pane's *Write an email* tab and *Open in email form*.
+
+**Not attempted: patching the editor in place.** The next step — registering a wrapper of the editor class through `ComponentFramework.registerControl` so its context reports `email`, plus a fake `window.OpenEmailInfo` — was refused by the session's permission check as runtime patching of a Microsoft component, and was not run.
+
+**Measured instead — the real email record in the real form, opened from our control (2026-10-01).** `Xrm.Navigation.navigateTo({ pageType: 'entityrecord', entityName: 'email', entityId: <draft> }, { target: 2, position: 2, width: 60% })` from CAS-01116's session: the standard email form opens as a **side dialog over the Case tab**, and **Draft with Copilot opens inline in its editor** with the full prompt set (Suggest a call, Request more information, Empathize with feedback, Provide product/service details, Resolve customer's problem, free text). Regarding = the case. Documented API, no faking — the editor runs on a genuine email form. Closing the dialog without generating left the row unmodified (`modifiedon` unchanged) — unlike a full-page open of the same draft earlier the same day, which autosaved it.
+
+This makes the context question disappear rather than solving it: **compose that lives on an email record** gets every Copilot feature, Translate, templates and Send from Microsoft, and needs no placement-specific context — the email's own Regarding carries it. What it costs is the open question for a product decision (S16).

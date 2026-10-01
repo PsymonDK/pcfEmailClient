@@ -55,6 +55,9 @@ const party = (activityId: string, mask: number, name: string, address: string, 
   '_partyid_value@Microsoft.Dynamics.CRM.associatednavigationproperty': `partyid_${entity}`,
 });
 const CONTACT = 'b5e30418-23f2-f011-8406-0022489cf5dd';
+/** The agent's signatures — empty unless a test needs one (the shape is `emailsignature`'s). */
+const signatureRows: Record<string, unknown>[] = [];
+
 const partyRows = [
   party(IN, 1, 'Simon Jehrbo', 'simon.jehrbo@example.com', 'contact', CONTACT),
   party(IN, 2, 'Care', 'caredemo@example.invalid', 'queue', CARE),
@@ -83,6 +86,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
             }
             return emailRows;
           case 'activityparty': return partyRows;
+          case 'emailsignature': return signatureRows;
           case 'jhrb_emailreadstate': return readStateRows;
           case 'contact':
             // The type-ahead's query; the address resolver's is an equality filter instead.
@@ -113,7 +117,10 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
         });
       }
       if (entity === 'systemuser') {
-        return Promise.resolve({ fullname: 'Simon Jehrbo', internalemailaddress: 'simon@example.invalid', emailrouteraccessapproval: 1 });
+        return Promise.resolve({
+          fullname: 'Simon Jehrbo', internalemailaddress: 'simon@example.invalid', emailrouteraccessapproval: 1,
+          _defaultmailbox_value: '0b8c1d2e-3f40-4152-8637-48495a6b7c8e',
+        });
       }
       if (entity === 'mailbox') return Promise.resolve({ outgoingemailstatus: 1 });
       if (entity === 'contact') return Promise.resolve({ emailaddress1: 'simon.jehrbo@example.com' });
@@ -437,6 +444,45 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       await click('Replace the whole message instead');
       expect(editorText()).toBe('Dear customer');
     } finally {
+      delete (window as unknown as { Xrm?: unknown }).Xrm;
+    }
+  });
+
+  it('Send judges "empty" by the signature rule: Undo back to signature-only disables it again (2026-09-30)', async () => {
+    (window as unknown as { Xrm?: unknown }).Xrm = {
+      WebApi: { online: { execute: () => Promise.resolve({
+        json: () => Promise.resolve({ value: [{ subject: 'x', description: '<p>Dear customer</p>' }] }),
+      }) } },
+    };
+    try {
+      // The signature is what makes this test mean anything: without one, signature-only and
+      // empty are the same text, and the old raw-text rule passes too.
+      signatureRows.push({
+        emailsignatureid: 'b0b0b0b0-0000-4000-8000-000000000001', title: 'Care', isdefault: true,
+        body: '<?xml version="1.0" ?><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">'
+          + '<xsl:output method="text" indent="no"/><xsl:template match="/data">'
+          + '<![CDATA[<div><p style="margin: 0;">Venlig hilsen</p><p style="margin: 0;">Customer Care</p></div>]]>'
+          + '</xsl:template></xsl:stylesheet>',
+      });
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
+      expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('Venlig hilsen');
+      // A reply with no draft behind it: the editor holds only the signature, so Send starts off.
+      const send = () => Array.from(r.host.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Send')!;
+      expect(send().disabled).toBe(true);
+      await act(async () => {
+        Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Template ▾')!.click();
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      await act(async () => {
+        r.host.querySelector('[role=listbox][aria-label="Templates"] [role=option]')!
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(send().disabled).toBe(false);
+      await act(() => { Array.from(r.host.querySelectorAll('button')).find((b) => b.textContent === 'Undo')!.click(); return Promise.resolve(); });
+      expect(send().disabled).toBe(true);
+    } finally {
+      signatureRows.length = 0;
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
   });

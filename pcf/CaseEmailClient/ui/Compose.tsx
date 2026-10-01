@@ -142,6 +142,11 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
   const [editingSubject, setEditingSubject] = React.useState(false);
   // A resumed draft starts with the agent's own text in it, so Send starts enabled (M15). It
   // used to wait for a keystroke, because the editor reports only changes, never its first state.
+  //
+  // "Empty" means nothing BEYOND THE SIGNATURE — the same rule draft saving uses, via
+  // `hasTypedText`. Measured 2026-09-30: judged on the editor's raw text instead, the signature
+  // counted as content, so inserting a template and pressing Undo left Send enabled on a reply
+  // that said nothing but "Venlig hilsen".
   const [empty, setEmpty] = React.useState(!resumed);
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
@@ -454,7 +459,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         ariaLabel={`${verb} message body`}
         initialHtml={initialHtml}
         disabled={sending}
-        onChange={(_html, isEmpty) => { setEmpty(isEmpty); onBodyChange?.(); }}
+        onChange={() => { setEmpty(!hasTypedText()); onBodyChange?.(); }}
         factory={editorFactory}
         onUnavailable={() => setEditorUnavailable(true)}
       />

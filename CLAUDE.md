@@ -71,6 +71,16 @@ actually packaged before believing an import:
 unzip -p solution/bin/Debug/solution.zip Controls/jhrb_JHRB.CaseEmailClient/ControlManifest.xml | grep -o 'version="[0-9.]*"'
 ```
 
+**The published app can keep running the PREVIOUS bundle after a publish.** Measured 2026-10-01:
+`customcontrols` already said 1.38.0 and the server served the 1.38.0 `bundle.js`, but the page
+— reloaded normally, `DisableWebResourceCache` flag and all — still loaded the 1.37.0 bundle
+under the old version token in its path (`/{000000030665437}/webresources/cc_JHRB.CaseEmailClient/bundle.js`).
+A test run against it "reproduced" a bug that was already fixed. A hard reload (Ctrl+Shift+R)
+brought a new token and the new bundle. So before believing a live result, check the bundle the
+page actually loaded, not the control version: fetch the `script[src*=CaseEmailClient]` URL and
+look for something only the new build contains. Search the COMPILED form — the debug bundle
+turns `await` into `yield` and expands `?.` — or a real fix reads as missing.
+
 **`pac solution import` can exit 0 without importing anything.** Measured 2026-09-30: with the pac
 profile's MFA expired it printed `AADSTS50078` and exited **0** — no import job was created and the
 environment kept the previous build. Confirm an import landed from Dataverse, not from pac's exit

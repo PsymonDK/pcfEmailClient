@@ -178,6 +178,10 @@ describe('worthSaving', () => {
 describe('describeSaved', () => {
   const at = new Date('2026-09-25T14:32:00');
 
+  it('names the day when it was not today — a resumed draft can be days old', () => {
+    expect(describeSaved(at, new Date('2026-10-02T09:00:00'))).toBe('Saved 25-09-2026 14:32');
+  });
+
   it('says so plainly before the first save', () => {
     expect(describeSaved(undefined)).toBe('Not saved yet');
   });

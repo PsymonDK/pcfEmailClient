@@ -31,7 +31,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **750 tests**, lint and typecheck clean.
+helpers — **753 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -652,6 +652,9 @@ Rules that follow, each from a measurement:
   gave back its own actions row instead (attach and Template sit on the subject row, 1.43.0).
 - **No second editor.** If the form component is missing or the editor never becomes editable,
   compose says so and offers **Open in the email form** (saves the draft, hands it over).
+  **"Never becomes editable" is measured in VISIBLE time** (`READY_TIMEOUT_MS`): in a background
+  tab the browser throttles the form and it does not finish loading — measured 2026-10-02, a
+  draft continued with the tab hidden fell back after 20s, and loaded in 1.8s in front.
 - **Don't patch Microsoft's editor.** Its list markup (`list-style-position: inside` + `<li><p>`)
   renders bullets on their own line in Outlook on the web; the standard form does the same. Report
   such things; do not post-process them (product owner, 2026-10-01).

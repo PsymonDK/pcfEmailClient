@@ -278,6 +278,11 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     });
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
     expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('M11 sessionsskift test');
+    // The row IS saved — "Not saved yet" on a resumed draft read as if the work were not on the
+    // case (1.43.0). It shows when the row was last written (modifiedon 2026-09-28).
+    const region = r.host.querySelector('[role=region][aria-label*="compose"]')!;
+    expect(region.textContent).not.toContain('Not saved yet');
+    expect(region.textContent).toContain('Saved 28-09-2026');
   });
 
   it('a forward keeps the tracking token, and its header names whose message it is (N9)', async () => {

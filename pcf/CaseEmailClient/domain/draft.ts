@@ -264,6 +264,12 @@ export function describeSaved(at: Date | undefined, now: Date = new Date()): str
   if (seconds < 60) return `Saved ${seconds}s ago`;
   const hh = String(at.getHours()).padStart(2, '0');
   const mm = String(at.getMinutes()).padStart(2, '0');
+  // A resumed draft can be days old (1.43.1): a bare clock time would read as today's.
+  if (at.toDateString() !== now.toDateString()) {
+    const dd = String(at.getDate()).padStart(2, '0');
+    const mo = String(at.getMonth() + 1).padStart(2, '0');
+    return `Saved ${dd}-${mo}-${at.getFullYear()} ${hh}:${mm}`;
+  }
   return `Saved ${hh}:${mm}`;
 }
 

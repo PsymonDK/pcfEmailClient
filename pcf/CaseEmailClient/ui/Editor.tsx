@@ -53,7 +53,14 @@ export interface EditorHandle {
   hasUnsavedChanges(): boolean;
 }
 
-/** The form plus the editor initialising inside it; past this, the editor is reported unavailable. */
+/**
+ * The form plus the editor initialising inside it; past this, the editor is reported unavailable.
+ *
+ * Counted in VISIBLE time only. A browser throttles a hidden tab, and the form does not finish
+ * loading there: measured 2026-10-02 (1.43.0), a draft continued while the tab was in the
+ * background fell back to "couldn't load" after 20s, and loaded in 1.8s once the tab was in front.
+ * An agent who switches tab while compose opens must come back to an editor, not the fallback.
+ */
 export const READY_TIMEOUT_MS = 20_000;
 
 export type UnavailableReason = 'no-form-component' | 'mount-failed' | 'timeout' | 'read-only';
@@ -209,7 +216,12 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
     };
     let resize: ResizeObserver | undefined;
 
-    const started = Date.now();
+    // Visible time waited — see READY_TIMEOUT_MS. A gap counts only if the tab was visible at
+    // both ends of it, so the stretch spent in the background never does.
+    const isVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    let waited = 0;
+    let lastTick = Date.now();
+    let wasVisible = isVisible();
     let sawReadOnly = false;
     let follow: number | undefined;
     /** True once the editor is ready (or given up on). Checked every 100 ms. */
@@ -241,7 +253,12 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
         return true;
       }
       if (found?.editor.isReadOnly) sawReadOnly = true;
-      if (Date.now() - started > READY_TIMEOUT_MS) {
+      const now = Date.now();
+      const visible = isVisible();
+      if (visible && wasVisible) waited += now - lastTick;
+      lastTick = now;
+      wasVisible = visible;
+      if (waited > READY_TIMEOUT_MS) {
         fail(sawReadOnly ? 'read-only' : 'timeout');
         return true;
       }

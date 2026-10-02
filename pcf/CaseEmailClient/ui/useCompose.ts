@@ -117,6 +117,9 @@ export function useCompose(args: ComposeArgs) {
   /** R9 — the open compose surface, or nothing. One at a time; it takes over the reading pane. */
   const [compose, setCompose] = React.useState<ComposeDraft>();
   const editorRef = React.useRef<EditorHandle>(null);
+  /** Read at open time, for a resumed draft's last-saved time — see `startSession`. */
+  const rowsRef = React.useRef(rows);
+  rowsRef.current = rows;
   /** True once the AGENT has changed the body. Not set by our own seeding — see `seeding`. */
   const bodyTouched = React.useRef(false);
   /** Guards `bodyTouched` while we write the signature in ourselves. */
@@ -480,7 +483,13 @@ export function useCompose(args: ComposeArgs) {
     // recipients are the stored ones only when they could be read — so the first save rewrites
     // the parties either way, and the row always matches the screen.
     if (draft.emailId) markPartiesDirty();
-    setCompose({ ...draft, session });
+    // A resumed draft IS saved: "Not saved yet" on one (measured 2026-10-02, 1.43.0) reads as if
+    // the agent's earlier work were not on the case. Show when its row was last written.
+    const stored = draft.emailId
+      ? rowsRef.current.find((r) => r.activityid === draft.emailId)?.modifiedon
+      : undefined;
+    const savedAt = stored ? Date.parse(stored) : undefined;
+    setCompose({ ...draft, session, savedAt: Number.isNaN(savedAt) ? undefined : savedAt });
   }, [updateAttachments, markPartiesDirty]);
 
   /** R9 — open compose against one message. */

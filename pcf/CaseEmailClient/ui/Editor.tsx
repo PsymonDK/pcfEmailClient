@@ -49,6 +49,8 @@ export interface EditorHandle {
   hasChanges(): boolean;
   /** Saves the body through the form. Our own saves never write it once the row exists. */
   save(): Promise<void>;
+  /** Has the body changed since it was last saved through the form (or loaded)? */
+  hasUnsavedChanges(): boolean;
 }
 
 /** The form plus the editor initialising inside it; past this, the editor is reported unavailable. */
@@ -155,6 +157,10 @@ export const Editor = React.forwardRef<EditorHandle, EditorProps>((props, ref) =
     hasChanges: () => {
       const e = editorRef.current;
       return !!e && loaded.current !== undefined && norm(e.getData()) !== norm(loaded.current);
+    },
+    hasUnsavedChanges: () => {
+      const e = editorRef.current;
+      return !!e && saved.current !== undefined && norm(e.getData()) !== norm(saved.current);
     },
     save: async () => {
       await formRef.current?.save?.();

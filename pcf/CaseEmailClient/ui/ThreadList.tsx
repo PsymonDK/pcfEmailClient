@@ -481,6 +481,9 @@ const ThreadRow: React.FC<{
             {summary.thread.messages.length} {summary.thread.messages.length === 1 ? 'message' : 'messages'}
           </span>
           {summary.hasDraft && <StatusBadge label="Draft" tone="warn" />}
+          {/* R17 — see `ThreadSummary.sending`: a collapsed conversation has no message rows. */}
+          {summary.sending && <StatusBadge label="Sending" tone="warn" />}
+          {summary.failed && <StatusBadge label="Failed" tone="danger" />}
           {fromParent && <StatusBadge label={summary.parentCaseNumber ?? ''} tone="warn" />}
           {/* The separator is conditional. Rendering it unconditionally left a dangling "·" with
               nothing after it whenever participants could not be resolved — which is how the

@@ -285,6 +285,14 @@ export function useCompose(args: ComposeArgs) {
     includeParties?: boolean;
     /** Save as this sender. Send passes the one it is about to pre-flight, so the two agree. */
     sender?: SenderCandidate;
+    /**
+     * Save the BODY too, through the form. Only when LEAVING compose — close, Send, hand-over.
+     * The form's save puts a modal "Saving…" over the editor (measured 2026-10-02, 1.42.0), and
+     * on the autosave timer that landed under the agent's fingers mid-sentence, even for a
+     * subject edit. Leaving is when a Dataverse form saves (product owner, 2026-10-02); a
+     * teardown without a close is covered by `disposeEmailForm`, which saves a changed body.
+     */
+    saveBody?: boolean;
   } = {}): Promise<string | undefined> => {
     // Snapshot NOW, not when the queue reaches this save: what the agent saw at the moment they
     // pressed Send, or closed compose, is what must be written.
@@ -303,7 +311,11 @@ export function useCompose(args: ComposeArgs) {
       const emailId = draftIds.current.get(draft.session) ?? draft.emailId;
       if (!worth || !sender) return emailId;
 
-      if (formOwned) await editorRef.current?.save();
+      if (formOwned && opts.saveBody) await editorRef.current?.save();
+      // Body text the form has not saved yet: our save did not write it, so it must not read
+      // as "Saved" — the status keeps the time of the last save that covered the body.
+      const bodyPending = formOwned && opts.saveBody !== true
+        && (editorRef.current?.hasUnsavedChanges() ?? false);
       const includeParties = opts.includeParties === true
         || emailId === undefined
         || version > savedPartiesVersion.current;
@@ -330,7 +342,12 @@ export function useCompose(args: ComposeArgs) {
         // Compose may have closed, or moved to a different message, while the save was queued.
         if (!c || c.session !== draft.session) return c;
         return savedId
-          ? { ...c, emailId: savedId, savedAt: outcome.savedAt?.getTime(), saveError: undefined }
+          ? {
+            ...c,
+            emailId: savedId,
+            savedAt: bodyPending ? c.savedAt : outcome.savedAt?.getTime(),
+            saveError: undefined,
+          }
           : { ...c, saveError: outcome.error?.message ?? 'The draft could not be saved.' };
       });
       return savedId;
@@ -373,8 +390,8 @@ export function useCompose(args: ComposeArgs) {
     void flushDraft({ force: true, includeParties: true });
   }, [composeSession, flushDraft, chosenSender.id, signatureHtml]);
 
-  // A periodic save, so a long uninterrupted spell of typing is still protected. Closing and
-  // switching compose are handled by `closeCompose`, which saves rather than dropping the timer.
+  // A periodic save of subject and recipients (the body waits for leaving — `saveBody`). Closing
+  // and switching compose are handled by `closeCompose`, which saves rather than dropping the timer.
   React.useEffect(() => {
     if (composeSession === undefined) return undefined;
     const id = setInterval(() => { void flushDraft(); }, 30000);
@@ -424,7 +441,7 @@ export function useCompose(args: ComposeArgs) {
     const bodyChanged = editorRef.current?.hasChanges() ?? worthSaving(newHtml, signatureRef.current);
     const resumedRow = !createdHere.current.has(closing.session);
     if (bodyChanged || (resumedRow && pendingEdit)) {
-      await flushDraft();
+      await flushDraft({ saveBody: true });
       return;
     }
     // Nothing worth keeping. Wait for any queued save first, so a row it is creating is known.
@@ -708,7 +725,7 @@ export function useCompose(args: ComposeArgs) {
       clearTimeout(draftTimer.current);
       draftTimer.current = undefined;
     }
-    const emailId = await flushDraft({ force: true, includeParties: true });
+    const emailId = await flushDraft({ force: true, includeParties: true, saveBody: true });
     if (!emailId) {
       setNotice({
         headline: "Couldn't hand the draft over",
@@ -967,7 +984,7 @@ export function useCompose(args: ComposeArgs) {
           // Parties ALWAYS, and as THIS sender: pre-flight checks `sender`, and SendEmail sends
           // whatever sender is on the row. Letting them differ was H1.
           save: async () => ({
-            emailId: await flushDraft({ force: true, includeParties: true, sender }),
+            emailId: await flushDraft({ force: true, includeParties: true, sender, saveBody: true }),
             attachments: attachmentsRef.current,
           }),
         },

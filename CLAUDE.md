@@ -31,7 +31,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **745 tests**, lint and typecheck clean.
+helpers — **750 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -628,6 +628,13 @@ Rules that follow, each from a measurement:
   disabled Send. The quote lives in the editor now, as on the standard email form.
 - **`dispose()` does not save** — closing compose lost Copilot's text. `disposeEmailForm` saves
   first if the body changed since its last save; never after Send (`save()` resets that baseline).
+- **The form saves the body only when LEAVING compose** — close, Send, *Open in the email form*,
+  and a teardown (`disposeEmailForm`). Not on the autosave: the form's `save()` puts a modal
+  "Saving…" over the editor, and on the 2-second timer it landed mid-sentence — even for a subject
+  edit (measured 2026-10-02, 1.42.0). Leaving is when a Dataverse form saves (product owner,
+  2026-10-02). The autosave still writes subject and recipients, and "Saved" on the Send row
+  keeps the time of the last save that covered the body (`hasUnsavedChanges`). Trade-off: a
+  browser crash loses the body typed since compose opened.
 - **The form rebuilds its editor after loading** (Copilot's initializer re-creates it): follow the
   current `ckeditorInstance`, or a listener on the first one hears nothing.
 - **Copilot needs the Regarding.** `overrideXrmPageByFormContext` does not repoint the global
@@ -639,6 +646,10 @@ Rules that follow, each from a measurement:
   `jhrb_/CaseEmailClient/EmailRTEconfig.js` (Microsoft's email config, full toolbar,
   `IsCustomizable` so admins can edit it after a managed install). Another team's
   `team_onLoadEmail` (`team.setQueueAsEmailSender`) is deliberately **not** on it.
+- **~58px above the editor toolbar is Microsoft's**: the form tab's 16px padding, 10px on the
+  field, and a 32px row holding only the editor's **Full screen** button — drawn even though our
+  config sets `showFullScreenExpander: false` (measured 2026-10-02). Not ours to hide; compose
+  gave back its own actions row instead (attach and Template sit on the subject row, 1.43.0).
 - **No second editor.** If the form component is missing or the editor never becomes editable,
   compose says so and offers **Open in the email form** (saves the draft, hands it over).
 - **Don't patch Microsoft's editor.** Its list markup (`list-style-position: inside` + `<li><p>`)

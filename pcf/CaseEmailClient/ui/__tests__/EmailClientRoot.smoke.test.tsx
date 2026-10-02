@@ -477,6 +477,48 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
+  it('a ONE-message conversation on its way out says Sending on its own row — it has no message rows to say it (2026-10-02)', async () => {
+    const saved = [...emailRows];
+    try {
+      emailRows.push({
+        activityid: 'c0ffee00-0000-0000-0000-0000000000a6', subject: 'Ny mail under afsendelse',
+        directioncode: true, statecode: 1, statuscode: 6, createdon: '2026-10-02T11:23:09Z',
+        baseconversationindexhash: null, conversationindex: null, _regardingobjectid_value: CASE,
+        _ownerid_value: '4f2d39f5-23cc-f011-8544-6045bde0fa7e', modifiedon: '2026-10-02T11:30:00Z',
+      } as typeof emailRows[number]);
+      const r = await renderShell();
+      const row = Array.from(r.host.querySelectorAll<HTMLElement>('[data-row-id]'))
+        .find((e) => e.textContent?.includes('Ny mail under afsendelse'))!;
+      expect(row).toBeDefined();
+      expect(row.textContent).toContain('Sending');
+    } finally {
+      emailRows.splice(0, emailRows.length, ...saved);
+    }
+  });
+
+  it('the autosave never saves the FORM — its modal "Saving…" covered the agent mid-sentence; the body is saved on close (2026-10-02)', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
+    const region = r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!;
+    const updatesBefore = updates.filter((u) => u.id === CREATED_ID).length;
+    await act(async () => {
+      const e = (region.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { setData(h: string): void; getData(): string } }).ckeditorInstance;
+      e.setData('<p>Tak for din mail.</p>' + e.getData());
+      // Past the 2-second autosave.
+      await new Promise<void>((resolve) => { setTimeout(resolve, 2300); });
+      for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    // The autosave ran (our own save of subject and recipients) — and left the form alone.
+    expect(updates.filter((u) => u.id === CREATED_ID).length).toBeGreaterThan(updatesBefore);
+    expect(form.saves).toHaveLength(0);
+
+    await act(async () => {
+      region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(form.saves).toHaveLength(1);
+    expect(form.saves[0]).toContain('Tak for din mail.');
+  }, 10000);
+
   it('the body is the form of the draft row: text added INSIDE the quote still counts, and is saved through the form (S16)', async () => {
     const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
     // The row was created on open, with the starting body, and the form shows THAT row.

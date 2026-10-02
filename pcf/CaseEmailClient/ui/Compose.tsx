@@ -360,11 +360,16 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
       )}
 
       {/* Subject is inherited and HIDDEN behind a link — editing it breaks threading, so it is
-          deliberately a deliberate act. */}
+          deliberately a deliberate act.
+          Attach and Template share this row (1.43.0). They had a 28px row of their own, and the
+          editor's form below spends ~58px of its own chrome before its toolbar — padding and a
+          Full screen row that ignores `showFullScreenExpander: false` — which is Microsoft's
+          layout and not ours to hide. The row we own is the one we gave back. */}
       <div
         style={{
-          display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 26px', height: '26px',
-          padding: '0 10px', boxSizing: 'border-box', fontSize: '12px', color: T.fg3,
+          display: 'flex', alignItems: 'center', gap: '8px', flex: '0 0 28px', height: '28px',
+          padding: '0 8px 0 10px', boxSizing: 'border-box', fontSize: '12px', color: T.fg3,
+          borderBottom: `1px solid ${T.stroke3}`,
         }}
       >
         {subjectOpen ? (
@@ -399,11 +404,9 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             >
               Edit subject
             </button>
+            <span style={{ flexGrow: 1 }} />
           </>
         )}
-      </div>
-
-      <Toolbar>
         {/* R13. Fluent UI v9 has no file-uploader component, so this is a plain hidden input
             driven by a button — the same thing the drop zone feeds. */}
         <input
@@ -440,7 +443,7 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
             }}
           />
         )}
-      </Toolbar>
+      </div>
 
       {/* R22 — Insert vs Replace without a third click: a single pick never destroys work, and
           Replace (or Undo) is one deliberate click away here, right after the insert. */}
@@ -932,22 +935,6 @@ const RecipientRow: React.FC<{
     </div>
   );
 };
-
-/**
- * The compose actions row — attach and Template. Formatting lives in the Dynamics editor's own
- * toolbar (#17); the disabled B/I/U placeholders that stood here were never wired.
- */
-const Toolbar: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      display: 'flex', alignItems: 'center', gap: '2px', flex: '0 0 28px', height: '28px',
-      padding: '0 8px', boxSizing: 'border-box', borderBottom: `1px solid ${T.stroke3}`,
-    }}
-  >
-    <span style={{ flexGrow: 1 }} />
-    {children}
-  </div>
-);
 
 /**
  * The attachment tray (R13).

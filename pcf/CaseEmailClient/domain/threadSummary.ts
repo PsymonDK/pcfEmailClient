@@ -1,6 +1,6 @@
 import type { Thread } from './threading';
 import { isUnread } from './unread';
-import { EMAIL_STATUS } from './send';
+import { EMAIL_STATUS, isInFlight } from './send';
 
 /**
  * One conversation as the thread list shows it.
@@ -17,6 +17,16 @@ export interface ThreadSummary {
   participants: string[];
   hasAttachments: boolean;
   hasDraft: boolean;
+  /**
+   * A message in this thread is on its way out (Pending Send / Sending), or failed to go.
+   *
+   * On the CONVERSATION row, not only on message rows: those exist only while a conversation is
+   * expanded, and a one-message conversation — every new email — never is. So the badge R17
+   * relies on, once compose closes on acceptance, never showed for a new email (measured
+   * 2026-10-02, 1.42.0).
+   */
+  sending: boolean;
+  failed: boolean;
   /** Set when the thread belongs to the parent case rather than this one (R8). */
   parentCaseNumber?: string;
   lastActivity: string;
@@ -51,6 +61,8 @@ export function toSummary(
     participants: [...names].slice(0, 3),
     hasAttachments: thread.messages.some((m) => (m.attachmentcount ?? 0) > 0),
     hasDraft: thread.messages.some((m) => m.statuscode === EMAIL_STATUS.draft),
+    sending: thread.messages.some((m) => isInFlight(m.statuscode)),
+    failed: thread.messages.some((m) => m.statuscode === EMAIL_STATUS.failed),
     lastActivity: last?.createdon ?? '',
   };
 }

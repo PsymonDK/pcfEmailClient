@@ -37,6 +37,14 @@ describe('toSummary (R2)', () => {
     expect(toSummary(thread([row('a', { statuscode: 1 })]), senderNameOf, new Set()).hasDraft).toBe(true);
     expect(toSummary(thread([row('a')]), senderNameOf, new Set()).hasDraft).toBe(false);
   });
+
+  it('knows a thread with a message on its way out, or failed — for the conversation row (R17)', () => {
+    const of = (statuscode: number) => toSummary(thread([row('a'), row('b', { directioncode: true, statuscode })]), senderNameOf, new Set());
+    expect(of(6)).toMatchObject({ sending: true, failed: false }); // Pending Send
+    expect(of(7)).toMatchObject({ sending: true, failed: false }); // Sending
+    expect(of(8)).toMatchObject({ sending: false, failed: true }); // Failed
+    expect(of(3)).toMatchObject({ sending: false, failed: false }); // Sent
+  });
 });
 
 describe('ourAddresses — the UNION that keeps the queue out of To (R2)', () => {

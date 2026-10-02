@@ -2055,7 +2055,7 @@ Source: [Add the rich text editor control](https://learn.microsoft.com/en-us/pow
 
 #### S14 result, approach 1 — 2026-09-30: **YES, it mounts and edits inside the PCF** (spike build 1.32.0, published app)
 
-Driven from the browser through a spike-only hook exposing the PCF `context` (branch `spike-s14-platform-rte`, never merged). `context.factory.createComponent("MscrmControls.RichTextEditorV2.RichTextEditorControlV2", id, props)` + `bindDOMComponent(descriptor, hostDiv)` inside our control's container:
+Driven from the browser through a spike-only hook exposing the PCF `context` (branch `spike-s14-platform-rte`, never merged; deleted 2026-10-02, tip `ad5ccf0`). `context.factory.createComponent("MscrmControls.RichTextEditorV2.RichTextEditorControlV2", id, props)` + `bindDOMComponent(descriptor, hostDiv)` inside our control's container:
 
 | Props | Result |
 |---|---|
@@ -2075,7 +2075,7 @@ Still to measure before a product decision: our own copy of the config (which ke
 
 #### S14 — our own copy of the email config (2026-09-30)
 
-A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **outside any solution** (`jhrb_/CaseEmailClient/spike/EmailRTEconfig.js`, id `7fc4529b-d3bc-f111-aaaf-0022489d55b0`, safe to delete), mounted through `configUrl` exactly like Microsoft's. The file uses **CKEditor 4 names**; the modern editor **translates** them (`CopyFormatting`→`formatPainter`, `Font`→`fontFamily`, `Justify*`→`alignment`, `Image`→`imagePicker`, `Table`→`insertTable`, …).
+A copy of `msdyn_EmailRTEconfig.js` published as a spike-only web resource **outside any solution** (`jhrb_/CaseEmailClient/spike/EmailRTEconfig.js`, id `7fc4529b-d3bc-f111-aaaf-0022489d55b0`; deleted from the environment 2026-10-02), mounted through `configUrl` exactly like Microsoft's. The file uses **CKEditor 4 names**; the modern editor **translates** them (`CopyFormatting`→`formatPainter`, `Font`→`fontFamily`, `Justify*`→`alignment`, `Image`→`imagePicker`, `Table`→`insertTable`, …).
 
 | Change in the copy | Honoured by the modern editor? |
 |---|---|
@@ -2133,7 +2133,7 @@ Risk: all of this is undocumented Microsoft internals and can change in any rele
 
 This makes the context question disappear rather than solving it: **compose that lives on an email record** gets every Copilot feature, Translate, templates and Send from Microsoft, and needs no placement-specific context — the email's own Regarding carries it. What it costs is the open question for a product decision (S16).
 
-### S16 — the compose body as the draft's real email form, inside our compose *(spike, 2026-10-01, builds 1.39.0–1.39.1, branch `spike-s16-modelform`)*
+### S16 — the compose body as the draft's real email form, inside our compose *(spike, 2026-10-01, builds 1.39.0–1.39.1, branch `spike-s16-modelform`, deleted 2026-10-02, tip `757d2bc`)*
 
 **Mechanism.** `MscrmControls.ModelForm.ModelFormControl` (the documented *form component control*) is a 5.6 KB shim over a platform global: `window._getModelFormComponent()` resolves to a class used as `new FormComponent(container, quickForms, entityType, recordId)` + `.render(options, events)`, with `.save()`, `.refreshFormComponent()`, `.bindRecord()`, `.dispose()`. Present on the Case page in CSW. Our compose creates it directly in its body area for the draft row — no factory, no Microsoft code patched.
 

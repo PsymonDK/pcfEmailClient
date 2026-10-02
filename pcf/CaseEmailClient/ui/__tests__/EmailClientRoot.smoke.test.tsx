@@ -112,7 +112,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
         return Promise.resolve({
           activityid: DRAFT, subject: 'RE: Test: kodegennemgang', statecode: 0, statuscode: 1,
           _ownerid_value: '4f2d39f5-23cc-f011-8544-6045bde0fa7e',
-          description: '<p>M11 sessionsskift test</p><div id="divRplyFwdMsg"><p>old</p></div>',
+          description: draftBody,
         });
       }
       if (entity === 'systemuser') {
@@ -159,6 +159,10 @@ let deleted: string[] = [];
 let updates: { entity: string; id: string; data: Record<string, unknown> }[] = [];
 let creates: { entity: string; data: Record<string, unknown> }[] = [];
 
+/** The seeded draft's body on the "server" — a test may change it; reset after each. */
+const DRAFT_BODY = '<p>M11 sessionsskift test</p><div id="divRplyFwdMsg"><p>old</p></div>';
+let draftBody = DRAFT_BODY;
+
 /** The id the fake hands every created row — so the fake form can find what was created. */
 const CREATED_ID = 'c0ffee00-0000-0000-0000-000000000001';
 
@@ -173,7 +177,7 @@ function bodyOf(id: string): string {
     const created = [...creates].reverse().find((c) => c.entity === 'email');
     return typeof created?.data.description === 'string' ? created.data.description : '';
   }
-  if (id === DRAFT) return '<p>M11 sessionsskift test</p><div id="divRplyFwdMsg"><p>old</p></div>';
+  if (id === DRAFT) return draftBody;
   return '';
 }
 
@@ -188,6 +192,7 @@ afterEach(() => {
   deleted = [];
   updates = [];
   creates = [];
+  draftBody = DRAFT_BODY;
   if (host) { ReactDOM.unmountComponentAtNode(host); host.remove(); host = undefined; }
 });
 
@@ -515,6 +520,28 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     });
     expect(deleted).toContain(`email:${CREATED_ID}`);
     expect((window as unknown as { OpenEmailInfo?: unknown }).OpenEmailInfo).toBeUndefined();
+  });
+
+  it('a body shown before its row changed is fetched again on reload — the cache must not outlive the row (2026-10-02)', async () => {
+    const draftRow = emailRows.find((r) => r.activityid === DRAFT)!;
+    const before = draftRow.modifiedon;
+    try {
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', expandedMessageIds: [DRAFT] });
+      const shown = () => r.host.querySelector<HTMLElement>(`[data-message-id="${DRAFT}"]`)?.textContent ?? '';
+      expect(shown()).toContain('M11 sessionsskift test');
+
+      // Written and sent elsewhere — through the compose-body form, say: new body, new modifiedon.
+      draftBody = '<p>Copilot skrev dette</p><div id="divRplyFwdMsg"><p>old</p></div>';
+      draftRow.modifiedon = '2026-10-02T09:03:22Z';
+      await act(async () => {
+        r.host.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!.click();
+        for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
+      expect(shown()).toContain('Copilot skrev dette');
+      expect(shown()).not.toContain('M11 sessionsskift test');
+    } finally {
+      draftRow.modifiedon = before;
+    }
   });
 
   it('compose takes over the reading pane, and closing it gives the thread back as it was (2026-09-30)', async () => {

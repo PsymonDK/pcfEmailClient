@@ -166,6 +166,15 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   // and re-fetchable, and putting them in setControlState would bloat every session switch.
   const bodyCache = React.useRef(new Map<string, string>());
   const bodyRequests = React.useRef(new Map<string, Promise<string | undefined>>());
+  /**
+   * The row's `modifiedon` each cached body was fetched at. A body cached before its row changed
+   * is STALE: measured 2026-10-02, a draft opened as signature-only and then written and sent
+   * through the compose-body form kept showing "Venlig hilsen" alone — the cache outlived every
+   * reload, Refresh included, and only a case switch cleared it.
+   */
+  const bodyVersion = React.useRef(new Map<string, string | undefined>());
+  const rowsRef = React.useRef(rows);
+  rowsRef.current = rows;
 
   // ── sizing ─────────────────────────────────────────────────────────────────
   // A LAYOUT effect: it runs after the DOM is placed but before the browser paints, so the first
@@ -343,6 +352,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
           fetchAttachments(webApi, activityId).catch(() => undefined),
         ]);
         bodyCache.current.set(activityId, body);
+        bodyVersion.current.set(activityId, rowsRef.current.find((r) => r.activityid === activityId)?.modifiedon);
         setStates((prev) => withState(prev, activityId, (s) => ({
           ...s, body, attachments, attachmentsError: attachments === undefined, loadingBody: false,
         })));
@@ -605,6 +615,19 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     [senderState.candidates, rows, parties],
   );
 
+  // Refetch every cached body whose row changed since — see `bodyVersion`. Only bodies already
+  // fetched, i.e. messages the agent has opened, so a reload costs nothing for the rest.
+  React.useEffect(() => {
+    const stale = rows
+      .filter((r) => bodyVersion.current.has(r.activityid) && bodyVersion.current.get(r.activityid) !== r.modifiedon)
+      .map((r) => r.activityid);
+    for (const id of stale) {
+      bodyCache.current.delete(id);
+      bodyVersion.current.delete(id);
+      void ensureBody(id);
+    }
+  }, [rows, ensureBody]);
+
   // ── compose (R9–R17) — see ui/useCompose.ts ────────────────────────────────
   const {
     compose, setCompose,
@@ -749,6 +772,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     setExpandedThreadKeys(new Set());
     setReadIds(new Set());
     bodyCache.current.clear();
+    bodyVersion.current.clear();
     readRows.current = new Map();
     // Through a ref: `closeCompose` is declared further down, and naming it in the dependency
     // array reads it during render, before its declaration has run.

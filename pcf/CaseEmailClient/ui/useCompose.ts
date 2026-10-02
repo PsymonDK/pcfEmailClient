@@ -364,7 +364,12 @@ export function useCompose(args: ComposeArgs) {
   React.useEffect(() => {
     if (composeSession === undefined || composeRef.current?.emailId) return;
     if (!senderRef.current || senderRef.current.id === 'pending') return;
-    latestHtml.current = composeRef.current?.resumedHtml ?? initialBodyWithSignature(signatureRef.current);
+    // A NEW email gets no signature from us: the platform's email form inserts the sender's own
+    // into a new email (no parent) when it loads — measured 2026-10-02, seeding ours as well put
+    // the signature in twice. A reply has a parent, so there the form adds none and we seed it.
+    const draft = composeRef.current;
+    latestHtml.current = draft?.resumedHtml
+      ?? (draft?.mode === 'new' ? '' : initialBodyWithSignature(signatureRef.current));
     void flushDraft({ force: true, includeParties: true });
   }, [composeSession, flushDraft, chosenSender.id, signatureHtml]);
 
@@ -1054,6 +1059,8 @@ export function useCompose(args: ComposeArgs) {
    */
   React.useEffect(() => {
     if (composeSession === undefined || bodyTouched.current) return;
+    // A new email's signature is the platform form's own (see the create effect above).
+    if (composeRef.current?.mode === 'new') return;
     const editor = editorRef.current;
     if (!editor) return;
     seeding.current = true;

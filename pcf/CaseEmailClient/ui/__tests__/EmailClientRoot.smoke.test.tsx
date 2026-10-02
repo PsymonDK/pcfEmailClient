@@ -544,6 +544,32 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
+  it('a NEW email gets no signature from us — the platform form adds its own; a reply still gets ours (2026-10-02)', async () => {
+    signatureRows.push({
+      emailsignatureid: 'b0b0b0b0-0000-4000-8000-000000000002', title: 'Care', isdefault: true,
+      body: '<?xml version="1.0" ?><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">'
+        + '<xsl:output method="text" indent="no"/><xsl:template match="/data">'
+        + '<![CDATA[<div><p style="margin: 0;">Venlig hilsen</p></div>]]></xsl:template></xsl:stylesheet>',
+    });
+    try {
+      // Measured: the email form inserts the sender's signature into a new email (no parent) on
+      // load, so seeding ours as well put it in twice.
+      const fresh = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'new', activityId: '' } });
+      const created = creates.find((c) => c.entity === 'email')!;
+      expect(created).toBeDefined();
+      expect(String(created.data.description)).not.toContain('Venlig hilsen');
+      ReactDOM.unmountComponentAtNode(fresh.host);
+      creates = [];
+
+      // A reply has a parent: the form adds none, so the starting body carries ours.
+      await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
+      const reply = creates.find((c) => c.entity === 'email')!;
+      expect(String(reply.data.description)).toContain('Venlig hilsen');
+    } finally {
+      signatureRows.length = 0;
+    }
+  });
+
   it('compose takes over the reading pane, and closing it gives the thread back as it was (2026-09-30)', async () => {
     const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: SENT } });
     const threadHidden = () => {

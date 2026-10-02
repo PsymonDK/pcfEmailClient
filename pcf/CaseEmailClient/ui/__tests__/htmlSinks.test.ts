@@ -16,8 +16,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 const ALLOWED_SINKS: Record<string, string[]> = {
   // `html` is the output of BodyFrame's sanitise → split → strip pipeline.
   'BodyFrame.tsx': ['html'],
-  // `safeQuote` is sanitised at render.
-  'Compose.tsx': ['safeQuote'],
+  // Compose renders no HTML of its own any more: the quote is in the compose-body form (S16).
   // `preview.html` is sanitised when the template resolves (useCompose.resolveTemplate).
   'TemplatePicker.tsx': ['preview.html'],
 };

@@ -3,13 +3,13 @@ import type { ComposeMode, Recipient, RecipientField } from '../domain/compose';
 import type { PendingAttachment, Rejection } from '../domain/attachments';
 import { isResolved } from '../domain/recipients';
 import { entityLabel, MIN_SEARCH_LENGTH, type RecipientSuggestion } from '../domain/recipientSearch';
-import { sanitiseEmailBody } from '../domain/sanitise';
 import type { SendReport } from '../domain/send';
 import { describeSender, type SenderCandidate } from '../domain/sender';
 import type { PreflightVerdict } from '../domain/preflight';
-import { BODY_SURFACE, BODY_SURFACE_FG, formatSize, RADIUS, T } from './tokens';
+import { formatSize, RADIUS, T } from './tokens';
 import { IconButton } from './parts';
-import { Editor, type EditorHandle, type PlatformFactory } from './Editor';
+import { Editor, type EditorHandle } from './Editor';
+import type { EmailFormContext } from '../host/emailForm';
 import type { EmailTemplate } from '../data/templates';
 import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
 import { insertPlacement } from '../domain/templatePicker';
@@ -21,11 +21,12 @@ import { insertPlacement } from '../domain/templatePicker';
  * docked it under the thread at 222–380px so the thread stayed visible; that stopped working when
  * the Dynamics editor (#17) arrived, because its toolbar is a row of its own and the docked
  * surface left one line of thread and a few of editor. The editor now fills whatever the fixed
- * rows leave, and the message being answered is one click away in the quote fold.
+ * rows leave.
  *
- * **The quote is below the editor and read-only.** It is not editable text and it is not in the
- * editor's document; `domain/compose.ts` concatenates it verbatim at send. That is R12's whole
- * mechanism and the reason this component takes `quotedBlock` as an opaque string it only renders.
+ * **The body is the draft's own email form** (`ui/Editor.tsx`, S16): it shows the saved row,
+ * quote included, as the standard email form does, and saves it. So the body appears once the
+ * row exists — compose creates it on open — and this surface owns everything around it: sender,
+ * recipients, subject, templates, attachments and Send.
  */
 
 export interface ComposeProps {
@@ -37,12 +38,12 @@ export interface ComposeProps {
   /** Blind copies (issue #11). Shown only once asked for, like Cc. */
   bcc: Recipient[];
   subject: string;
-  /** The inherited chain, already assembled. Rendered read-only; never given to the editor. */
-  quotedBlock?: string;
-  /** The editor opens on a resumed draft's text rather than a fresh signature. */
+  /** A resumed draft: it opens with the agent's own text, so Send starts enabled (M15). */
   resumed?: boolean;
-  /** Initial new text — signature (R15) or a restored draft (R16). */
-  initialHtml?: string;
+  /** The draft row the body shows. Absent until compose has created it. */
+  bodyEmailId?: string;
+  /** What the body editor's Copilot reads about the email. */
+  bodyContext: EmailFormContext;
   onClose: () => void;
   onSubjectChange: (next: string) => void;
   onRemoveRecipient: (field: RecipientField, address: string) => void;
@@ -112,8 +113,6 @@ export interface ComposeProps {
    * an empty message is filled from the top, anything typed gets it at the cursor (decision 3).
    */
   hasTypedText: () => boolean;
-  /** `context.factory` — hosts the Dynamics editor (#17). */
-  editorFactory?: PlatformFactory;
   /** The editor could not load: save the draft and open it in the standard email form. */
   onOpenInStandardForm?: () => void;
 }
@@ -126,7 +125,7 @@ const barLink: React.CSSProperties = {
 
 export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref) => {
   const {
-    mode, answeringLabel, to, cc, bcc, subject, quotedBlock, initialHtml,
+    mode, answeringLabel, to, cc, bcc, subject, bodyEmailId, bodyContext,
     onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
@@ -134,19 +133,17 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
     savedLabel, saveError,
     attachments, onAddFiles, onRemoveAttachment, attachmentRejections, attachmentWarning,
     sendBlockedReason, onSend, sending, sendReport, templates, onUseTemplate, resumed, uiLanguage, hasTypedText,
-    editorFactory, onOpenInStandardForm,
+    onOpenInStandardForm,
   } = props;
 
-  const [quoteOpen, setQuoteOpen] = React.useState(false);
-  const safeQuote = React.useMemo(() => sanitiseEmailBody(quotedBlock).html, [quotedBlock]);
   const [editingSubject, setEditingSubject] = React.useState(false);
   // A resumed draft starts with the agent's own text in it, so Send starts enabled (M15). It
   // used to wait for a keystroke, because the editor reports only changes, never its first state.
   //
-  // "Empty" means nothing BEYOND THE SIGNATURE — the same rule draft saving uses, via
-  // `hasTypedText`. Measured 2026-09-30: judged on the editor's raw text instead, the signature
-  // counted as content, so inserting a template and pressing Undo left Send enabled on a reply
-  // that said nothing but "Venlig hilsen".
+  // "Empty" means nothing written since the body was opened — `hasTypedText`, the same rule that
+  // decides whether a draft is kept. Measured 2026-09-30: judged on the editor's raw text, the
+  // signature counted as content, so inserting a template and pressing Undo left Send enabled on
+  // a reply that said nothing but "Venlig hilsen".
   const [empty, setEmpty] = React.useState(!resumed);
   const [dragging, setDragging] = React.useState(false);
   const [ccOpen, setCcOpen] = React.useState(false);
@@ -165,8 +162,15 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
 
   // Compose needs the editor handle itself (templates insert into it) AND the shell needs it
   // (to read the body at send). One ref, forwarded — two refs would drift.
-  const editorApi = React.useRef<EditorHandle>(null);
-  React.useImperativeHandle(ref, () => editorApi.current!, []);
+  const editorApi = React.useRef<EditorHandle | null>(null);
+  // ONE callback ref feeds both. An imperative handle captured at Compose's first render was
+  // null for the whole compose once the editor started mounting later — the body appears only
+  // after the row exists — so the shell never reached the editor: Send never enabled.
+  const setEditor = React.useCallback((handle: EditorHandle | null) => {
+    editorApi.current = handle;
+    if (typeof ref === 'function') ref(handle);
+    else if (ref) ref.current = handle;
+  }, [ref]);
 
   const verb = mode === 'new' ? 'New email'
     : mode === 'forward' ? 'Forward' : mode === 'replyAll' ? 'Reply all' : 'Reply';
@@ -465,18 +469,26 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         </div>
       )}
 
-      <Editor
-        ref={editorApi}
-        ariaLabel={`${verb} message body`}
-        initialHtml={initialHtml}
-        disabled={sending}
-        onChange={() => { setEmpty(!hasTypedText()); onBodyChange?.(); }}
-        factory={editorFactory}
-        onUnavailable={() => setEditorUnavailable(true)}
-      />
+      {bodyEmailId ? (
+        <Editor
+          // One form per draft row: the form shows a ROW, so a new row is a new form.
+          key={bodyEmailId}
+          ref={setEditor}
+          emailId={bodyEmailId}
+          context={bodyContext}
+          ariaLabel={`${verb} message body`}
+          disabled={sending}
+          onChange={() => { setEmpty(!hasTypedText()); onBodyChange?.(); }}
+          onUnavailable={() => setEditorUnavailable(true)}
+        />
+      ) : (
+        <div role="status" style={{ flex: '1 1 0', padding: '12px', fontSize: '12px', color: T.fg3 }}>
+          Preparing the email…
+        </div>
+      )}
 
-      {/* #17 — there is no second editor. When the Dynamics editor cannot load, say so plainly and
-          hand the draft to the standard email form, which has the same editor. */}
+      {/* There is no second editor. When the body form cannot load, say so plainly and hand the
+          draft to the standard email form, which has the same editor. */}
       {editorUnavailable && (
         <div
           role="alert"
@@ -527,48 +539,6 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
               <strong>{r.filename}</strong> — {r.reason}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* R12 — the inherited chain, read-only, folded. NOT in the editor's document. */}
-      {/* Open, it takes up to 45% of the pane and scrolls inside; the editor keeps the rest. */}
-      {quotedBlock && (
-        <div
-          style={{
-            flex: '0 1 auto', maxHeight: quoteOpen ? '45%' : undefined, minHeight: 0,
-            display: 'flex', flexDirection: 'column', borderTop: `1px solid ${T.stroke3}`,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setQuoteOpen((o) => !o)}
-            aria-expanded={quoteOpen}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px', width: '100%', flex: '0 0 24px', height: '24px',
-              padding: '0 10px', boxSizing: 'border-box', border: 'none', background: 'transparent',
-              font: 'inherit', fontSize: '12px', color: T.fg2, cursor: 'pointer', textAlign: 'left',
-            }}
-          >
-            <span>{quoteOpen ? '⌄' : '›'}</span>
-            <span>Quoted message — sent unchanged</span>
-          </button>
-          {quoteOpen && (
-            <div
-              // Read-only by construction: no contentEditable, and the string is never handed to
-              // the editor. Rendered on the same literal white as any other sender HTML (N7).
-              //
-              // Sanitised AGAIN at render, although `buildQuotedBlock` already sanitises: a
-              // resumed draft's quote comes back out of Dataverse, and a draft saved before
-              // 2026-09-28 carries the sender's raw HTML. Display only — what is sent is still
-              // `quotedBlock`, untouched, so R12's round trip is unaffected.
-              dangerouslySetInnerHTML={{ __html: safeQuote }}
-              style={{
-                flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '6px 10px',
-                boxSizing: 'border-box', background: BODY_SURFACE, colorScheme: 'light',
-                color: BODY_SURFACE_FG, font: `400 12px/17px ${T.font}`, contain: 'content',
-              }}
-            />
-          )}
         </div>
       )}
 

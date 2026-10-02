@@ -292,15 +292,18 @@ export function useCompose(args: ComposeArgs) {
     if (!draft) return Promise.resolve(undefined);
     const newHtml = editorRef.current?.getHTML() ?? latestHtml.current ?? '';
     const sender = opts.sender ?? senderRef.current;
-    // The quote is always present, so judging by the whole body would save every opened reply.
-    // Only the agent's own text counts — unless `force` says otherwise.
-    const worth = opts.force === true || worthSaving(newHtml, signatureRef.current);
+    // Once the row exists the body is the FORM's: it is saved through the form, and this save
+    // writes subject and recipients only (S16). Before that, this save creates the row with the
+    // starting body — signature, or a resumed draft's text, plus the quote.
+    const formOwned = (draftIds.current.get(draft.session) ?? draft.emailId) !== undefined;
+    const worth = opts.force === true || formOwned || worthSaving(newHtml, signatureRef.current);
     const version = partiesVersion.current;
 
     return saveQueue(async () => {
       const emailId = draftIds.current.get(draft.session) ?? draft.emailId;
       if (!worth || !sender) return emailId;
 
+      if (formOwned) await editorRef.current?.save();
       const includeParties = opts.includeParties === true
         || emailId === undefined
         || version > savedPartiesVersion.current;
@@ -309,7 +312,7 @@ export function useCompose(args: ComposeArgs) {
         emailId,
         // The compose's OWN case, never the current one: a compose settled after the record
         // changed must not be re-filed under the new case.
-        draftArgsFrom(draft, newHtml, sender, draft.caseId),
+        { ...draftArgsFrom(draft, newHtml, sender, draft.caseId), omitBody: formOwned },
         includeParties,
       );
 
@@ -352,6 +355,19 @@ export function useCompose(args: ComposeArgs) {
     }, 2000);
   }, [flushDraft]);
 
+  /**
+   * The body is the draft's own form, and a form shows a ROW — so the row is created as compose
+   * opens, with the starting body (S16). Waits for the sender, and with it the signature: created
+   * earlier, a compose restored after a teardown saved a body with no signature (measured).
+   * Discarded again on close if nothing was added — `closeCompose`.
+   */
+  React.useEffect(() => {
+    if (composeSession === undefined || composeRef.current?.emailId) return;
+    if (!senderRef.current || senderRef.current.id === 'pending') return;
+    latestHtml.current = composeRef.current?.resumedHtml ?? initialBodyWithSignature(signatureRef.current);
+    void flushDraft({ force: true, includeParties: true });
+  }, [composeSession, flushDraft, chosenSender.id, signatureHtml]);
+
   // A periodic save, so a long uninterrupted spell of typing is still protected. Closing and
   // switching compose are handled by `closeCompose`, which saves rather than dropping the timer.
   React.useEffect(() => {
@@ -389,12 +405,20 @@ export function useCompose(args: ComposeArgs) {
   const closeCompose = React.useCallback(async (): Promise<void> => {
     const closing = composeRef.current;
     if (!closing) return;
+    // An edit still waiting for the autosave — a recipient or subject changed in the last two
+    // seconds. On a draft the agent resumed, closing must not drop it.
+    const pendingEdit = draftTimer.current !== undefined;
     if (draftTimer.current) {
       clearTimeout(draftTimer.current);
       draftTimer.current = undefined;
     }
     const newHtml = editorRef.current?.getHTML() ?? latestHtml.current ?? '';
-    if (worthSaving(newHtml, signatureRef.current)) {
+    // Worth keeping = the body changed since the form opened it. Splitting the body cannot say:
+    // Copilot's *Keep it* inserts inside our quote container (measured, S16). A row this compose
+    // created with nothing written is discarded below, as before — recipients alone are not a reply.
+    const bodyChanged = editorRef.current?.hasChanges() ?? worthSaving(newHtml, signatureRef.current);
+    const resumedRow = !createdHere.current.has(closing.session);
+    if (bodyChanged || (resumedRow && pendingEdit)) {
       await flushDraft();
       return;
     }

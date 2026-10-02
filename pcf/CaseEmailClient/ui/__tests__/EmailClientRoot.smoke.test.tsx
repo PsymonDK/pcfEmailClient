@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import { EmailClientRoot, type RestorableState } from '../EmailClientRoot';
 import type { DraftApiLike } from '../../data/draft';
-import type { PlatformFactory } from '../Editor';
-import { fakeEditorFactory } from './fakeEditorFactory';
+import { installFakeFormComponent, type FakeFormComponent } from './fakeFormComponent';
 
 /**
  * The shell, rendered for real against a fake Dataverse — the first test that imports
@@ -138,7 +137,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
     createRecord: (entity: string, data: Record<string, unknown>) => {
       count('create');
       creates.push({ entity, data });
-      return Promise.resolve({ id: 'c0ffee00-0000-0000-0000-000000000001' });
+      return Promise.resolve({ id: CREATED_ID });
     },
     updateRecord: (entity: string, id: string, data: Record<string, unknown>) => {
       count('update');
@@ -160,8 +159,31 @@ let deleted: string[] = [];
 let updates: { entity: string; id: string; data: Record<string, unknown> }[] = [];
 let creates: { entity: string; data: Record<string, unknown> }[] = [];
 
+/** The id the fake hands every created row — so the fake form can find what was created. */
+const CREATED_ID = 'c0ffee00-0000-0000-0000-000000000001';
+
+/**
+ * What the row holds now, as the compose-body form would load it: the latest saved description,
+ * else what the row was created with, else the seeded draft's.
+ */
+function bodyOf(id: string): string {
+  const saved = [...updates].reverse().find((u) => u.entity === 'email' && u.id === id && typeof u.data.description === 'string');
+  if (saved) return saved.data.description as string;
+  if (id === CREATED_ID) {
+    const created = [...creates].reverse().find((c) => c.entity === 'email');
+    return typeof created?.data.description === 'string' ? created.data.description : '';
+  }
+  if (id === DRAFT) return '<p>M11 sessionsskift test</p><div id="divRplyFwdMsg"><p>old</p></div>';
+  return '';
+}
+
+/** The compose body's form, faked — installed for every test; a test may swap it. */
+let form: FakeFormComponent;
+beforeEach(() => { form = installFakeFormComponent({ bodyFor: bodyOf }); });
+
 let host: HTMLDivElement | undefined;
 afterEach(() => {
+  form.uninstall();
   readStateRows = [];
   deleted = [];
   updates = [];
@@ -176,9 +198,6 @@ afterEach(() => {
 async function renderShell(
   initial?: RestorableState,
   stateCeiling = 200,
-  // The hosted Dynamics editor (#17), faked: jsdom cannot load the platform control.
-  // null = no factory at all (an explicit undefined would pick up this default).
-  editorFactory: PlatformFactory | null = fakeEditorFactory().factory,
 ) {
   const { api, calls } = fakeApi();
   host = document.createElement('div');
@@ -196,7 +215,6 @@ async function renderShell(
       allocatedWidth={1200}
       restored={restored}
       onStateChange={onStateChange}
-      editorFactory={editorFactory ?? undefined}
     />,
     target,
   ); };
@@ -342,6 +360,12 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       expect(r.host.querySelector('[aria-label="Remove Leder"]')).not.toBeNull();
       expect(r.host.querySelector('input[aria-label="Add Bcc recipient by name or address"]')).not.toBeNull();
 
+      // An edit, so closing saves — and that save rewrites every party.
+      await act(async () => {
+        const e = (r.host.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { model: { insertContent(h: string): void } } }).ckeditorInstance;
+        e.model.insertContent('<p>Tilføjet</p>');
+        for (let i = 0; i < 3; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+      });
       await act(async () => {
         r.host.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
         for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
@@ -395,13 +419,16 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       });
       expect(send().disabled).toBe(false);
 
+      // The row exists from the start — the body is its form (S16) — with the customer in To.
+      expect(creates.filter((c) => c.entity === 'email')).toHaveLength(1);
       // Send with no subject is refused before anything is saved…
+      const writesBefore = updates.length + creates.length;
       await act(async () => {
         send().click();
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
       expect(region.textContent).toContain('Add a subject first.');
-      expect(creates.filter((c) => c.entity === 'email')).toHaveLength(0);
+      expect(updates.length + creates.length).toBe(writesBefore);
       // …and the refusal goes the moment the agent fixes it, rather than outliving the cause.
       await act(async () => {
         const subject = region.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!;
@@ -429,7 +456,12 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       const created = creates.find((c) => c.entity === 'email')!;
       expect(created).toBeDefined();
       expect(created.data).not.toHaveProperty('parentactivityid@odata.bind');
-      expect(created.data.subject).toBe('Opfølgning på din sag');
+      // The subject arrives with our save, which never writes the body — that is the form's,
+      // and it was saved through the form.
+      const subjectSave = [...updates].reverse().find((u) => u.id === CREATED_ID && 'subject' in u.data);
+      expect(subjectSave?.data.subject).toBe('Opfølgning på din sag');
+      expect(subjectSave?.data).not.toHaveProperty('description');
+      expect(form.saves[form.saves.length - 1]).toContain('Hej Simon');
       expect(r.host.textContent).not.toContain('No email on this case yet');
       expect(r.host.textContent).toContain('Opfølgning på din sag');
       expect(created.data.email_activity_parties).toContainEqual(expect.objectContaining({
@@ -438,6 +470,51 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     } finally {
       emailRows.splice(0, emailRows.length, ...saved);
     }
+  });
+
+  it('the body is the form of the draft row: text added INSIDE the quote still counts, and is saved through the form (S16)', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
+    // The row was created on open, with the starting body, and the form shows THAT row.
+    const created = creates.find((c) => c.entity === 'email')!;
+    expect(String(created.data.description)).toContain('divRplyFwdMsg');
+    expect(form.records).toContain(CREATED_ID);
+    const region = r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!;
+    const send = () => Array.from(region.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Send')!;
+    expect(send().disabled).toBe(true);
+
+    // What Copilot's *Keep it* does (measured): its draft lands at the start of the body, INSIDE
+    // our quote container. Splitting the body would see no new text; the form's body changed.
+    await act(async () => {
+      const e = (region.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { setData(h: string): void; getData(): string } }).ckeditorInstance;
+      e.setData(e.getData().replace('<div id="divRplyFwdMsg">', '<div id="divRplyFwdMsg"><p>Kære kunde, tak for din henvendelse.</p>'));
+      for (let i = 0; i < 3; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(send().disabled).toBe(false);
+
+    const deletedBefore = deleted.length;
+    await act(async () => {
+      region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    // Kept, not discarded — and the body went through the form, never through our own update.
+    expect(deleted.length).toBe(deletedBefore);
+    expect(form.saves[form.saves.length - 1]).toContain('Kære kunde');
+    expect(updates.filter((u) => u.id === CREATED_ID).some((u) => 'description' in u.data)).toBe(false);
+  });
+
+  it('an untouched new reply leaves no row behind, and OpenEmailInfo carries the case only while compose is open', async () => {
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
+    const info = (window as unknown as { OpenEmailInfo?: { formContext: { getAttribute(n: string): { getValue(): { id: string; entityType: string }[] } | null } } }).OpenEmailInfo;
+    // The editor's Copilot reads the Regarding from here (S16): the case, braced and upper-cased.
+    expect(info?.formContext.getAttribute('regardingobjectid')?.getValue()[0]).toMatchObject({
+      id: `{${CASE.toUpperCase()}}`, entityType: 'incident',
+    });
+    await act(async () => {
+      r.host.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    expect(deleted).toContain(`email:${CREATED_ID}`);
+    expect((window as unknown as { OpenEmailInfo?: unknown }).OpenEmailInfo).toBeUndefined();
   });
 
   it('compose takes over the reading pane, and closing it gives the thread back as it was (2026-09-30)', async () => {
@@ -530,7 +607,10 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
 
       await insert();
       await click('Replace the whole message instead');
-      expect(editorText()).toBe('Dear customer');
+      // The editor holds the whole body now (the compose-body form, S16): Replace replaces the
+      // agent's text and keeps the quote.
+      expect(editorText().startsWith('Dear customer')).toBe(true);
+      expect(editorText()).toContain('From:');
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
@@ -606,17 +686,15 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
-  it('#17: when the Dynamics editor cannot load, compose says so and offers the standard form', async () => {
+  it('when the compose body form cannot load, compose says so and offers the standard form', async () => {
     const opened: unknown[] = [];
     (window as unknown as { Xrm?: unknown }).Xrm = {
       Navigation: { navigateTo: (page: unknown) => { opened.push(page); return Promise.resolve(); } },
     };
     try {
-      const r = await renderShell(
-        { selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } },
-        200,
-        fakeEditorFactory({ throwOnCreate: true }).factory,
-      );
+      form.uninstall();
+      form = installFakeFormComponent({ bodyFor: bodyOf, failRender: true });
+      const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
       const alert = Array.from(r.host.querySelectorAll('[role=alert]')).find((a) => a.textContent?.includes("couldn't load"));
       expect(alert?.textContent).toContain('open it in the email form');
       expect(r.host.querySelector('.ck-editor__editable')).toBeNull();
@@ -633,8 +711,9 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
-  it('#17: with no factory at all there is no editor, only the way out', async () => {
-    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } }, 200, null);
+  it('on a page without the form component there is no editor, only the way out', async () => {
+    form.uninstall();
+    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
     expect(Array.from(r.host.querySelectorAll('[role=alert]')).some((a) => a.textContent?.includes("couldn't load"))).toBe(true);
   });
 

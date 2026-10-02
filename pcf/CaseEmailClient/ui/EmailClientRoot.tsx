@@ -28,14 +28,12 @@ import { useCompose, type Notice } from './useCompose';
 import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { Compose } from './Compose';
-import type { PlatformFactory } from './Editor';
 import { type DraftApiLike } from '../data/draft';
-import { describeSaved, draftContinuation, worthSaving } from '../domain/draft';
+import { describeSaved, draftContinuation } from '../domain/draft';
 import { sizeWarning } from '../domain/attachments';
 import { ourAddresses as ourAddressesFor } from '../domain/sender';
 import { sendBlockedBy } from '../domain/preflight';
 import { resolveXrmUtility } from '../data/recipients';
-import { initialBodyWithSignature } from '../domain/signature';
 import { T } from './tokens';
 import { ErrorBoundary } from './parts';
 import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
@@ -60,7 +58,6 @@ export interface EmailClientRootProps {
   /** `context.userSettings.languageId` — the agent's interface language, R22's default. */
   languageId?: number;
   /** `context.factory` — hosts the Dynamics editor in compose (#17). */
-  editorFactory?: PlatformFactory;
   allocatedHeight: number;
   allocatedWidth: number;
   /** Restored from `setControlState` after a session-switch teardown (R16/N1). */
@@ -88,7 +85,7 @@ export interface RestorableState {
 
 export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
   const {
-    caseId, caseIdSource, webApi, userId, languageId, editorFactory, allocatedHeight, allocatedWidth, restored, onStateChange,
+    caseId, caseIdSource, webApi, userId, languageId, allocatedHeight, allocatedWidth, restored, onStateChange,
     themeSignals,
   } = props;
 
@@ -943,7 +940,6 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             cc={compose.cc}
             bcc={compose.bcc}
             subject={compose.subject}
-            quotedBlock={compose.quotedBlock}
             resumed={compose.resumedHtml !== undefined}
             onClose={() => {
               // Save on the way out, or clean up a blank draft this client created. The save
@@ -983,12 +979,18 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             // and is not told why will send it some other way.
             // R15 — the signature is the body's starting content, with blank lines above it so
             // the cursor does not land inside the agent's own sign-off.
-            initialHtml={compose.resumedHtml ?? initialBodyWithSignature(signatureHtml)}
             templates={templates}
             uiLanguage={languageId}
             // The same rule draft saving uses for "is there anything beyond the signature?".
-            hasTypedText={() => worthSaving(editorRef.current?.getHTML() ?? '', signatureHtml)}
-            editorFactory={editorFactory}
+            // Written since the body opened — or a resumed draft, which is the agent's text already.
+            hasTypedText={() => compose.resumedHtml !== undefined || (editorRef.current?.hasChanges() ?? false)}
+            bodyEmailId={compose.emailId}
+            bodyContext={{
+              caseId: compose.caseId,
+              subject: compose.subject,
+              to: compose.to.filter((r) => r.partyId && r.partyEntity)
+                .map((r) => ({ id: r.partyId!, entityType: r.partyEntity!, name: r.name || r.address })),
+            }}
             onOpenInStandardForm={resolveXrmNavigation() ? () => { void handOffToStandardForm(); } : undefined}
             onUseTemplate={resolveTemplate}
             sender={chosenSender}

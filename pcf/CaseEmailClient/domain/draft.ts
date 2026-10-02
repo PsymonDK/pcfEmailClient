@@ -65,6 +65,12 @@ export interface DraftArgs {
    * the same message, and every reopen would create ANOTHER draft row on the Case.
    */
   inReplyToId: string | undefined;
+  /**
+   * The body belongs to the compose-body FORM (S16): an update writes subject (and parties) but
+   * not the description. Writing it would overwrite what the form holds — Copilot's draft, say —
+   * with this client's idea of the body. Only the CREATE writes the body: the starting content.
+   */
+  omitBody?: boolean;
 }
 
 /** The parts of an open compose surface a save needs. */
@@ -219,12 +225,11 @@ export function buildDraftPayload(args: DraftArgs): Record<string, unknown> {
  * changes. `buildPartyRows` is exported so the caller can send them only when they changed.
  */
 export function buildDraftUpdate(
-  args: Pick<DraftArgs, 'subject' | 'bodyHtml'>,
+  args: Pick<DraftArgs, 'subject' | 'bodyHtml' | 'omitBody'>,
 ): Record<string, unknown> {
-  return {
-    subject: args.subject,
-    description: args.bodyHtml,
-  };
+  return args.omitBody
+    ? { subject: args.subject }
+    : { subject: args.subject, description: args.bodyHtml };
 }
 
 /**

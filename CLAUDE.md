@@ -17,9 +17,10 @@ performance (N5).
 
 The control (unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
 `Case - Email Client` form, verified in the published app. Design is signed off — see
-[`docs/design/`](docs/design/01-design-decisions.md). The editor is **TipTap 2** (S13, 2026-09-23),
-and R12's invariant is written and tested in
-[`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts).
+[`docs/design/`](docs/design/01-design-decisions.md). **The compose body is the draft's own email
+form, rendered inside compose** (S16, 2026-10-02) — the Dynamics editor running on a genuine email
+form, so agents get Draft with Copilot, Translate and the full toolbar. See *The compose body*
+below.
 
 **No research gate remains open.** The architecture is spike-validated on both target placements —
 S1 (Case form tab) and S11 (session tab, via an `Entity record` app tab template) both confirmed
@@ -30,7 +31,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **742 tests**, lint and typecheck clean.
+helpers — **745 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -585,78 +586,87 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
   for an unapproved sender, parks the mail at `Pending Send` forever, and records **no error anywhere**.
   Check org `requireapprovalfor*email`, sender `emailrouteraccessapproval` = 1 and mailbox
   `outgoingemailstatus` = Success. Non-negotiable.
-- **The platform rich-text editor is NOT reusable from a PCF** (S10, 2026-09-10). `context.factory`
-  exposes 11 undocumented functions at runtime (only 2 are typed), and `createComponent` +
-  `bindDOMComponent` really do mount `MscrmControls.RichTextEditorV2.RichTextEditorControlV2` inside a
-  PCF's DOM — but it never initialises into an editor (0 `contenteditable`). **Don't build on it.**
-  R11 needs a bundled editor — and **React 16 constrains which one**. A virtual PCF shares the
-  platform's React (**16.14.0** here), so the React *bindings* of modern editors are unusable:
-  `@tiptap/react` needs React ^17/18/19, `@lexical/react` needs >=18. Their **framework-agnostic cores
-  are fine** — `@tiptap/core`+`@tiptap/pm`, `lexical`, and `quill` declare no React peer. **Mount the
-  editor core imperatively into a ref'd div**, don't reach for its React wrapper. Prefer a
-  headless/schema editor for *controlled HTML output*, which R12 depends on. A standard (non-virtual)
-  control bundling its own React 18 is the fallback, but forfeits the shared-React bundle win.
-  Verified 2026-09-10. **Measured 2026-09-23 (S13)** — gzipped delta on the production bundle,
-  whose baseline is 32.8 KiB:
-  - **Quill 2.0.3 — +58.3 KiB** plus 3.7 KiB of required theme CSS. Builds on the stock config.
-    Delta-based, so `root.innerHTML` is whatever the DOM holds — the **weakest** for R12's
-    controlled output.
-  - **Lexical 0.50.0 — +67.8 KiB.** Bundles fine, but its types sit behind an `exports` map that
-    the build tsconfig's inherited `moduleResolution: "node"` cannot read, so lint fails with 16
-    `no-unsafe-*` errors until the control build moves to `"bundler"`.
-  - **TipTap 2.27.3 — +88.5 KiB.** Builds on the stock config and is the **best** for R12.
-    **TipTap 3 does not build at all**: its extensions carry an `@jsxImportSource` pragma and
-    pcf-scripts' Babel uses `runtime: 'classic'`, so v3 pins you to v2.
+- **Declare `<external-service-usage>` in the manifest only if calling external services.** Our
+  Dataverse-only scope does not need it — adding it makes the component premium.
 
-  No option is cheap — the cheapest nearly triples the control. **CHOSEN 2026-09-23: TipTap 2**
-  (`@tiptap/core` + `@tiptap/pm` + `@tiptap/starter-kit`, all pinned `^2`). The extra ~30 KiB over
-  Quill buys the requirement most likely to generate bugs (R12's controlled output), and it is the
-  only schema-based option that builds on the stock config. **Do not upgrade to TipTap 3** — it
-  does not build here; see the pragma note above.
+## The compose body — the draft's own email form (S14 → S15 → S16)
 
-**R12's invariant, written before any compose UI existed and now enforced by tests:
-THE INHERITED QUOTE NEVER ENTERS THE EDITOR.** The editor edits only the new text; the quote is an
-opaque string shown read-only beneath it and concatenated **verbatim** at send time. That reduces
-the editor's job from "round-trip arbitrary Outlook HTML" to "handle what the agent types". It
-lives in [`domain/compose.ts`](pcf/CaseEmailClient/domain/compose.ts):
+**Decided 2026-10-02.** The body of compose is the draft row shown on our **"Case Email Client -
+compose body"** email form (`systemform` `6a39076b-85bd-f111-aaad-000d3ab16615`, shipped in the
+solution), mounted inside compose through the platform's **form component** —
+[`host/emailForm.ts`](pcf/CaseEmailClient/host/emailForm.ts),
+[`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). How we got here, each step measured live and
+written up in [`06-spikes.md`](docs/research/06-spikes.md):
+
+- **S10/S14 — the bare Dynamics editor through `context.factory` works** once given a `configUrl`
+  and `isReadOnly: false` (S10 called it unusable; S10 lacked those two props). It shipped briefly
+  (1.33–1.38) and replaced TipTap, which dropped template and Outlook formatting. **TipTap is
+  gone** — do not reintroduce a bundled editor.
+- **S15 — but it never gets Draft with Copilot**: the editor loads that plugin only when
+  `parentEntity.typeName === "email"`, read from the host page — ours is the Case. A config file
+  cannot change that; the Copilot / Translate / Adjust buttons ignore the config entirely.
+- **S16 — on a genuine email form it does.** `MscrmControls.ModelForm.ModelFormControl` (the
+  documented *form component control*) is a 5.6 KB shim over `window._getModelFormComponent()`:
+  `new FormComponent(container, formId, 'email', recordId).render(options, events)`, plus `save()`
+  and `dispose()`. Undocumented, like the factory members it replaced — confined to
+  `host/emailForm.ts`.
+
+Rules that follow, each from a measurement:
+
+- **The form takes the BARE form GUID.** The `<QuickFormIds>` XML the form editor writes is the
+  quick-view format and parsed to no form at all.
+- **The form owns the body.** It loads the saved row and saves it (`EditorHandle.save()`); once
+  the row exists our own saves write **subject and recipients only** (`DraftArgs.omitBody`).
+  Writing the body ourselves overwrote Copilot's draft. So the row is **created when compose
+  opens** (with the starting body — signature or resumed text, plus the quote), "anything to keep
+  or send?" is **`hasChanges()` — has the body changed since the form loaded it**, and an untouched
+  new reply's row is discarded on close.
+- **Copilot's *Keep it* inserts at the start of the body — on a reply, INSIDE our quote
+  container.** So nothing may judge the body by splitting it: R12's split saw no new text and
+  disabled Send. The quote lives in the editor now, as on the standard email form.
+- **`dispose()` does not save** — closing compose lost Copilot's text. `disposeEmailForm` saves
+  first if the body changed since its last save; never after Send (`save()` resets that baseline).
+- **The form rebuilds its editor after loading** (Copilot's initializer re-creates it): follow the
+  current `ckeditorInstance`, or a listener on the first one hears nothing.
+- **Copilot needs the Regarding.** `overrideXrmPageByFormContext` does not repoint the global
+  `Xrm.Page` the editor reads; its own fallback `window.OpenEmailInfo` does. Set before render with
+  the draft's real Regarding/To/subject, removed on dispose (product owner, 2026-10-01). Without
+  it the Copilot draft came back generic; with it, case-specific.
+- **The form**: only Description visible; From/To/Cc/Bcc/Subject/Regarding on it **hidden** (form
+  scripts and Copilot read them); Description's `configUrl` = **our**
+  `jhrb_/CaseEmailClient/EmailRTEconfig.js` (Microsoft's email config, full toolbar,
+  `IsCustomizable` so admins can edit it after a managed install). Another team's
+  `team_onLoadEmail` (`team.setQueueAsEmailSender`) is deliberately **not** on it.
+- **No second editor.** If the form component is missing or the editor never becomes editable,
+  compose says so and offers **Open in the email form** (saves the draft, hands it over).
+- **Don't patch Microsoft's editor.** Its list markup (`list-style-position: inside` + `<li><p>`)
+  renders bullets on their own line in Outlook on the web; the standard form does the same. Report
+  such things; do not post-process them (product owner, 2026-10-01).
+- **Pasted images** go out as inline `data:` images (no attachment row). They arrived intact in
+  Outlook on the web (2026-10-01); other clients may block them.
+
+**R12's invariant still governs the body WE build — the first save:**
 
 - `buildQuotedBlock` wraps the original body in `divRplyFwdMsg` — deliberately the same id
-  `quoting.ts` matches first, so **what we emit is what we can re-split**. Changing one without
-  the other breaks the round trip silently.
+  `quoting.ts` matches first, so **what we emit is what we can re-split** (resume relies on it).
+  Changing one without the other breaks the round trip silently.
 - `buildOutgoingBody` concatenates and adds **no** wrapper of its own; the quote already carries
   one, which is what makes the round trip byte-exact.
 - `stripQuoteMarkers` renames the marker in pasted content, because the splitter cuts at the
-  **first** match and pasting a previous reply would otherwise move half the new text into the
-  fold. The replacement must **not contain** the marker: `divRplyFwdMsg-quoted` was the first
-  attempt and still matched on substring.
+  **first** match. The replacement must **not contain** the marker: `divRplyFwdMsg-quoted` was the
+  first attempt and still matched on substring.
 - **THE CLIENT NEVER REMOVES A TRACKING TOKEN FROM A SUBJECT — a product requirement
   (2026-09-29), not a style choice.** `composeSubject` carries the inherited subject forward
-  verbatim, token included; only the RE:/FW: prefix is added. It used to strip the token (the
-  platform appends a fresh one on send, so the worry was two tokens). That worry was wrong: **when
-  the subject already carries a token this organisation knows, the platform leaves it and adds
-  none.** Two tokens in one subject are legitimate — mail that passed through **another Dynamics
-  system** carries that system's token as well as ours, and stripping would sever the other
-  system's correlation too (product owner, 2026-09-29). `stripTrackingToken` was **deleted** so
-  nothing can reach for it again. Do not reintroduce stripping anywhere a subject is written. `normaliseSubject` still
-  drops tokens, but only to build an in-memory grouping key — it never writes a subject — and the
-  thread list hides the token on screen only; neither touches the record.
-
-**The editor is mounted imperatively and destroyed on unmount** —
-[`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). Verified live in the published app on
-2026-09-23: TipTap 2 mounts inside the PCF, `.ProseMirror` is `contenteditable`, and typed text
-round-trips. Two things measured while wiring it:
-
-- **`@tiptap/extension-link` costs 17 KiB gzipped** (it pulls `linkifyjs`), and `autolink: false`
-  saves nothing — linkifyjs is imported at module scope, so it bundles regardless of config. Link
-  is kept because a dead URL in a support reply looks broken to the customer, but it is half the
-  size of the whole reading slice and is the first thing to drop if size becomes a gate.
-- Production bundle is now **145 KiB gzipped** against the reading slice's 33 KiB.
-- Declare `<external-service-usage>` in the manifest **only** if calling external services. Our
-  Dataverse-only scope should not need it — adding it makes the component premium.
-- Quoted-history splitting (R4/R12) is a **client-side heuristic**, not an API: `blockquote`,
-  `div#divRplyFwdMsg`, `gmail_quote`, `-----Original Message-----`, and localised `From:/Sent:/To:`
-  header blocks. On compose, control the structure we emit and **never re-serialise an inherited
-  quote** — append to it verbatim.
+  verbatim, token included; only the RE:/FW: prefix is added. **When the subject already carries a
+  token this organisation knows, the platform leaves it and adds none.** Two tokens in one subject
+  are legitimate — mail that passed through **another Dynamics system** carries that system's token
+  as well as ours (product owner, 2026-09-29). `stripTrackingToken` was **deleted**; do not
+  reintroduce stripping anywhere a subject is written. `normaliseSubject` still drops tokens, but
+  only for an in-memory grouping key, and the thread list hides the token on screen only.
+- Quoted-history splitting (R4) is a **client-side heuristic**, not an API: `blockquote`,
+  `div#divRplyFwdMsg`, `gmail_quote`, `-----Original Message-----`, and localised
+  `From:/Sent:/To:` header blocks — for READING, and for building a reply's quote. **Never
+  re-serialise an inherited quote** — append to it verbatim.
 
 ## Working conventions
 

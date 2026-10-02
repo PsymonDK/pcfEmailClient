@@ -138,6 +138,11 @@ describe('buildDraftUpdate', () => {
   it('does not resend statecode, which would fight the platform on a sent mail', () => {
     expect(Object.keys(buildDraftUpdate({ subject: 's', bodyHtml: 'b' }))).not.toContain('statecode');
   });
+
+  it('leaves the body alone when the compose-body form owns it (S16)', () => {
+    // Writing it would overwrite the form's body — Copilot's draft, say — with ours.
+    expect(buildDraftUpdate({ subject: 's', bodyHtml: 'b', omitBody: true })).toEqual({ subject: 's' });
+  });
 });
 
 describe('worthSaving', () => {

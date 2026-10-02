@@ -3,6 +3,14 @@
 Issue [#17](https://github.com/PsymonDK/modeldriven-emailclient/issues/17), spike **S14**
 ([`docs/research/06-spikes.md`](../research/06-spikes.md) → S14). **Status: DECIDED 2026-09-30 — building** (branch `platform-editor`). The decisions below override parts of the recommendation that follows.
 
+> **Update 2026-10-02 — the hosting mechanism changed (S15, S16).** The bare editor hosted through
+> `context.factory` never loads Draft with Copilot: the editor enables it only on an *email* host,
+> and ours is the Case (S15). Compose now shows the draft's **own email form** inside the control
+> — our "compose body" form, through the platform's form component — so the same editor runs on a
+> genuine email form, with Copilot drafting, Translate and our config. The decisions below still
+> stand (no kill switch, full toolbar, editable config, the standard form as the fallback); the
+> form now owns the body. Detail: CLAUDE.md *The compose body*, and `06-spikes.md` S15/S16.
+
 ## Decisions — 2026-09-30 (product owner)
 
 1. **Go.** Host the platform editor in compose.

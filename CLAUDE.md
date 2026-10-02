@@ -620,7 +620,9 @@ Rules that follow, each from a measurement:
   Writing the body ourselves overwrote Copilot's draft. So the row is **created when compose
   opens** (with the starting body — signature or resumed text, plus the quote), "anything to keep
   or send?" is **`hasChanges()` — has the body changed since the form loaded it**, and an untouched
-  new reply's row is discarded on close.
+  new reply's row is discarded on close. **A compose torn down without being closed** (tab or page gone, session
+  switch) **keeps its row** — a signature-only Draft on the case. Accepted by the product owner
+  2026-10-02: it is a real draft the agent can continue, and a session switch needs it to restore.
 - **Copilot's *Keep it* inserts at the start of the body — on a reply, INSIDE our quote
   container.** So nothing may judge the body by splitting it: R12's split saw no new text and
   disabled Send. The quote lives in the editor now, as on the standard email form.

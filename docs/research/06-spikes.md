@@ -2161,3 +2161,38 @@ This makes the context question disappear rather than solving it: **compose that
 - **Send**: real send to the approved address only — accepted, Pending Send → **Sent**; subject token unchanged; sent body = Copilot draft + agent edit + quote. Nothing wrote to the row after Send.
 
 **Open for a product build:** the editable keeps the config's fixed 100 px height inside the form (needs the same fit-to-host as the bare editor, reaching one level deeper); the form's own "unsaved changes" handlers vs. ours on navigation; the form must ship in the solution (and be available to the CSW app) with the hidden-field layout; and the reply's quote now lives in the editor (R12's split no longer governs the body — the form's editor owns it, as on the standard form).
+
+---
+
+### S17 — bundled editor: TinyMCE 8 vs CKEditor 5 — *(2026-11-17)*
+
+**Why.** The standard Rich Text Editor is a poor experience and mounting the email form inside the PCF (S16) is heavy. Question: can we ship our own HTML-storing editor, and at what cost? TipTap 2 was rejected earlier (S14) for dropping tables, fonts, colours and alignment, so fidelity is the gate, with bundle size second.
+
+**Method.** (1) Real PCF production build (`pcf-scripts build --buildMode production`, gzip -9) with a probe that mounts each editor and round-trips HTML. (2) A throwaway browser harness (esbuild, localhost, built-in browser) running one Outlook-style fixture through `setContent`/`getContent` (TinyMCE) and `initialData`/`getData` (CKEditor) and counting structures. Probe, harness and installs removed afterwards.
+
+**Bundle, gzipped.** Baseline today (v1.43.1 production): **64,125 B** (the 32.8 KiB figure above predates compose etc.).
+
+| | Bundle | Delta over baseline | CSS | Builds on stock pcf-scripts |
+|---|---:|---:|---:|---|
+| TinyMCE 8.10.2 (lists, link, table, image, autoresize; skin as JS) | 512,624 | **+448 KiB** | in the JS | yes (needs `@ts-expect-error` on untyped `skins/*.js` imports) |
+| CKEditor 5 49.1.0 (essentials, lists, link, table, image, paste-from-office, GHS, fonts, alignment) | 336,273 | **+266 KiB** | +39 KiB (`ckeditor5.css`; the build has no CSS import path, needs a manifest `<css>` resource or injection) | yes, types resolve |
+
+For scale: TipTap 2 was +88 KiB. Either choice is 3-5x that, and 4-7x the entire control.
+
+**Fidelity (one fixture: nested table with bgcolor/align, `MsoNormal`, mso conditional comment, styled link-button, `cid:` image, `#divRplyFwdMsg`, styled blockquote).**
+
+| | TinyMCE (`extended_valid_elements: *[*]`) | CKEditor + General HTML Support | CKEditor default schema |
+|---|---|---|---|
+| table / td / ul / li / img / cid img / blockquote / `#divRplyFwdMsg` / hr / `MsoNormal` | all kept | all kept | `#divRplyFwdMsg`, hr, `MsoNormal` **lost** |
+| `style` attributes | 11 of 11 | 13 (align/bgcolor rewritten to styles) | 6 of 11 |
+| `bgcolor` / `align` attributes | kept | **rewritten**, attributes gone | gone |
+| styled link-button, `font-family` x3 | kept | kept | **lost** |
+| mso conditional comment | dropped | dropped | dropped |
+
+So TinyMCE round-trips the fixture essentially verbatim (only the Office comment goes). CKEditor with GHS keeps structure but normalises legacy attributes, which email clients like Outlook rely on; with its default schema it fails the way TipTap did, which is why GHS is mandatory there.
+
+**Not measured:** dark theme and N7 (TinyMCE classic is an iframe, CKEditor is in-DOM), behaviour inside CSW and with `setControlState`, paste from real Word/Outlook, R12's quote round-trip, memory per compose, and mobile. TinyMCE's licence is GPL-2.0-or-later or commercial (`license_key`); CKEditor 5 is likewise GPL or commercial. **Shipping inside a closed-source product probably needs a commercial licence for whichever is chosen: a procurement item.**
+
+**Reading.** Fidelity favours TinyMCE; size favours CKEditor 5 (by ~180 KiB gz). Neither is small. Lazy-loading the editor chunk is not possible with one stock-PCF bundle file, so the cost lands on every load of the control, whether or not the agent composes. That cost is the main argument against a bundled editor, and should be weighed against S16's form-based approach before committing.
+
+**Decision (2026-11-17, product owner): keep the S16 form-based compose body.** A bundled editor costs +266 KiB (CKEditor 5) to +448 KiB (TinyMCE) gzipped on every load of the control, against a 64 KiB control, and gives up Draft with Copilot and Translate. TinyMCE is the fidelity winner and CKEditor 5 the size winner if this is ever revisited; reopen only with a measured performance problem in the form route, or a licence/commercial reason to leave it.

@@ -601,7 +601,8 @@ written up in [`06-spikes.md`](docs/research/06-spikes.md):
 - **S10/S14 — the bare Dynamics editor through `context.factory` works** once given a `configUrl`
   and `isReadOnly: false` (S10 called it unusable; S10 lacked those two props). It shipped briefly
   (1.33–1.38) and replaced TipTap, which dropped template and Outlook formatting. **TipTap is
-  gone** — do not reintroduce a bundled editor.
+  gone** — do not reintroduce a bundled editor. S17 (2026-11-17) measured TinyMCE 8 (+448 KiB gz)
+  and CKEditor 5 (+266 KiB gz) and the product owner kept the form route; see `06-spikes.md`.
 - **S15 — but it never gets Draft with Copilot**: the editor loads that plugin only when
   `parentEntity.typeName === "email"`, read from the host page — ours is the Case. A config file
   cannot change that; the Copilot / Translate / Adjust buttons ignore the config entirely.

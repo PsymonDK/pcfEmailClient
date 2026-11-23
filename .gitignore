@@ -62,3 +62,4 @@ docs/design/artboards/case-email-client-*.html
 # Deploy/seed state written by the scripts (environment ids) - never commit
 scripts/deploy/*-ids.json
 scripts/seed/seeded-ids.json
+*.local.md

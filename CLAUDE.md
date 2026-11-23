@@ -17,10 +17,9 @@ performance (N5).
 
 The control (unmanaged solution `JHRBCaseEmailClient`) is in the demo environment on a dedicated
 `Case - Email Client` form, verified in the published app. Design is signed off — see
-[`docs/design/`](docs/design/01-design-decisions.md). **The compose body is the draft's own email
-form, rendered inside compose** (S16, 2026-10-02) — the Dynamics editor running on a genuine email
-form, so agents get Draft with Copilot, Translate and the full toolbar. See *The compose body*
-below.
+[`docs/design/`](docs/design/01-design-decisions.md). **The compose body is TinyMCE, bundled with
+the control** (S17, 2026-11-23) and the project is **open source (GPL-2.0-or-later)** because of it.
+See *The compose body* below.
 
 **No research gate remains open.** The architecture is spike-validated on both target placements —
 S1 (Case form tab) and S11 (session tab, via an `Entity record` app tab template) both confirmed
@@ -31,7 +30,7 @@ depth formula are all verified on a real conversation.
 
 `pcf/` is now the **product**, not a spike: `domain/` holds the tested pure logic (threading, quote
 splitting, sanitising), `data/` everything that talks to Dataverse, `host/` the platform-shaped
-helpers — **753 tests**, lint and typecheck clean.
+helpers — **749 tests**, lint and typecheck clean.
 
 **Search cannot see message bodies, and the UI must keep saying so.** Bodies are absent from the
 list query (blob storage, N5) and `$filter` on `description` is unsupported anyway — body search is
@@ -58,10 +57,12 @@ existed, and child rows would have made it six. Two rules that follow:
   in the array but carry no row element, so index-based lookup pointed at the wrong element for
   every row after the first header.
 
-**`dotnet build -c Debug` ships a DEVELOPMENT bundle** — eval devtool, unminified, ~102 KiB
-gzipped against the production build's **32.8 KiB**. That is what every deploy to the demo
-environment has carried, which is fine for a dev environment but means any size or performance
-claim must come from `pcf-scripts build --buildMode production`, not from what is deployed.
+**`dotnet build -c Debug` ships a DEVELOPMENT bundle** — eval devtool, unminified. That is what
+every deploy to the demo environment has carried, which is fine for a dev environment but means any
+size or performance claim must come from `pcf-scripts build --buildMode production`, not from what
+is deployed. **Production is 510,677 B gzipped (1.44.0)** — about 64 KB of control plus ~446 KB of
+TinyMCE (S17). That size is a known, accepted cost: a stock PCF is one bundle file, so it cannot be
+lazy-loaded.
 
 **`dotnet build -c Debug` does not reliably rebuild the PCF bundle.** It will package the previous
 version and report success — the first issue-#4 deploy shipped nothing that way. Use
@@ -177,6 +178,12 @@ wholesale:
 
 ## Local environment
 
+**The source and the dev environment disagree until [`docs/deploy/prefix-migration.md`](docs/deploy/prefix-migration.md)
+has been run.** On 2026-11-23 every `jhrb_` identifier was renamed to `jhrb_` (publisher, solution
+`JHRBCaseEmailClient`, control `jhrb_JHRB.CaseEmailClient`, both tables, web resources, role). The
+environment still holds the `jhrb_` objects; Dataverse cannot rename them, so they are replaced, not
+renamed. Do not import or script against the environment as if it had the new names.
+
 Verified present as of 2026-09-09:
 
 | Tool | Version |
@@ -186,9 +193,9 @@ Verified present as of 2026-09-09:
 | npm | 11.6.2 |
 | git | 2.53.0 |
 
-**`pac` is authenticated.** Active profile `[3]`: **the demo environment** —
-`https://your-org.crm4.dynamics.com/`. Profile `[2]` is a different environment
-(another environment) — **do not target it**.
+**Use one dev environment and name it.** The maintainer's was a demo environment
+(`https://your-org.crm4.dynamics.com/`, pac profile `[3]`); any other profile is a different
+environment — **do not target it**.
 
 Always confirm the active profile before any environment-touching command:
 
@@ -203,7 +210,7 @@ pac auth list
   removes or overwrites solution components in a shared environment.
 - Prefer `pac pcf push` into an **unmanaged dev solution**; never push straight at anything managed.
 - **The scripts do not use the pac profile.** Every script under `scripts/` goes through
-  `scripts/lib/dv.mjs`, which refuses to run unless `DV_ORG` resolves to the demo org, takes its
+  `scripts/lib/dv.mjs`, which refuses to run unless `DV_ORG` equals `DV_ALLOWED_ORG`, takes its
   token from `DV_TOKEN` or `az account get-access-token` (there is no `.tok` file any more), is
   dry-run unless `--confirm`, and refuses any test-send recipient but the approved address. So
   `pac auth list` confirms nothing for a script — check `az account show` too.
@@ -244,13 +251,14 @@ unzip -p solution/bin/Release/solution.zip solution.xml | grep -o '<Managed>[01]
 `<Managed>0</Managed>` = unmanaged. Deleting an **unmanaged** solution removes only the container —
 its components stay in the environment and must be deleted explicitly (see
 [`scripts/seed/revert-s1.mjs`](scripts/seed/revert-s1.mjs)).
-- This is a shared demo environment. Assume other people's work is in it. Do not publish
+- Treat the dev environment as shared. Assume other people's work is in it. Do not publish
   customisations app-wide, do not change System Settings (including
   `Organization.MaxUploadFileSize`) without asking, and do not send test email to real addresses
-  — **with one approved exception: `simon.jehrbo@example.com`.** Test sends may go there, and only
-  there, and **you must say so before sending, not after**. Granted 2026-09-25 so R17 can be
-  verified against a real delivery instead of a 200 that means nothing. Every other address in
-  this shared demo environment belongs to someone who did not agree to receive test mail.
+  — **with one exception: the address in `DV_APPROVED_RECIPIENT`**, whose owner agreed to receive
+  test mail so R17 can be verified against a real delivery instead of a 200 that means nothing.
+  Test sends may go there, and only there, and **you must say so before sending, not after**.
+  Every other address in a shared environment belongs to someone who did not agree to receive
+  test mail.
 - Confirm before sending any email from the environment — `SendEmail` with `IssueSend: true` sends for
   real. Use `IssueSend: false` for logging-only tests and be explicit about which you are using.
 
@@ -589,78 +597,62 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
 - **Declare `<external-service-usage>` in the manifest only if calling external services.** Our
   Dataverse-only scope does not need it — adding it makes the component premium.
 
-## The compose body — the draft's own email form (S14 → S15 → S16)
+## The compose body — TinyMCE, bundled (S14 → S16 → S17)
 
-**Decided 2026-10-02.** The body of compose is the draft row shown on our **"Case Email Client -
-compose body"** email form (`systemform` `6a39076b-85bd-f111-aaad-000d3ab16615`, shipped in the
-solution), mounted inside compose through the platform's **form component** —
-[`host/emailForm.ts`](pcf/CaseEmailClient/host/emailForm.ts),
-[`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx). How we got here, each step measured live and
-written up in [`06-spikes.md`](docs/research/06-spikes.md):
+**Decided 2026-11-23.** The body of compose is a TinyMCE 8 editor bundled with the control —
+[`host/richText.ts`](pcf/CaseEmailClient/host/richText.ts) is the only file that knows TinyMCE;
+[`ui/Editor.tsx`](pcf/CaseEmailClient/ui/Editor.tsx) sees a small `RichTextInstance`, which tests
+replace with `ui/__tests__/fakeRichText.ts` (jsdom cannot run TinyMCE). History, each step measured
+and written up in [`06-spikes.md`](docs/research/06-spikes.md):
 
-- **S10/S14 — the bare Dynamics editor through `context.factory` works** once given a `configUrl`
-  and `isReadOnly: false` (S10 called it unusable; S10 lacked those two props). It shipped briefly
-  (1.33–1.38) and replaced TipTap, which dropped template and Outlook formatting. **TipTap is
-  gone** — do not reintroduce a bundled editor. S17 (2026-11-17) measured TinyMCE 8 (+448 KiB gz)
-  and CKEditor 5 (+266 KiB gz) and the product owner kept the form route; see `06-spikes.md`.
-- **S15 — but it never gets Draft with Copilot**: the editor loads that plugin only when
-  `parentEntity.typeName === "email"`, read from the host page — ours is the Case. A config file
-  cannot change that; the Copilot / Translate / Adjust buttons ignore the config entirely.
-- **S16 — on a genuine email form it does.** `MscrmControls.ModelForm.ModelFormControl` (the
-  documented *form component control*) is a 5.6 KB shim over `window._getModelFormComponent()`:
-  `new FormComponent(container, formId, 'email', recordId).render(options, events)`, plus `save()`
-  and `dispose()`. Undocumented, like the factory members it replaced — confined to
-  `host/emailForm.ts`.
+- **TipTap (S13)** dropped tables, fonts, colours, alignment and images from templates and Outlook
+  mail. Gone — do not reintroduce a schema-based editor.
+- **The platform's editor (S10/S14/S16)** — the bare editor, then the draft's own email form through
+  the form component — gave Draft with Copilot and Translate, but was a poor editing experience and
+  slow to load. **Removed in 1.44.0**; `host/emailForm.ts` and the `OpenEmailInfo` hack are gone.
+  Draft with Copilot (R19) and Translate went with them.
+- **S17** measured TinyMCE 8 against CKEditor 5: TinyMCE round-trips mail HTML essentially verbatim
+  (tables, `bgcolor`/`align`, fonts, `cid:` images, `MsoNormal`); CKEditor 5 needs General HTML
+  Support and still rewrites legacy attributes. Chosen: **TinyMCE**.
 
-Rules that follow, each from a measurement:
+**Licence — the reason this repository is open source.** TinyMCE 8 is GPL-2.0-or-later or
+commercial. The control bundles it into one `bundle.js`, so distributing the control to a customer
+distributes a combined work: GPL obligations (source for every recipient) apply. The decision
+(product owner, 2026-11-23) is to publish this project as open source rather than buy a commercial
+licence. **Keep it GPL-compatible**: do not add a dependency whose licence is not (MIT/BSD/Apache-2.0
+are fine; proprietary and GPL-incompatible are not), and the project needs a `LICENSE` (GPL-2.0-or-later)
+before anything is delivered. `license_key: 'gpl'` in `richText.ts` is the self-hosted GPL
+declaration; switching to a commercial key is the way back out. Not legal advice — confirm with legal counsel.
 
-- **The form takes the BARE form GUID.** The `<QuickFormIds>` XML the form editor writes is the
-  quick-view format and parsed to no form at all.
-- **The form owns the body.** It loads the saved row and saves it (`EditorHandle.save()`); once
-  the row exists our own saves write **subject and recipients only** (`DraftArgs.omitBody`).
-  Writing the body ourselves overwrote Copilot's draft. So the row is **created when compose
-  opens** (with the starting body — signature or resumed text, plus the quote), "anything to keep
-  or send?" is **`hasChanges()` — has the body changed since the form loaded it**, and an untouched
-  new reply's row is discarded on close. **A compose torn down without being closed** (tab or page gone, session
-  switch) **keeps its row** — a signature-only Draft on the case. Accepted by the product owner
-  2026-10-02: it is a real draft the agent can continue, and a session switch needs it to restore.
-- **Copilot's *Keep it* inserts at the start of the body — on a reply, INSIDE our quote
-  container.** So nothing may judge the body by splitting it: R12's split saw no new text and
-  disabled Send. The quote lives in the editor now, as on the standard email form.
-- **`dispose()` does not save** — closing compose lost Copilot's text. `disposeEmailForm` saves
-  first if the body changed since its last save; never after Send (`save()` resets that baseline).
-- **The form saves the body only when LEAVING compose** — close, Send, *Open in the email form*,
-  and a teardown (`disposeEmailForm`). Not on the autosave: the form's `save()` puts a modal
-  "Saving…" over the editor, and on the 2-second timer it landed mid-sentence — even for a subject
-  edit (measured 2026-10-02, 1.42.0). Leaving is when a Dataverse form saves (product owner,
-  2026-10-02). The autosave still writes subject and recipients, and "Saved" on the Send row
-  keeps the time of the last save that covered the body (`hasUnsavedChanges`). Trade-off: a
-  browser crash loses the body typed since compose opened.
-- **The form rebuilds its editor after loading** (Copilot's initializer re-creates it): follow the
-  current `ckeditorInstance`, or a listener on the first one hears nothing.
-- **Copilot needs the Regarding.** `overrideXrmPageByFormContext` does not repoint the global
-  `Xrm.Page` the editor reads; its own fallback `window.OpenEmailInfo` does. Set before render with
-  the draft's real Regarding/To/subject, removed on dispose (product owner, 2026-10-01). Without
-  it the Copilot draft came back generic; with it, case-specific.
-- **The form**: only Description visible; From/To/Cc/Bcc/Subject/Regarding on it **hidden** (form
-  scripts and Copilot read them); Description's `configUrl` = **our**
-  `jhrb_/CaseEmailClient/EmailRTEconfig.js` (Microsoft's email config, full toolbar,
-  `IsCustomizable` so admins can edit it after a managed install). Another team's
-  `team_onLoadEmail` (`team.setQueueAsEmailSender`) is deliberately **not** on it.
-- **~58px above the editor toolbar is Microsoft's**: the form tab's 16px padding, 10px on the
-  field, and a 32px row holding only the editor's **Full screen** button — drawn even though our
-  config sets `showFullScreenExpander: false` (measured 2026-10-02). Not ours to hide; compose
-  gave back its own actions row instead (attach and Template sit on the subject row, 1.43.0).
-- **No second editor.** If the form component is missing or the editor never becomes editable,
-  compose says so and offers **Open in the email form** (saves the draft, hands it over).
-  **"Never becomes editable" is measured in VISIBLE time** (`READY_TIMEOUT_MS`): in a background
-  tab the browser throttles the form and it does not finish loading — measured 2026-10-02, a
-  draft continued with the tab hidden fell back after 20s, and loaded in 1.8s in front.
-- **Don't patch Microsoft's editor.** Its list markup (`list-style-position: inside` + `<li><p>`)
-  renders bullets on their own line in Outlook on the web; the standard form does the same. Report
-  such things; do not post-process them (product owner, 2026-10-01).
-- **Pasted images** go out as inline `data:` images (no attachment row). They arrived intact in
-  Outlook on the web (2026-10-01); other clients may block them.
+Rules that follow:
+
+- **The editor holds the WHOLE body — the agent's text AND the quote** — and every draft save writes
+  exactly that (`draftArgsFrom` takes the whole body; it no longer concatenates a quote). The row
+  is still created when compose opens, and the editor opens FROM the row (`fetchDraftBody`), so a
+  compose restored after a teardown shows what was saved.
+- **"Anything worth keeping?" splits the body** (`splitQuotedHistory`) and asks `worthSaving` of the
+  new text only, because the quote is always there. That works again now that nothing writes inside
+  the quote container for us (Copilot's *Keep it* was the reason it did not under S16).
+- **Skin and content CSS are bundled as modules** (`tinymce/skins/.../skin.js`, `content.js`
+  register themselves with TinyMCE on import) — a PCF has nowhere to serve static files from. No
+  `skin: false`, no `base_url`. Plugins are imported one by one; add a plugin by importing it AND
+  naming it in `plugins`.
+- **TinyMCE's classic mode is an iframe** with the default (light) skin; the editor does not follow
+  CSW dark theme. A sender's HTML stays on white anyway (`BODY_SURFACE`). Known gap, not a regression
+  to chase without a measurement in dark.
+- **`setHTML` is silent, typing is not.** Our own writes (signature reseed, template "Replace" without
+  `asEdit`) must not look like the agent editing (M15), so `richText.ts` wraps them in a `silent`
+  flag — including the `undoManager.add()` that follows, which fires its own event.
+- **Pasted images** go out as inline `data:` images (no attachment row), as before.
+- **Don't patch the editor's output** beyond what mail needs: `extended_valid_elements: '*[*]'` lets
+  mail attributes through, and TinyMCE's own sanitiser still removes scripts and handlers.
+- **No second editor.** If TinyMCE cannot start (or `READY_TIMEOUT_MS` passes), compose says so and
+  offers **Open in the email form** (saves the draft, hands it over).
+- **Not yet cleaned up:** the "Case Email Client - compose body" form
+  (`6a39076b-85bd-f111-aaad-000d3ab16615`) and `jhrb_/CaseEmailClient/EmailRTEconfig.js` are still in
+  the solution and now unused. Removing them from `solution/` needs the `Dependent` entries in
+  `Solution.xml` and `Entity.xml`'s `<FormXml />` handled, and — the solution being unmanaged —
+  explicit deletion in each environment. Tracked as a follow-up.
 
 **R12's invariant still governs the body WE build — the first save:**
 

@@ -213,6 +213,13 @@ export async function fetchDraftById(
   }
 }
 
+/** The saved body of a draft row — what the editor opens with. Rejects when it cannot be read. */
+export async function fetchDraftBody(webApi: DraftApiLike, emailId: string): Promise<string> {
+  assertGuid(emailId, 'emailId');
+  const row = await webApi.retrieveRecord('email', bare(emailId), '?$select=activityid,description');
+  return typeof row.description === 'string' ? row.description : '';
+}
+
 /**
  * Discard a draft the agent abandoned.
  *

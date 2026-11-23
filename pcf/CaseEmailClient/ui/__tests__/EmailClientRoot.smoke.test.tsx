@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import { act } from 'react-dom/test-utils';
 import { EmailClientRoot, type RestorableState } from '../EmailClientRoot';
 import type { DraftApiLike } from '../../data/draft';
-import { installFakeFormComponent, type FakeFormComponent } from './fakeFormComponent';
+import { fakeRichText, type FakeRichText } from './fakeRichText';
 
 /**
  * The shell, rendered for real against a fake Dataverse — the first test that imports
@@ -130,6 +130,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
           '_customerid_value@OData.Community.Display.V1.FormattedValue': 'Simon Jehrbo',
         });
       }
+      if (entity === 'email' && id === CREATED_ID) return Promise.resolve({ activityid: id, description: bodyOf(id) });
       if (entity === 'email') return Promise.resolve({ activityid: IN, description: '<p>Hej Care</p>' });
       if (entity === 'organization') return Promise.resolve({ maxuploadfilesize: 5242880 });
       return Promise.resolve({});
@@ -181,19 +182,31 @@ function bodyOf(id: string): string {
   return '';
 }
 
-/** The compose body's form, faked — installed for every test; a test may swap it. */
-let form: FakeFormComponent;
-beforeEach(() => { form = installFakeFormComponent({ bodyFor: bodyOf }); });
+/** TinyMCE, faked — jsdom cannot run it. The module is replaced for every test in this file. */
+vi.mock('../../host/richText', () => import('./fakeRichText'));
+beforeEach(() => { fakeRichText.reset(); });
+/** The fake editor inside `root`. */
+const rtIn = (root: ParentNode): FakeRichText => (root.querySelector('.rt-editable') as unknown as { rt: FakeRichText }).rt;
 
 let host: HTMLDivElement | undefined;
-afterEach(() => {
-  form.uninstall();
+afterEach(async () => {
+  // Unmounting saves what the debounce still held (M11) — asynchronously. Let that land in THIS
+  // test's arrays: the editor opens from the row, so a stray write arriving in the next test
+  // would be read back as that row's body.
+  if (host) {
+    const h = host;
+    await act(async () => {
+      ReactDOM.unmountComponentAtNode(h);
+      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    });
+    h.remove();
+    host = undefined;
+  }
   readStateRows = [];
   deleted = [];
   updates = [];
   creates = [];
   draftBody = DRAFT_BODY;
-  if (host) { ReactDOM.unmountComponentAtNode(host); host.remove(); host = undefined; }
 });
 
 /**
@@ -253,7 +266,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       compose: { mode: 'reply', activityId: SENT, emailId: DRAFT },
     });
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
-    expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('M11 sessionsskift test');
+    expect(r.host.querySelector('.rt-editable')?.textContent).toContain('M11 sessionsskift test');
     expect(r.stateCalls()).toBeLessThan(60);
   });
 
@@ -277,7 +290,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
     expect(r.host.querySelector('[role=region][aria-label*="compose"]')).not.toBeNull();
-    expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('M11 sessionsskift test');
+    expect(r.host.querySelector('.rt-editable')?.textContent).toContain('M11 sessionsskift test');
     // The row IS saved — "Not saved yet" on a resumed draft read as if the work were not on the
     // case (1.43.0). It shows when the row was last written (modifiedon 2026-09-28).
     const region = r.host.querySelector('[role=region][aria-label*="compose"]')!;
@@ -372,8 +385,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
 
       // An edit, so closing saves — and that save rewrites every party.
       await act(async () => {
-        const e = (r.host.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { model: { insertContent(h: string): void } } }).ckeditorInstance;
-        e.model.insertContent('<p>Tilføjet</p>');
+        rtIn(r.host).type('<p>Tilføjet</p>');
         for (let i = 0; i < 3; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
       await act(async () => {
@@ -422,9 +434,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
 
       // Write something and close: the draft is created with the customer, and links to NOTHING.
       await act(async () => {
-        const editable = region.querySelector<HTMLElement>('.ck-editor__editable')!;
-        (editable as unknown as { ckeditorInstance: { model: { insertContent(html: string): void } } })
-          .ckeditorInstance.model.insertContent('<p>Hej Simon</p>');
+        rtIn(region).type('<p>Hej Simon</p>');
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
       expect(send().disabled).toBe(false);
@@ -466,12 +476,10 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       const created = creates.find((c) => c.entity === 'email')!;
       expect(created).toBeDefined();
       expect(created.data).not.toHaveProperty('parentactivityid@odata.bind');
-      // The subject arrives with our save, which never writes the body — that is the form's,
-      // and it was saved through the form.
+      // Our own save writes the subject AND the body.
       const subjectSave = [...updates].reverse().find((u) => u.id === CREATED_ID && 'subject' in u.data);
       expect(subjectSave?.data.subject).toBe('Opfølgning på din sag');
-      expect(subjectSave?.data).not.toHaveProperty('description');
-      expect(form.saves[form.saves.length - 1]).toContain('Hej Simon');
+      expect(String(subjectSave?.data.description)).toContain('Hej Simon');
       expect(r.host.textContent).not.toContain('No email on this case yet');
       expect(r.host.textContent).toContain('Opfølgning på din sag');
       expect(created.data.email_activity_parties).toContainEqual(expect.objectContaining({
@@ -501,44 +509,33 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
-  it('the autosave never saves the FORM — its modal "Saving…" covered the agent mid-sentence; the body is saved on close (2026-10-02)', async () => {
+  it('the autosave writes the BODY along with subject and recipients', async () => {
     const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
     const region = r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!;
-    const updatesBefore = updates.filter((u) => u.id === CREATED_ID).length;
     await act(async () => {
-      const e = (region.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { setData(h: string): void; getData(): string } }).ckeditorInstance;
-      e.setData('<p>Tak for din mail.</p>' + e.getData());
+      rtIn(region).type('<p>Tak for din mail.</p>');
       // Past the 2-second autosave.
       await new Promise<void>((resolve) => { setTimeout(resolve, 2300); });
       for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
-    // The autosave ran (our own save of subject and recipients) — and left the form alone.
-    expect(updates.filter((u) => u.id === CREATED_ID).length).toBeGreaterThan(updatesBefore);
-    expect(form.saves).toHaveLength(0);
-
-    await act(async () => {
-      region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
-      for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
-    });
-    expect(form.saves).toHaveLength(1);
-    expect(form.saves[0]).toContain('Tak for din mail.');
+    // The autosave wrote the body — text, and the quote still in place exactly once.
+    const written = [...updates].reverse().find((u) => u.id === CREATED_ID && typeof u.data.description === 'string');
+    expect(String(written?.data.description)).toContain('Tak for din mail.');
+    expect(String(written?.data.description).match(/divRplyFwdMsg/g)).toHaveLength(1);
   }, 10000);
 
-  it('the body is the form of the draft row: text added INSIDE the quote still counts, and is saved through the form (S16)', async () => {
+  it('the editor opens with the saved row, quote included, and what the agent writes is saved with the quote intact', async () => {
     const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
-    // The row was created on open, with the starting body, and the form shows THAT row.
+    // The row was created on open, with the starting body, and the editor opens with THAT row.
     const created = creates.find((c) => c.entity === 'email')!;
     expect(String(created.data.description)).toContain('divRplyFwdMsg');
-    expect(form.records).toContain(CREATED_ID);
+    expect(fakeRichText.openedWith[0]).toBe(String(created.data.description));
     const region = r.host.querySelector<HTMLElement>('[role=region][aria-label*="compose"]')!;
     const send = () => Array.from(region.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Send')!;
     expect(send().disabled).toBe(true);
 
-    // What Copilot's *Keep it* does (measured): its draft lands at the start of the body, INSIDE
-    // our quote container. Splitting the body would see no new text; the form's body changed.
     await act(async () => {
-      const e = (region.querySelector('.ck-editor__editable') as unknown as { ckeditorInstance: { setData(h: string): void; getData(): string } }).ckeditorInstance;
-      e.setData(e.getData().replace('<div id="divRplyFwdMsg">', '<div id="divRplyFwdMsg"><p>Kære kunde, tak for din henvendelse.</p>'));
+      rtIn(region).type('<p>Kære kunde, tak for din henvendelse.</p>');
       for (let i = 0; i < 3; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
     expect(send().disabled).toBe(false);
@@ -548,25 +545,20 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
       region.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
       for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
-    // Kept, not discarded — and the body went through the form, never through our own update.
+    // Kept, not discarded — and the written body carries the new text and ONE quote.
     expect(deleted.length).toBe(deletedBefore);
-    expect(form.saves[form.saves.length - 1]).toContain('Kære kunde');
-    expect(updates.filter((u) => u.id === CREATED_ID).some((u) => 'description' in u.data)).toBe(false);
+    const written = [...updates].reverse().find((u) => u.id === CREATED_ID && typeof u.data.description === 'string');
+    expect(String(written?.data.description)).toContain('Kære kunde');
+    expect(String(written?.data.description).match(/divRplyFwdMsg/g)).toHaveLength(1);
   });
 
-  it('an untouched new reply leaves no row behind, and OpenEmailInfo carries the case only while compose is open', async () => {
+  it('an untouched new reply leaves no row behind', async () => {
     const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
-    const info = (window as unknown as { OpenEmailInfo?: { formContext: { getAttribute(n: string): { getValue(): { id: string; entityType: string }[] } | null } } }).OpenEmailInfo;
-    // The editor's Copilot reads the Regarding from here (S16): the case, braced and upper-cased.
-    expect(info?.formContext.getAttribute('regardingobjectid')?.getValue()[0]).toMatchObject({
-      id: `{${CASE.toUpperCase()}}`, entityType: 'incident',
-    });
     await act(async () => {
       r.host.querySelector<HTMLButtonElement>('button[aria-label="Close compose"]')!.click();
       for (let i = 0; i < 10; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
     });
     expect(deleted).toContain(`email:${CREATED_ID}`);
-    expect((window as unknown as { OpenEmailInfo?: unknown }).OpenEmailInfo).toBeUndefined();
   });
 
   it('a body shown before its row changed is fetched again on reload — the cache must not outlive the row (2026-10-02)', async () => {
@@ -591,7 +583,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
-  it('a NEW email gets no signature from us — the platform form adds its own; a reply still gets ours (2026-10-02)', async () => {
+  it('a NEW email and a reply both start with the signature (TinyMCE adds none of its own)', async () => {
     signatureRows.push({
       emailsignatureid: 'b0b0b0b0-0000-4000-8000-000000000002', title: 'Care', isdefault: true,
       body: '<?xml version="1.0" ?><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">'
@@ -599,16 +591,13 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
         + '<![CDATA[<div><p style="margin: 0;">Venlig hilsen</p></div>]]></xsl:template></xsl:stylesheet>',
     });
     try {
-      // Measured: the email form inserts the sender's signature into a new email (no parent) on
-      // load, so seeding ours as well put it in twice.
       const fresh = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'new', activityId: '' } });
       const created = creates.find((c) => c.entity === 'email')!;
       expect(created).toBeDefined();
-      expect(String(created.data.description)).not.toContain('Venlig hilsen');
+      expect(String(created.data.description)).toContain('Venlig hilsen');
       ReactDOM.unmountComponentAtNode(fresh.host);
       creates = [];
 
-      // A reply has a parent: the form adds none, so the starting body carries ours.
       await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
       const reply = creates.find((c) => c.entity === 'email')!;
       expect(String(reply.data.description)).toContain('Venlig hilsen');
@@ -664,7 +653,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
         for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
       });
 
-      expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('Dear customer');
+      expect(r.host.querySelector('.rt-editable')?.textContent).toContain('Dear customer');
       expect(region()).toContain('Inserted "Case Escalation"');
       expect(region()).toContain('FW: RE: Test: kodegennemgang CRM:0100017');
       expect(region()).not.toContain('Your case has been escalated');
@@ -681,7 +670,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     };
     try {
       const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
-      const editorText = () => r.host.querySelector('.ck-editor__editable')?.textContent ?? '';
+      const editorText = () => r.host.querySelector('.rt-editable')?.textContent ?? '';
       const before = editorText();
       const insert = async () => {
         await act(async () => {
@@ -733,7 +722,7 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
           + '</xsl:template></xsl:stylesheet>',
       });
       const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'reply', activityId: IN } });
-      expect(r.host.querySelector('.ck-editor__editable')?.textContent).toContain('Venlig hilsen');
+      expect(r.host.querySelector('.rt-editable')?.textContent).toContain('Venlig hilsen');
       // A reply with no draft behind it: the editor holds only the signature, so Send starts off.
       const send = () => Array.from(r.host.querySelectorAll<HTMLButtonElement>('button')).find((b) => b.textContent === 'Send')!;
       expect(send().disabled).toBe(true);
@@ -786,18 +775,17 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     }
   });
 
-  it('when the compose body form cannot load, compose says so and offers the standard form', async () => {
+  it('when the editor cannot start, compose says so and offers the standard form', async () => {
     const opened: unknown[] = [];
     (window as unknown as { Xrm?: unknown }).Xrm = {
       Navigation: { navigateTo: (page: unknown) => { opened.push(page); return Promise.resolve(); } },
     };
     try {
-      form.uninstall();
-      form = installFakeFormComponent({ bodyFor: bodyOf, failRender: true });
+      fakeRichText.fail = true;
       const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
       const alert = Array.from(r.host.querySelectorAll('[role=alert]')).find((a) => a.textContent?.includes("couldn't load"));
       expect(alert?.textContent).toContain('open it in the email form');
-      expect(r.host.querySelector('.ck-editor__editable')).toBeNull();
+      expect(r.host.querySelector('.rt-editable')).toBeNull();
 
       // Hand-off: the draft is saved (forced — nothing typed), compose closes, the form opens on it.
       await act(async () => {
@@ -809,12 +797,6 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     } finally {
       delete (window as unknown as { Xrm?: unknown }).Xrm;
     }
-  });
-
-  it('on a page without the form component there is no editor, only the way out', async () => {
-    form.uninstall();
-    const r = await renderShell({ selectedThreadKey: 'h:-1269871662', compose: { mode: 'forward', activityId: SENT } });
-    expect(Array.from(r.host.querySelectorAll('[role=alert]')).some((a) => a.textContent?.includes("couldn't load"))).toBe(true);
   });
 
   it('type-ahead: typing a name offers the record, and picking it adds a BOUND recipient', async () => {

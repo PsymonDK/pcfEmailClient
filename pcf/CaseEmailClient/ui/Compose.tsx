@@ -9,7 +9,6 @@ import type { PreflightVerdict } from '../domain/preflight';
 import { formatSize, RADIUS, T } from './tokens';
 import { IconButton } from './parts';
 import { Editor, type EditorHandle } from './Editor';
-import type { EmailFormContext } from '../host/emailForm';
 import type { EmailTemplate } from '../data/templates';
 import { TemplatePicker, type TemplateOutcome } from './TemplatePicker';
 import { insertPlacement } from '../domain/templatePicker';
@@ -23,9 +22,9 @@ import { insertPlacement } from '../domain/templatePicker';
  * surface left one line of thread and a few of editor. The editor now fills whatever the fixed
  * rows leave.
  *
- * **The body is the draft's own email form** (`ui/Editor.tsx`, S16): it shows the saved row,
- * quote included, as the standard email form does, and saves it. So the body appears once the
- * row exists — compose creates it on open — and this surface owns everything around it: sender,
+ * **The body is TinyMCE** (`ui/Editor.tsx`, S17): it opens with the saved row, quote included,
+ * and every draft save writes it. So the body appears once the row exists — compose creates it
+ * on open — and this surface owns everything around it: sender,
  * recipients, subject, templates, attachments and Send.
  */
 
@@ -42,8 +41,8 @@ export interface ComposeProps {
   resumed?: boolean;
   /** The draft row the body shows. Absent until compose has created it. */
   bodyEmailId?: string;
-  /** What the body editor's Copilot reads about the email. */
-  bodyContext: EmailFormContext;
+  /** Reads that row's saved body — what the editor opens with. */
+  loadBody: () => Promise<string>;
   onClose: () => void;
   onSubjectChange: (next: string) => void;
   onRemoveRecipient: (field: RecipientField, address: string) => void;
@@ -125,7 +124,7 @@ const barLink: React.CSSProperties = {
 
 export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref) => {
   const {
-    mode, answeringLabel, to, cc, bcc, subject, bodyEmailId, bodyContext,
+    mode, answeringLabel, to, cc, bcc, subject, bodyEmailId, loadBody,
     onClose, onSubjectChange, onRemoveRecipient,
     sender, candidates, senderVerdicts, onSenderChange, signatureStale, onBodyChange,
     onAddRecipients, flagUnresolved, onSearchRecipients, onPickRecipient, onTypedAddress,
@@ -474,11 +473,10 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
 
       {bodyEmailId ? (
         <Editor
-          // One form per draft row: the form shows a ROW, so a new row is a new form.
+          // One editor per draft row: a new row opens with its own body.
           key={bodyEmailId}
           ref={setEditor}
-          emailId={bodyEmailId}
-          context={bodyContext}
+          loadBody={loadBody}
           ariaLabel={`${verb} message body`}
           disabled={sending}
           onChange={() => { setEmpty(!hasTypedText()); onBodyChange?.(); }}
@@ -490,8 +488,8 @@ export const Compose = React.forwardRef<EditorHandle, ComposeProps>((props, ref)
         </div>
       )}
 
-      {/* There is no second editor. When the body form cannot load, say so plainly and hand the
-          draft to the standard email form, which has the same editor. */}
+      {/* There is no second editor. When TinyMCE cannot start, say so plainly and hand the
+          draft to the standard email form. */}
       {editorUnavailable && (
         <div
           role="alert"

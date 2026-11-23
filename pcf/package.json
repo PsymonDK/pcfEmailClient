@@ -1,6 +1,7 @@
 {
   "name": "case-email-client",
   "version": "1.0.0",
+  "license": "GPL-2.0-or-later",
   "description": "Case-scoped email client PCF for D365 Customer Service (Copilot Service Workspace).",
   "scripts": {
     "build": "pcf-scripts build",
@@ -20,7 +21,8 @@
     "@fluentui/react-components": "9.46.2",
     "dompurify": "^3.4.16",
     "react": "16.14.0",
-    "react-dom": "16.14.0"
+    "react-dom": "16.14.0",
+    "tinymce": "^8.10.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.1",

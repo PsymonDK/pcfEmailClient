@@ -4,8 +4,8 @@
 //
 // Environment guard and token acquisition: see scripts/deploy/README.md.
 //
-// From the approved Care queue (caredemo@...) to DV_TO, default simon.jehrbo@example.com — the one
-// address approved for test sends (CLAUDE.md, 2026-09-25). `guardRecipient` refuses anything
+// From the approved Care queue to DV_TO, default DV_APPROVED_RECIPIENT — the one address whose
+// owner agreed to receive test mail (see CLAUDE.md). `guardRecipient` refuses anything
 // else except an RFC 2606 undeliverable address, so a stray DV_TO cannot mail a colleague.
 //
 // Nothing is written or sent without --confirm, and the recipient is printed before sending.
@@ -24,7 +24,7 @@ const CASE = readCaseId(SP);
 
 const CARE_QUEUE = '23b1c48e-1ff2-f011-8406-7ced8d2e4880';        // approved
 // Throws before anything touches the environment if DV_TO is not an allowed recipient.
-const TO = guardRecipient(process.env.DV_TO || 'simon.jehrbo@example.com');
+const TO = guardRecipient(process.env.DV_TO || process.env.DV_APPROVED_RECIPIENT);
 const THREAD_SUBJECT = 'Reklamation: utaette samlinger efter montage - Jensen VVS';
 const THREAD_HASH = 111000001;
 const MB = 1048576;

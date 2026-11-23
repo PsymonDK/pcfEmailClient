@@ -239,7 +239,7 @@ describe('participantOptions', () => {
 
   it('lists PEOPLE, not every searchable string', () => {
     // Seen in the published app 2026-09-22: built from the searchable list, the dropdown offered
-    // "Care" and "caredemo@…onmicrosoft.com" as two separate choices for one person.
+    // "Care" and "care@example.invalid" as two separate choices for one person.
     const t = [thread('t', 'x', [row({ activityid: '1' })])];
     const p = index(
       { 1: ['Care', 'care@example.invalid'] },  // searchable
@@ -247,7 +247,7 @@ describe('participantOptions', () => {
     );
     expect(participantOptions(t, p)).toEqual(['Care']);
     // …but free text still finds the address.
-    expect(filterThreads(t, p, new Set(), f({ text: 'onmicrosoft' })).length).toBe(1);
+    expect(filterThreads(t, p, new Set(), f({ text: 'invalid' })).length).toBe(1);
   });
 
   it('breaks ties alphabetically so the order is stable', () => {

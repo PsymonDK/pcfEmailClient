@@ -33,7 +33,7 @@ Delivered **R9–R18 and R20**. Merged as
 | Requirement | What shipped |
 |---|---|
 | R9, R10 | Reply / Reply all / Forward, in place — no navigation away from the Case |
-| R11 | Rich-text editor. **The compose body is the draft's own email form inside compose** (S16, 2026-10-02): the Dynamics editor on a genuine email form, toolbar from our customisable config. TipTap (S13) was replaced on 2026-09-30 and removed |
+| R11 | Rich-text editor. **TinyMCE 8, bundled with the control** (S17, 2026-11-23; 1.44.0), replacing the platform's email form (S16), which had replaced TipTap. Stores HTML; GPL, so the project is open source |
 | R12 | Quoted history appended and round-trip safe. **The quote never enters the editor** — the invariant was written and tested in `domain/compose.ts` before any compose UI existed |
 | R13 | Attachments, inline and chunked. 50 KB and 7 MB both round-tripped SHA-256 identical |
 | R14 | Email templates, listed per Case and instantiated. **Superseded in Phase 3 — see R22** |
@@ -147,15 +147,17 @@ A 50-email Case must render in under 2 seconds on a warm session, measured again
 **No performance or size claim can be made from what is currently deployed.** Every deploy so far
 has carried a `dotnet build -c Debug` bundle — eval devtool, unminified — and the editor has since
 been added. Production is the only honest baseline: the reading slice measured **32.8 KiB**
-gzipped; TipTap 2 took it to roughly **145 KiB**, and TipTap has since been removed — the editor
-is now the platform's own, loaded by Dynamics — so the bundle should be back near the reading
-slice. Measure from `pcf-scripts build --buildMode production`, not from the dev bundle.
+gzipped; TipTap 2 took it to roughly **145 KiB**, then the platform's editor brought it back near
+the reading slice (**64 KB** at 1.43.1). **1.44.0 bundles TinyMCE: 510,677 B gzipped** (+~446 KB, S17).
+That is the main cost of this route and N5 must be measured against it. Measure from
+`pcf-scripts build --buildMode production`, not from the dev bundle.
 
-### 3.5 R19 (S) — Copilot "draft a reply for me" · **delivered 2026-10-02**
+### 3.5 R19 (S) — Copilot "draft a reply for me" · **withdrawn 2026-11-23**
 
-Draft with Copilot runs inside compose: the body is the draft's own email form (S16), where the
-editor loads Copilot drafting, Translate and Adjust, with the case as context
-(`window.OpenEmailInfo`). Verified live end to end — generate, *Keep it*, saved, sent.
+Delivered 2026-10-02 through the draft's own email form (S16), and withdrawn with it in 1.44.0:
+Draft with Copilot, Translate and Adjust exist only in the platform's editor, and a bundled editor
+cannot have them. A Copilot-free replacement (a Copilot Studio agent or an AI Builder prompt called
+from compose) would be a new requirement.
 
 ---
 

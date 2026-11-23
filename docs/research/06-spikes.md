@@ -2026,7 +2026,7 @@ Mark as unread was verified in the same run: deleting the agent's `jhrb_emailrea
 
 - **A party PATCH replaces Bcc too.** Probe draft created with sender + To + Bcc (mask 4); a PATCH of `email_activity_parties` shaped like the client's save (sender + To) left 1, 2, 8, 9 — the Bcc party was deleted. Since the first save after resuming any draft rewrites parties, Continue draft silently removed Bcc. Fixed by writing mask 4 on every party save and rehydrating Bcc on resume.
 - **Verified in the published app:** a Bcc added in compose saved as mask 4; after Continue draft the chip came back in the Bcc row and the party-rewriting save kept mask 4; removing the chip removed it.
-- **A Bcc-only send works.** Forward from the test case with no To/Cc and Bcc = the contact simon.jehrbo@example.com (the approved test address): accepted, **status 3 (Sent) within a minute**, parties 1 (Care) + **4 bound to the contact** + 8 + 9 and no To party; `torecipients` stays null; the platform appended a fresh token (`CRM:0100019`). The reading pane shows "Bcc: Simon Jehrbo" on it. Status 3 is hand-off to Exchange, not delivery — arrival is confirmed separately.
+- **A Bcc-only send works.** Forward from the test case with no To/Cc and Bcc = the contact simon.jehrbo@example.com(the approved test address): accepted, **status 3 (Sent) within a minute**, parties 1 (Care) + **4 bound to the contact** + 8 + 9 and no To party; `torecipients` stays null; the platform appended a fresh token (`CRM:0100019`). The reading pane shows "Bcc: Simon Jehrbo" on it. Status 3 is hand-off to Exchange, not delivery — arrival is confirmed separately.
 
 #### Templates and languages in the demo environment; the standard form autosaves drafts — 2026-09-30
 
@@ -2196,3 +2196,13 @@ So TinyMCE round-trips the fixture essentially verbatim (only the Office comment
 **Reading.** Fidelity favours TinyMCE; size favours CKEditor 5 (by ~180 KiB gz). Neither is small. Lazy-loading the editor chunk is not possible with one stock-PCF bundle file, so the cost lands on every load of the control, whether or not the agent composes. That cost is the main argument against a bundled editor, and should be weighed against S16's form-based approach before committing.
 
 **Decision (2026-11-17, product owner): keep the S16 form-based compose body.** A bundled editor costs +266 KiB (CKEditor 5) to +448 KiB (TinyMCE) gzipped on every load of the control, against a 64 KiB control, and gives up Draft with Copilot and Translate. TinyMCE is the fidelity winner and CKEditor 5 the size winner if this is ever revisited; reopen only with a measured performance problem in the form route, or a licence/commercial reason to leave it.
+
+**Reversed 2026-11-23 (product owner): bundle TinyMCE and open-source the project.** The decision above
+held for six days. The form route proved a poor editing experience and slow to load; the licence
+question (GPL vs commercial, distributing to customers) was answered by choosing GPL-2.0-or-later and
+publishing the source, rather than buying a licence. Shipped as 1.44.0: production bundle
+**510,677 B gzipped**, 749 tests, lint and typecheck clean. Verified in a browser harness against the
+real `host/richText.ts`: skin and toolbar render from the bundle, a fixture with table/`bgcolor`/`align`/
+`cid:` image/`MsoNormal`/quote round-trips, our own `setHTML` is silent while typing fires, read-only mode
+locks the toolbar. **Not verified:** CSW itself, dark theme, paste from real Word/Outlook, and the
+cost of loading ~446 KB on every open of the control (N5).

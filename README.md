@@ -26,6 +26,17 @@ template. No custom page, no canvas layer. The reasoning is in the ADR,
 - Why it is built this way: [`docs/research/00-index.md`](docs/research/00-index.md)
 - Working in this repo (read first): [`CLAUDE.md`](CLAUDE.md)
 
+## Licence
+
+Copyright (C) 2026 The Case Email Client contributors.
+
+This program is free software; you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY. See [`LICENSE`](LICENSE).
+SPDX: `GPL-2.0-or-later`. The control bundles TinyMCE 8, which is GPL-2.0-or-later
+(or commercial); this project takes the GPL route, so what you receive and redistribute carries the
+same terms.
+
 ## Build and test
 
 From `pcf/`:

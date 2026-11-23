@@ -36,11 +36,12 @@ node scripts/deploy/create-readstate-table.mjs --confirm  # does it
 
 ## Environment guard
 
-All scripts share [`../lib/dv.mjs`](../lib/dv.mjs). It refuses to start unless the target is
-**`https://your-org.crm4.dynamics.com`** (pac profile [3], Customer Service Demo
-DK). `DV_ORG` is optional; if set, it must name that org (case and a trailing slash are ignored),
-or the script exits non-zero before making a single request. This exists because the reverts
-delete by name, and pac profile [2] (another environment) is one `pac auth select` away.
+All scripts share [`../lib/dv.mjs`](../lib/dv.mjs). It refuses to start unless **both**
+`DV_ALLOWED_ORG` and `DV_ORG` are set, and name the same bare origin
+(e.g. `https://your-org.crm4.dynamics.com`; case and a trailing slash are ignored), or the script
+exits non-zero before making a single request. This exists because the reverts delete by name, and
+another environment is one `pac auth select` away. Naming the target twice is deliberate.
+`DV_APPROVED_RECIPIENT` likewise names the one real mailbox test sends may reach.
 
 ## Token
 

@@ -28,7 +28,7 @@ import { useCompose, type Notice } from './useCompose';
 import { toSummary, type ThreadSummary } from '../domain/threadSummary';
 import { ReadingPane, type MessageState } from './ReadingPane';
 import { Compose } from './Compose';
-import { type DraftApiLike } from '../data/draft';
+import { fetchDraftBody, type DraftApiLike } from '../data/draft';
 import { describeSaved, draftContinuation } from '../domain/draft';
 import { sizeWarning } from '../domain/attachments';
 import { ourAddresses as ourAddressesFor } from '../domain/sender';
@@ -1009,12 +1009,7 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
             // Written since the body opened — or a resumed draft, which is the agent's text already.
             hasTypedText={() => compose.resumedHtml !== undefined || (editorRef.current?.hasChanges() ?? false)}
             bodyEmailId={compose.emailId}
-            bodyContext={{
-              caseId: compose.caseId,
-              subject: compose.subject,
-              to: compose.to.filter((r) => r.partyId && r.partyEntity)
-                .map((r) => ({ id: r.partyId!, entityType: r.partyEntity!, name: r.name || r.address })),
-            }}
+            loadBody={() => fetchDraftBody(webApiRef.current, compose.emailId!)}
             onOpenInStandardForm={resolveXrmNavigation() ? () => { void handOffToStandardForm(); } : undefined}
             onUseTemplate={resolveTemplate}
             sender={chosenSender}

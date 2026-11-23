@@ -139,10 +139,6 @@ describe('buildDraftUpdate', () => {
     expect(Object.keys(buildDraftUpdate({ subject: 's', bodyHtml: 'b' }))).not.toContain('statecode');
   });
 
-  it('leaves the body alone when the compose-body form owns it (S16)', () => {
-    // Writing it would overwrite the form's body — Copilot's draft, say — with ours.
-    expect(buildDraftUpdate({ subject: 's', bodyHtml: 'b', omitBody: true })).toEqual({ subject: 's' });
-  });
 });
 
 describe('worthSaving', () => {
@@ -314,9 +310,11 @@ describe('draftArgsFrom — what a save writes, from what is on screen', () => {
   };
 
   it('links a reply to the message it answers, so resume can find it', () => {
-    const out = draftArgsFrom(snapshot, '<p>Svar</p>', CARE, 'case-1');
+    const whole = '<p>Svar</p><div id="divRplyFwdMsg">quote</div>';
+    const out = draftArgsFrom(snapshot, whole, CARE, 'case-1');
     expect(out.inReplyToId).toBe(snapshot.activityId);
-    expect(out.bodyHtml).toBe('<p>Svar</p><div id="divRplyFwdMsg">quote</div>');
+    // The editor holds the whole body, so it is written as it is — the quote is never added twice.
+    expect(out.bodyHtml).toBe(whole);
     expect(out.sender).toBe(CARE);
   });
 

@@ -46,7 +46,7 @@ Creates a reply on `DV_CASE` from the approved **Care** queue, with rich text, t
 API. Then sends it and reports the resulting `statuscode`, `messageid`, `conversationindex`,
 `baseconversationindexhash` and `trackingtoken`.
 
-The recipient is `DV_TO`, default `simon.jehrbo@example.com` — the one address approved for test sends.
+The recipient is `DV_TO`, default `DV_APPROVED_RECIPIENT` — the one address approved for test sends.
 `guardRecipient` refuses anything else except an RFC 2606 undeliverable address (`*.invalid`,
 `example.com`), checked at start-up and again immediately before the send.
 

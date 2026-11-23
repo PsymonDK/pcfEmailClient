@@ -1,4 +1,4 @@
-import { buildOutgoingBody, isForwardSubject, type ComposeMode, type Recipient } from './compose';
+import { isForwardSubject, type ComposeMode, type Recipient } from './compose';
 import type { SenderCandidate } from './sender';
 import { isPartyEntity, partyNavFor, type PartyEntity } from './recipients';
 import { bareId, toGuid } from './guid';
@@ -65,12 +65,6 @@ export interface DraftArgs {
    * the same message, and every reopen would create ANOTHER draft row on the Case.
    */
   inReplyToId: string | undefined;
-  /**
-   * The body belongs to the compose-body FORM (S16): an update writes subject (and parties) but
-   * not the description. Writing it would overwrite what the form holds — Copilot's draft, say —
-   * with this client's idea of the body. Only the CREATE writes the body: the starting content.
-   */
-  omitBody?: boolean;
 }
 
 /** The parts of an open compose surface a save needs. */
@@ -94,14 +88,15 @@ export interface ComposeSnapshot {
  */
 export function draftArgsFrom(
   draft: ComposeSnapshot,
-  newHtml: string,
+  /** The WHOLE body — the agent's text and the quote, as the editor holds them. */
+  wholeBodyHtml: string,
   sender: SenderCandidate,
   caseId: string,
 ): DraftArgs {
   return {
     caseId,
     subject: draft.subject,
-    bodyHtml: buildOutgoingBody(newHtml, draft.quotedBlock),
+    bodyHtml: wholeBodyHtml,
     sender,
     to: draft.to,
     cc: draft.cc,
@@ -225,11 +220,9 @@ export function buildDraftPayload(args: DraftArgs): Record<string, unknown> {
  * changes. `buildPartyRows` is exported so the caller can send them only when they changed.
  */
 export function buildDraftUpdate(
-  args: Pick<DraftArgs, 'subject' | 'bodyHtml' | 'omitBody'>,
+  args: Pick<DraftArgs, 'subject' | 'bodyHtml'>,
 ): Record<string, unknown> {
-  return args.omitBody
-    ? { subject: args.subject }
-    : { subject: args.subject, description: args.bodyHtml };
+  return { subject: args.subject, description: args.bodyHtml };
 }
 
 /**

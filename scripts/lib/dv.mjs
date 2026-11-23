@@ -3,10 +3,10 @@
 // One copy of the things that used to be pasted into 18 scripts, and the safety rails that the
 // copies did not all have:
 //
-//   - ENVIRONMENT GUARD. `DV_ORG` must resolve to ALLOWED_ORG or the process exits before a single
-//     request is made. Every revert here deletes by NAME, so a shell left pointed at another
-//     environment (pac profile [2], another environment, is one `pac auth select` away)
-//     would otherwise run them there.
+//   - ENVIRONMENT GUARD. `DV_ORG` must equal `DV_ALLOWED_ORG` (both are required, and both are a
+//     bare origin) or the process exits before a single request is made. Every revert here deletes
+//     by NAME, so a shell left pointed at another environment (one `pac auth select` away) would
+//     otherwise run them there. Naming the target twice is the point.
 //   - TOKEN IN-PROCESS. `DV_TOKEN` if you set it, otherwise `az account get-access-token`. There is
 //     deliberately no `.tok` file fallback any more: a bearer token on disk outlives the shell
 //     that needed it. The token is never logged.
@@ -14,18 +14,18 @@
 //     caller says 404 means "absent" — so a 401 or 403 can never be mistaken for "nothing to do".
 //   - DRY RUN BY DEFAULT. `CONFIRM` is `--confirm` on the command line; `runSteps` prints the plan
 //     without it.
-//   - RECIPIENT ALLOWLIST. `guardRecipient` refuses any real address but the one approved for
-//     test sends (CLAUDE.md, 2026-09-25).
+//   - RECIPIENT ALLOWLIST. `guardRecipient` refuses any real address but the one named in
+//     `DV_APPROVED_RECIPIENT` — a mailbox whose owner agreed to receive test mail.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-/** The only environment any script here may touch: pac profile [3], the demo environment. */
-export const ALLOWED_ORG = 'https://your-org.crm4.dynamics.com';
-
-/** The only real mailbox test sends may reach. Everything else must be RFC 2606 undeliverable. */
-export const APPROVED_TEST_RECIPIENT = 'simon.jehrbo@example.com';
+/**
+ * The only real mailbox test sends may reach, from `DV_APPROVED_RECIPIENT` (unset: none).
+ * Everything else must be RFC 2606 undeliverable.
+ */
+export const APPROVED_TEST_RECIPIENT = (process.env.DV_APPROVED_RECIPIENT ?? '').trim().toLowerCase();
 
 export const CONFIRM = process.argv.includes('--confirm');
 
@@ -39,7 +39,7 @@ const fail = (message) => {
 /**
  * Canonical form of an org URL: scheme + lower-cased host, no trailing slash. Anything that is
  * not a bare origin (a path, query, fragment or credentials) returns `null`, so it can never
- * compare equal to ALLOWED_ORG.
+ * compare equal to the allowed org.
  */
 export const normaliseOrg = (raw) => {
   let u;
@@ -56,17 +56,22 @@ let env = null;
  *
  * On Windows `az` is `az.cmd`, and Node refuses to spawn a `.cmd` without a shell (CVE-2024-27980),
  * so the command runs through the shell there. Every argument is a constant or the org, which has
- * already been proven equal to ALLOWED_ORG, so nothing user-controlled reaches the shell.
+ * already been proven equal to `DV_ALLOWED_ORG`, so nothing user-controlled reaches the shell.
  */
 export const getEnv = () => {
   if (env) return env;
 
-  const requested = process.env.DV_ORG || ALLOWED_ORG;
+  const allowed = normaliseOrg(process.env.DV_ALLOWED_ORG ?? '');
+  if (!allowed) {
+    fail('DV_ALLOWED_ORG is not set to a bare origin such as https://your-org.crm4.dynamics.com. '
+      + 'Name the one environment these scripts may touch.');
+  }
+  const requested = process.env.DV_ORG ?? '';
   const org = normaliseOrg(requested);
-  if (org !== ALLOWED_ORG) {
+  if (org !== allowed) {
     fail(
-      `DV_ORG is "${requested}". These scripts only ever target ${ALLOWED_ORG} `
-      + '(pac profile [3], the demo environment). Unset DV_ORG or point it there.',
+      `DV_ORG is "${requested}". These scripts only ever target ${allowed} (DV_ALLOWED_ORG). `
+      + 'Set DV_ORG to it, or change DV_ALLOWED_ORG on purpose.',
     );
   }
 
@@ -302,11 +307,11 @@ export const guardRecipient = (to) => {
   if (!/^[^\s@,;<>"']+@[^\s@,;<>"']+$/.test(addr)) {
     throw new Error(`guardRecipient: "${to}" is not exactly one plain email address`);
   }
-  if (addr === APPROVED_TEST_RECIPIENT) return addr;
+  if (APPROVED_TEST_RECIPIENT && addr === APPROVED_TEST_RECIPIENT) return addr;
   const domain = addr.slice(addr.indexOf('@') + 1);
   if (RFC2606_UNDELIVERABLE(domain)) return addr;
   throw new Error(
-    `guardRecipient: refusing to send to "${to}". Test sends may go only to ${APPROVED_TEST_RECIPIENT} `
-    + 'or to an RFC 2606 undeliverable address (*.invalid, example.com).',
+    `guardRecipient: refusing to send to "${to}". Test sends may go only to DV_APPROVED_RECIPIENT `
+    + '(unset, or not this address) or to an RFC 2606 undeliverable address (*.invalid, example.com).',
   );
 };

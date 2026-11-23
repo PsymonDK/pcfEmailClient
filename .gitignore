@@ -58,3 +58,7 @@ scripts/**/s7-testb.json
 # Design canvas: the seeded/published page is generated from the .dc.html artboards
 # plus canvas.json (see docs/design/artboards/README.md). ~2.7 MB of editor payload.
 docs/design/artboards/case-email-client-*.html
+
+# Deploy/seed state written by the scripts (environment ids) - never commit
+scripts/deploy/*-ids.json
+scripts/seed/seeded-ids.json

@@ -159,6 +159,19 @@ this table. `model-apps:app-builder` was listed here as available and is not.
 | `code-apps-preview:*` (`create-code-app`, `add-dataverse`, `deploy`, …) | **No.** Targets Power Apps code apps — candidate D, rejected on multi-session state loss and Premium licensing. |
 | `mcp-apps:*` | Not relevant. |
 
+### Skills shipped with this repository (`.claude/skills/`)
+
+Two skills, adapted from the maintainer's skills for another Dataverse project (reviewed 2026-11-23).
+The other five (`verify`, `deploy`, `add-config-field`, `card-query-budget`, `widen-registry`) were
+left out: they are specific to that project's plug-in, builder app and configuration tables. The
+principle in `deploy` — nothing is "deployed" until read back from Dataverse — is already here (the
+`importjobs` and `customcontrols` checks, the bundle-token check).
+
+| Skill | Use here? |
+|---|---|
+| `prove-guard-by-mutation` | **Yes — after writing or changing any test, guard or invariant.** Break the source, watch the test fail for the right reason, restore. This repo has been bitten exactly as the skill describes: *Watch for inert guards* (`blockingReasonBeforeSend`, `inReplyToId`), and the signature test that passed whichever code path ran. Run one file with `npm test -- <file>` from `pcf/` — never `npx vitest` — and restore from a copy, **never `git checkout -- <file>`** |
+| `model-driven-app-design` | **Opt-in only** — when asked to make something look native (Fluent 2, Dataverse command bar, grid, form). **Project tokens win**: `ui/theme.ts` and `T.*`, never a colour literal (N7), a sender's HTML stays on white, and the signed-off design in `docs/design/`. Do not restyle existing UI with it unasked. Its hex values describe the platform; they are not for pasting |
+
 **The PCF itself is hand-written**: `pac pcf init` / `pac pcf push` plus standard React tooling. There is
 no plugin shortcut, and inventing one by reaching for `/genpage` or the code-app skills is the main
 foreseeable failure mode in this repo.

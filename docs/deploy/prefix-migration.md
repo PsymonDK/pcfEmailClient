@@ -1,9 +1,26 @@
 # Moving a dev environment to the `jhrb` prefix
 
-**Status: a plan. Nothing here has been run.** The source was renamed to the `jhrb` prefix on
-2026-11-23. An environment that was set up from the earlier source still holds the objects under the
-**old prefix**, so source and environment disagree until this is done. The concrete old names are in
+**Status: done in the dev (demo) environment on 2026-11-23, steps 1–8.** The source was renamed to
+the `jhrb` prefix that day. Any other environment set up from the earlier source still holds the
+objects under the **old prefix** and needs this plan. The concrete old names are in
 `docs/deploy/prefix-migration.local.md`, which is deliberately **not** in git.
+
+What the run found, for the next environment:
+
+- **Component ids must be regenerated.** Renaming the files is not enough: the views, forms, role and
+  web resource of the renamed objects kept their old GUIDs, and the first import failed with
+  *"…because its 'savedqueryid' already exists on the system"* before changing anything. Every such
+  component got a fresh GUID (the form of the Case entity keeps its id on purpose — it is updated in
+  place). Without that the role and web resource would have overwritten the old ones.
+- **`pac solution import` without a publish leaves the form unpublished.** The Case form still read
+  the old control until `incident` (and the new tables, `email` and the new web resources) were
+  published with `PublishXml`. Publishing `incident` also publishes anyone else's pending Case
+  customisations.
+- **A table delete can lose its response.** Two deletes returned `fetch failed` (a dropped
+  connection / DNS lookup); one had in fact succeeded. After any failed delete, query the state
+  before retrying.
+- **The old publisher was shared** (seven other visible solutions) and was left alone.
+- Nobody held the old role, so nothing needed reassigning.
 
 ## Why this is a migration and not a rename
 

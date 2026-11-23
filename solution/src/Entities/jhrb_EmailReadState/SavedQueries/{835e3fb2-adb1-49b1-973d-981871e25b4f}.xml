@@ -6,23 +6,22 @@
     <isquickfindquery>0</isquickfindquery>
     <isprivate>0</isprivate>
     <isdefault>1</isdefault>
-    <savedqueryid>{191f5523-f9a7-4799-80a0-a65e636200a1}</savedqueryid>
+    <savedqueryid>{835e3fb2-adb1-49b1-973d-981871e25b4f}</savedqueryid>
     <layoutxml>
-      <grid name="resultset" jump="jhrb_name" select="1" icon="1" preview="1">
-        <row name="result" id="jhrb_emailclientsettingid">
+      <grid name="jhrb_emailreadstates" jump="jhrb_name" select="1" icon="1" preview="0">
+        <row name="jhrb_emailreadstate" id="jhrb_emailreadstateid">
           <cell name="jhrb_name" width="300" />
           <cell name="createdon" width="125" />
         </row>
       </grid>
     </layoutxml>
-    <querytype>0</querytype>
+    <querytype>64</querytype>
     <fetchxml>
       <fetch version="1.0" mapping="logical">
-        <entity name="jhrb_emailclientsetting">
-          <attribute name="jhrb_emailclientsettingid" />
+        <entity name="jhrb_emailreadstate">
+          <attribute name="jhrb_emailreadstateid" />
           <attribute name="jhrb_name" />
           <attribute name="createdon" />
-          <order attribute="jhrb_name" descending="false" />
           <filter type="and">
             <condition attribute="statecode" operator="eq" value="0" />
           </filter>
@@ -31,7 +30,7 @@
     </fetchxml>
     <IntroducedVersion>1.0</IntroducedVersion>
     <LocalizedNames>
-      <LocalizedName description="Active Email client settings" languagecode="1033" />
+      <LocalizedName description="Email read state Lookup View" languagecode="1033" />
     </LocalizedNames>
   </savedquery>
 </savedqueries>

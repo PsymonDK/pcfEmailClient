@@ -5,8 +5,8 @@
     <CanBeDeleted>0</CanBeDeleted>
     <isquickfindquery>0</isquickfindquery>
     <isprivate>0</isprivate>
-    <isdefault>1</isdefault>
-    <savedqueryid>{a20ccf0a-1232-496d-82de-958f8de77c22}</savedqueryid>
+    <isdefault>0</isdefault>
+    <savedqueryid>{4854c43b-f66d-47be-b802-f8dfa167fa7f}</savedqueryid>
     <layoutxml>
       <grid name="resultset" jump="jhrb_name" select="1" icon="1" preview="1">
         <row name="result" id="jhrb_emailreadstateid">
@@ -24,14 +24,14 @@
           <attribute name="createdon" />
           <order attribute="jhrb_name" descending="false" />
           <filter type="and">
-            <condition attribute="statecode" operator="eq" value="0" />
+            <condition attribute="statecode" operator="eq" value="1" />
           </filter>
         </entity>
       </fetch>
     </fetchxml>
     <IntroducedVersion>1.0</IntroducedVersion>
     <LocalizedNames>
-      <LocalizedName description="Active Email read states" languagecode="1033" />
+      <LocalizedName description="Inactive Email read states" languagecode="1033" />
     </LocalizedNames>
   </savedquery>
 </savedqueries>

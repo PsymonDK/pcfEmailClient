@@ -86,7 +86,7 @@
       <RootComponent type="1" schemaName="incident" behavior="1" />
       <RootComponent type="1" schemaName="queue" behavior="1" />
       <RootComponent type="1" schemaName="systemuser" behavior="1" />
-      <RootComponent type="20" id="{bf5009cc-46b6-f111-aaae-000d3ab16615}" behavior="0" />
+      <RootComponent type="20" id="{90179042-2175-4d3c-9691-ff3bf613718a}" behavior="0" />
       <RootComponent type="66" schemaName="jhrb_JHRB.CaseEmailClient" behavior="0" />
       <RootComponent type="61" schemaName="jhrb_/CaseEmailClient/EmailRTEconfig.js" behavior="0" />
     </RootComponents>

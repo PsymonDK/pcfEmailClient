@@ -3,34 +3,38 @@
   <savedquery>
     <IsCustomizable>1</IsCustomizable>
     <CanBeDeleted>0</CanBeDeleted>
-    <isquickfindquery>0</isquickfindquery>
+    <isquickfindquery>1</isquickfindquery>
     <isprivate>0</isprivate>
     <isdefault>1</isdefault>
-    <savedqueryid>{d137d3e0-0449-4a57-8a65-dcf1fce171ee}</savedqueryid>
+    <savedqueryid>{595c9132-eaed-434b-9357-a3b732121094}</savedqueryid>
     <layoutxml>
-      <grid name="jhrb_emailreadstates" jump="jhrb_name" select="1" icon="1" preview="0">
-        <row name="jhrb_emailreadstate" id="jhrb_emailreadstateid">
+      <grid name="resultset" jump="jhrb_name" select="1" icon="1" preview="1">
+        <row name="result" id="jhrb_emailreadstateid">
           <cell name="jhrb_name" width="300" />
           <cell name="createdon" width="125" />
         </row>
       </grid>
     </layoutxml>
-    <querytype>64</querytype>
+    <querytype>4</querytype>
     <fetchxml>
       <fetch version="1.0" mapping="logical">
         <entity name="jhrb_emailreadstate">
           <attribute name="jhrb_emailreadstateid" />
           <attribute name="jhrb_name" />
           <attribute name="createdon" />
+          <order attribute="jhrb_name" descending="false" />
           <filter type="and">
             <condition attribute="statecode" operator="eq" value="0" />
+          </filter>
+          <filter type="or" isquickfindfields="1">
+            <condition attribute="jhrb_name" operator="like" value="{0}" />
           </filter>
         </entity>
       </fetch>
     </fetchxml>
     <IntroducedVersion>1.0</IntroducedVersion>
     <LocalizedNames>
-      <LocalizedName description="Email read state Lookup View" languagecode="1033" />
+      <LocalizedName description="Quick Find Active Email read states" languagecode="1033" />
     </LocalizedNames>
   </savedquery>
 </savedqueries>

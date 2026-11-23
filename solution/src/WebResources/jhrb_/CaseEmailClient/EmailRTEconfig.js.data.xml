@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <WebResource xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <WebResourceId>{dfcc34b4-29e2-405f-a2f8-232890d5cfdc}</WebResourceId>
+  <WebResourceId>{7a35016c-8db4-413a-afa0-152e92b26fd8}</WebResourceId>
   <Name>jhrb_/CaseEmailClient/EmailRTEconfig.js</Name>
   <DisplayName>Case Email Client - compose editor configuration</DisplayName>
   <Description>Configuration for the Dynamics rich text editor hosted in the Case Email Client compose (issue #17). A copy of msdyn_EmailRTEconfig.js; editable after a managed install (toolbar, fonts, height).</Description>

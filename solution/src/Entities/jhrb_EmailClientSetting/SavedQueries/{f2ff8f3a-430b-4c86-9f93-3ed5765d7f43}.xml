@@ -6,16 +6,16 @@
     <isquickfindquery>0</isquickfindquery>
     <isprivate>0</isprivate>
     <isdefault>1</isdefault>
-    <savedqueryid>{c65c8325-689a-4075-b232-e4b7ec7bc152}</savedqueryid>
+    <savedqueryid>{f2ff8f3a-430b-4c86-9f93-3ed5765d7f43}</savedqueryid>
     <layoutxml>
-      <grid name="resultset" jump="jhrb_name" select="1" icon="1" preview="1">
-        <row name="result" id="jhrb_emailclientsettingid">
+      <grid name="jhrb_emailclientsettings" jump="jhrb_name" select="1" icon="1" preview="1">
+        <row name="jhrb_emailclientsetting" id="jhrb_emailclientsettingid">
           <cell name="jhrb_name" width="300" />
           <cell name="createdon" width="125" />
         </row>
       </grid>
     </layoutxml>
-    <querytype>1</querytype>
+    <querytype>2</querytype>
     <fetchxml>
       <fetch version="1.0" mapping="logical">
         <entity name="jhrb_emailclientsetting">
@@ -23,12 +23,15 @@
           <attribute name="jhrb_name" />
           <attribute name="createdon" />
           <order attribute="jhrb_name" descending="false" />
+          <filter type="and">
+            <condition attribute="statecode" operator="eq" value="0" />
+          </filter>
         </entity>
       </fetch>
     </fetchxml>
     <IntroducedVersion>1.0</IntroducedVersion>
     <LocalizedNames>
-      <LocalizedName description="Email client setting Advanced Find View" languagecode="1033" />
+      <LocalizedName description="Email client setting Associated View" languagecode="1033" />
     </LocalizedNames>
   </savedquery>
 </savedqueries>

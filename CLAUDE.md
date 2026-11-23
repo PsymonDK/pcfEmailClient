@@ -191,11 +191,11 @@ wholesale:
 
 ## Local environment
 
-**The source and the dev environment disagree until [`docs/deploy/prefix-migration.md`](docs/deploy/prefix-migration.md)
-has been run.** On 2026-11-23 the publisher prefix was changed to `jhrb` (solution `JHRBCaseEmailClient`,
-control `jhrb_JHRB.CaseEmailClient`, both tables, web resources, role). An environment set up earlier
-still holds the objects under the old prefix; Dataverse cannot rename them, so they are replaced, not
-renamed. Do not import or script against the environment as if it had the new names.
+**The publisher prefix is `jhrb`** (solution `JHRBCaseEmailClient`, control `jhrb_JHRB.CaseEmailClient`,
+both tables, web resources, role), changed on 2026-11-23. The dev environment was migrated the same day
+(see [`docs/deploy/prefix-migration.md`](docs/deploy/prefix-migration.md)). An environment set up from
+older source still holds the objects under the old prefix; Dataverse cannot rename them, so they are
+replaced, not renamed — follow that plan, including its trap about component ids.
 
 Verified present as of 2026-09-09:
 

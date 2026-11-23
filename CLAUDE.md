@@ -661,11 +661,12 @@ Rules that follow:
   mail attributes through, and TinyMCE's own sanitiser still removes scripts and handlers.
 - **No second editor.** If TinyMCE cannot start (or `READY_TIMEOUT_MS` passes), compose says so and
   offers **Open in the email form** (saves the draft, hands it over).
-- **Not yet cleaned up:** the "Case Email Client - compose body" form
-  (`6a39076b-85bd-f111-aaad-000d3ab16615`) and `jhrb_/CaseEmailClient/EmailRTEconfig.js` are still in
-  the solution and now unused. Removing them from `solution/` needs the `Dependent` entries in
-  `Solution.xml` and `Entity.xml`'s `<FormXml />` handled, and — the solution being unmanaged —
-  explicit deletion in each environment. Tracked as a follow-up.
+- **The S16 leftovers are gone (2026-11-23):** the "Case Email Client - compose body" email form and
+  `jhrb_/CaseEmailClient/EmailRTEconfig.js` were removed from `solution/`, together with the `email`
+  entity root component that existed only to carry the form, and deleted from the dev environment
+  (the solution being unmanaged, removing them from source does not remove them from an environment
+  that already has them — delete the form `6a39076b-85bd-f111-aaad-000d3ab16615` and the web resource
+  by hand there).
 
 **R12's invariant still governs the body WE build — the first save:**
 

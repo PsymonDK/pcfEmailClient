@@ -81,7 +81,7 @@ in the environment** — step 1 checks it.
    2. the two old tables — **destructive, data is gone** — only after step 4's counts match and
       step 7 passed;
    3. the old role, the old web resources (the RTE config is also unused since 1.44.0) and the
-      unused "compose body" email form;
+      unused "compose body" email form (also removed from the source since — see CLAUDE.md);
    4. the old solution container — it is unmanaged, so deleting it removes only the container, which
       is why the components above are deleted explicitly;
    5. the old publisher **only if no other solution uses it** (check `solutions` for

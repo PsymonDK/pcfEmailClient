@@ -158,6 +158,24 @@ the reading slice (**64 KB** at 1.43.1). **1.44.0 bundles TinyMCE: 510,677 B gzi
 That is the main cost of this route and N5 must be measured against it. Measure from
 `pcf-scripts build --buildMode production`, not from the dev bundle.
 
+**Measured 2026-11-24, production bundle (1.44.2), demo environment, 50-email Case** (10 threads of
+5, `scripts/seed/seed-n5.mjs`; removed afterwards). Warm session, bundle already loaded, navigating
+from another Case back to the seeded one with `Xrm.Navigation.openForm`:
+
+- **Thread list on screen: 1.3–2.3 s over 9 runs, median 1.9 s** — right at the 2 s budget, with no
+  margin. It includes the platform's own form navigation: the control's first request starts
+  0.7–1.0 s in, so **the control's share is roughly 1.2–1.4 s**.
+- What the control does after it starts: the email list (~0.5 s), then queue item, settings,
+  organisation, then both mailboxes, then the signature, then read state (~0.1 s), then the first
+  message's body. **The rows appear after the read-state read**, i.e. after five sequential request
+  waves; most of the time is latency, not rendering or bundle evaluation.
+- **Not measured:** a cold load (first fetch of the 512 KB gzipped bundle), expanding all 50
+  messages, and a visible (foreground) pane — three runs in a hidden pane were 2.3–3.6 s because the
+  browser throttles background pages, so those numbers are not used.
+- **Verdict: N5 is met on a warm session, narrowly.** The cheap win if it needs margin is to start
+  the independent reads (settings, queue item, mailboxes, signature, read state) in parallel with
+  the email list instead of after it, and to render rows before the read-state read returns.
+
 ### 3.5 R19 (S) — Copilot "draft a reply for me" · **withdrawn 2026-11-23**
 
 Delivered 2026-10-02 through the draft's own email form (S16), and withdrawn with it in 1.44.0:

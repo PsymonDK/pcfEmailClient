@@ -83,6 +83,19 @@ page actually loaded, not the control version: fetch the `script[src*=CaseEmailC
 look for something only the new build contains. Search the COMPILED form — the debug bundle
 turns `await` into `yield` and expands `?.` — or a real fix reads as missing.
 
+**An import at an UNCHANGED control version does not replace the bundle** — measured 2026-11-24: a
+production build imported over a development one at the same version left the environment serving
+the 4.4 MB development bundle (`eval` devtool) while the import job said 100%. Bump the control
+version (and the solution's) to put a different build in. **Do NOT delete the control's
+`cc_…/bundle.js` web resource to force it** — the control's `customcontrolresources` row keeps
+pointing at the deleted id, the row ignores writes, and the form's subgrid shows *"An error has
+occurred"* **without ever requesting the bundle** (the web resource is regenerated under a new id,
+which does not help). Recovery that worked: save the form XML, `PATCH` it without its
+`<controlDescriptions>` block, `PublishXml` `incident`, delete the `customcontrols` row (it cascades
+to its resource rows), then re-import — control, resource rows and form binding come back
+consistent. A whole import can also outlast `--max-async-wait-time`: pac then prints "Solution
+import failed" and exits 0 while the job is still running, so read `importjobs` instead.
+
 **`pac solution import` can exit 0 without importing anything.** Measured 2026-09-30: with the pac
 profile's MFA expired it printed `AADSTS50078` and exited **0** — no import job was created and the
 environment kept the previous build. Confirm an import landed from Dataverse, not from pac's exit

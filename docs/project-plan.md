@@ -77,7 +77,7 @@ Ordered by what blocks what. **N3 is the only outstanding MUST** and comes first
 ### 3.1 N3 (M) — ships as a solution, with no manual per-environment steps
 
 The requirement is that a managed solution imports into a clean environment and the client works.
-Today it does not: two steps are manual, and the managed path has never been imported anywhere.
+Today it does not: three steps are manual, and the managed path has never been imported anywhere.
 
 - **Assigning the security role.** A new custom table grants privileges to nobody but System
   Administrator and System Customizer, so read state and settings are silently refused for every
@@ -89,8 +89,14 @@ Today it does not: two steps are manual, and the managed path has never been imp
   two custom tables, the role, the control and the form — so Debug builds unmanaged and
   `dotnet build -c Release -p:SolutionPackageType=Managed` builds managed. The Email Client form
   was rebuilt self-contained, taking its missing dependencies from **88 to 10**, all standard
-  Customer Service components. What is missing is an import into a clean environment, which
+  Customer Service components. The 1.44.0 managed Release build (2026-11-24) was verified to
+  package as `<Managed>1</Managed>`, with the new `jhrb` objects and the TinyMCE bundle. What is missing is an import into a clean environment, which
   needs an environment other than the shared demo one.
+- **The read-state cleanup job** (decided 2026-11-24). Read state is one row per agent per incoming
+  message and nothing deletes it, so a recurring bulk delete job removes rows on Resolved/Canceled
+  cases closed more than 30 days ago. It is not a solution component, so it is a runbook step
+  ([install.md section 4a](deploy/install.md#4a-the-read-state-cleanup-job)), created by an
+  administrator with Global-depth Delete. No client or schema change; the per-agent model stays.
 - **Configuration is data, not solution content.** The default `jhrb_emailclientsetting` row
   (`seed-settings.mjs`) does not travel with the solution, and an empty settings table silently
   means "send as the agent".
@@ -105,7 +111,7 @@ runbook step. A runbook step is an acceptable answer; an *undocumented* one is n
 - **Runbook written** — [`docs/deploy/install.md`](deploy/install.md): what the solution contains (verified from the managed build), prerequisites, build, import, post-import, the remaining manual steps, verification, upgrade and uninstall.
 - **Post-import script** — [`scripts/install/post-import.mjs`](../scripts/install/post-import.mjs): checks the import, registers the form with the CSW app, seeds the default settings row, and (with `--team`) assigns the role. Additive only, dry run unless `--confirm`, and the target must be named with `--org` every time. **Dry-run verified against the demo environment** (2026-09-30): every check passed and it reported nothing to do; the `--team` path found the team, the role's copy in its business unit, and would assign it.
 - **Solution version** now tracks the control version (it had stayed at `1.0`), enforced by a test.
-- **Still manual, by nature:** role assignment to individual users (or `--team`), mailbox approval, and the optional session-tab template.
+- **Still manual, by nature:** role assignment to individual users (or `--team`), mailbox approval, the read-state cleanup job, and the optional session-tab template.
 - **Still open:** an import of the managed package into a clean environment — needs one that is not the shared demo.
 
 ### 3.2 R22 (S) — email template handling that an agent will actually use

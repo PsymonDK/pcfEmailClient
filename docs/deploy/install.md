@@ -107,7 +107,32 @@ These are what is left after the script, every time:
 |---|---|---|
 | **Assign the role** to every agent who uses the client (unless done with `--team`) | A new custom table grants privileges to nobody but System Administrator / System Customizer. Without the role, read state and settings are refused — the client tells the agent read state is not being saved, and falls back to sending as the agent | Power Platform admin center → Users (or a team) → Manage security roles → **Case Email Client — Read State** |
 | **Approve the sending queue's mailbox** and enable server-side sync | Pre-flight refuses Send otherwise | Admin center → Email → Mailboxes → the queue's mailbox → Approve email, Test & enable |
+| **Create the read-state cleanup job** — see [section 4a](#4a-the-read-state-cleanup-job) | Read state is one row per agent per incoming message and is never deleted by the client. Rows on closed cases are dead weight | Bulk record deletion, as an administrator |
 | *Optional:* a **session tab** for the client | Opens the client as its own CSW tab next to the Case | Customer Service admin center → Workspaces → Application tab templates → new, *Page type* **Entity record**, `entityName` = `{anchor.entityName}`, `entityId` = `{anchor.incidentid}`, `formId` = `729d9197-cdad-f111-aaac-000d3ab163fb` |
+
+## 4a. The read-state cleanup job
+
+Read state (`jhrb_emailreadstate`) grows by one row per agent per incoming message read. Rows on a
+closed case can never change what anyone sees, so a **recurring bulk delete job** removes them. It is
+not a solution component, so it is set up once per environment.
+
+Do it as an **administrator with Delete on the table at Global depth** (the job runs as its creator;
+the client's role gives only User-level Delete, which would clear only the creator's own rows):
+
+1. Power Platform admin center → the environment → **Settings → Data management → Bulk deletion**
+   (or classic: Advanced Settings → Settings → System Jobs → Bulk Record Deletion) → **New**.
+2. Look for **Email Read State**, and add the criteria:
+   - **Case (Case) → Status** *equals* **Resolved** or **Canceled**
+   - **Case (Case) → Modified On** *older than* **30 days**
+3. Name it `Case Email Client - clean read state`, and tick **Run this job after every** *1 day*,
+   starting off-hours. Notification email is optional.
+4. Check the preview of what matches before submitting.
+
+The 30 days is the grace period for a reopened case: inside it, a reopened case keeps its read
+state; outside it, the messages show as unread once. Shorten or lengthen it to taste. Nothing else
+depends on it — if the job never runs, the only cost is table growth.
+
+Deleting a **Case** needs no job: read state hangs off the email, and the cascade removes it.
 
 ## 5. Configure (optional)
 
@@ -133,6 +158,9 @@ build managed, import over the existing solution, and re-run the post-import scr
 idempotent and will only report.
 
 ## Uninstalling
+
+Cancel the **cleanup job** (section 4a) first: it is not part of the solution, and it would fail
+once the table is gone.
 
 Deleting the **managed** solution removes its components — **including both custom tables and every
 row in them** (all agents' read state, and the settings). The form's registration with the CSW app

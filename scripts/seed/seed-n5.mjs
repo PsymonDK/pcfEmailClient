@@ -10,7 +10,7 @@
 // RFC 2606 `.invalid`. It writes seeded-ids.json after EVERY row, in the format cleanup.mjs reads,
 // so `node scripts/seed/cleanup.mjs --confirm` removes the emails and then the Case.
 import {
-  CONFIRM, api as dvApi, getEnv, readIds, writeIds,
+  CONFIRM, api as dvApi, envGuid, getEnv, readIds, writeIds,
 } from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
@@ -29,7 +29,7 @@ if (previous?.caseId || previous?.emails?.length) {
 
 const AGENT_EMAIL = 'care@example.invalid';
 const AGENT_NAME = 'Kundeservice';
-const CONTACT_ID = '9ca2974a-f749-f111-bec6-70a8a52bb847'; // Anna Hansen
+const CONTACT_ID = envGuid('DV_CONTACT_ID', 'the id of an existing contact to use as the customer on seeded cases');
 const CONTACT_EMAIL = 'anna.hansen@example.invalid';
 const CONTACT_NAME = 'Anna Hansen';
 

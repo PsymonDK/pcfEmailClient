@@ -174,7 +174,7 @@ this table. `model-apps:app-builder` was listed here as available and is not.
 
 ### Skills shipped with this repository (`.claude/skills/`)
 
-Two skills, adapted from the maintainer's skills for another Dataverse project (reviewed 2026-11-23).
+Three skills, two adapted from the maintainer's skills for another Dataverse project (reviewed 2026-11-23).
 The other five (`verify`, `deploy`, `add-config-field`, `card-query-budget`, `widen-registry`) were
 left out: they are specific to that project's plug-in, builder app and configuration tables. The
 principle in `deploy` — nothing is "deployed" until read back from Dataverse — is already here (the
@@ -183,6 +183,7 @@ principle in `deploy` — nothing is "deployed" until read back from Dataverse �
 | Skill | Use here? |
 |---|---|
 | `prove-guard-by-mutation` | **Yes — after writing or changing any test, guard or invariant.** Break the source, watch the test fail for the right reason, restore. This repo has been bitten exactly as the skill describes: *Watch for inert guards* (`blockingReasonBeforeSend`, `inReplyToId`), and the signature test that passed whichever code path ran. Run one file with `npm test -- <file>` from `pcf/` — never `npx vitest` — and restore from a copy, **never `git checkout -- <file>`** |
+| `dataverse-env-config` | **Yes — whenever a script needs an id or URL that differs per environment**, or a per-environment setting needs a home. Environment values live in `.env.local` (gitignored; names in `.env.example`), read with `envGuid()`; never write one into a script. Also covers Dataverse environment variables and when a table is the better fit |
 | `model-driven-app-design` | **Opt-in only** — when asked to make something look native (Fluent 2, Dataverse command bar, grid, form). **Project tokens win**: `ui/theme.ts` and `T.*`, never a colour literal (N7), a sender's HTML stays on white, and the signed-off design in `docs/design/`. Do not restyle existing UI with it unasked. Its hex values describe the platform; they are not for pasting |
 
 **The PCF itself is hand-written**: `pac pcf init` / `pac pcf push` plus standard React tooling. There is
@@ -235,7 +236,7 @@ pac auth list
   `pac solution delete`, `pac org delete`, `pac admin reset`, `pac data delete`, or anything that
   removes or overwrites solution components in a shared environment.
 - Prefer `pac pcf push` into an **unmanaged dev solution**; never push straight at anything managed.
-- **The scripts do not use the pac profile.** Every script under `scripts/` goes through
+- **Scripts read environment-specific values from `.env.local`** (gitignored; copy `.env.example`), which `scripts/lib/dv.mjs` loads itself — org URL, the allowed org, the approved recipient and every record id a script needs. Ids go through `envGuid()`, never into source. A variable already set in the shell beats the file. See the `dataverse-env-config` skill. **The scripts do not use the pac profile.** Every script under `scripts/` goes through
   `scripts/lib/dv.mjs`, which refuses to run unless `DV_ORG` equals `DV_ALLOWED_ORG`, takes its
   token from `DV_TOKEN` or `az account get-access-token` (there is no `.tok` file any more), is
   dry-run unless `--confirm`, and refuses any test-send recipient but the approved address. So

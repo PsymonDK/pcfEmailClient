@@ -23,17 +23,17 @@
 //     environment. That is fine here: the one component that mattered, the control, is shared
 //     with the product and must stay.
 import {
-  CONFIRM, api, getEnv, odataString, publish, runSteps,
+  CONFIRM, api, envGuid, getEnv, odataString, publish, runSteps,
 } from '../lib/dv.mjs';
 
 const { org: ORG } = getEnv();
 
-const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service workspace
-const SPIKE_FORM_ID = '4fe309a1-dbac-f111-aaab-000d3ab16615'; // Case - Email Client Spike (S1)
+const APP_ID = envGuid('DV_CSW_APP_ID', 'the Copilot Service workspace app module id');
+const SPIKE_FORM_ID = envGuid('DV_S1_SPIKE_FORM_ID', 'the id of the S1 spike form ("Case - Email Client Spike")');
 // Spike-only name. NOT `JHRBCaseEmailClient` — that is the product's solution now (H6).
 const SPIKE_SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
 // S2 custom page: "Case Email Client Page (S2 spike)" / jhrb_caseemailclientpages2spike_314da
-const SPIKE_PAGE_ID = 'e7cb7b97-9dde-4f6a-8356-94bc9e1344d0';
+const SPIKE_PAGE_ID = envGuid('DV_S1_SPIKE_PAGE_ID', 'the id of the S1 spike custom page');
 
 const publishApp = () => publish({ appModules: [APP_ID] });
 

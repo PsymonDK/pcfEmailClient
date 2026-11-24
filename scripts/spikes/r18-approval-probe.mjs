@@ -12,14 +12,14 @@
 // Pending Send forever. It leaves that stranded email on the case (id in r18-created.json);
 // delete it afterwards.
 import {
-  CONFIRM, apiRaw, errorOf, getEnv, guardRecipient, readCaseId, writeIds,
+  CONFIRM, apiRaw, errorOf, envGuid, getEnv, guardRecipient, readCaseId, writeIds,
 } from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
 const { org: ORG } = getEnv();
 const CASE = readCaseId(SP);
-const UNAPPROVED_QUEUE = '0c3bdec6-0aad-f111-aaab-000d3ab16615';   // Offensive Support, approval=2
-const MAILBOX = '133bdec6-0aad-f111-aaab-000d3ab16615';
+const UNAPPROVED_QUEUE = envGuid('DV_R18_UNAPPROVED_QUEUE_ID', 'the id of a queue with an address whose email approval is not Approved');
+const MAILBOX = envGuid('DV_R18_MAILBOX_ID', 'the id of that queue\'s mailbox');
 const TO = guardRecipient('anna.hansen@example.invalid');           // RFC 2606, non-routable
 
 // Non-throwing on purpose: a refused send is one of the two outcomes being probed.

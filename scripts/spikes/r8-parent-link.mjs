@@ -11,13 +11,13 @@
 // clearing restores it exactly.
 //
 // Shared environment: run `clear` as soon as the verification is done.
-import { CONFIRM, api, getEnv } from '../lib/dv.mjs';
+import { CONFIRM, api, envGuid, getEnv } from '../lib/dv.mjs';
 
 getEnv();
 const MODE = process.argv[2];
 
-const CHILD = '40a5d940-0ef6-f011-8406-000d3ab7be36';   // CAS-01021-T1P3C2, 5 emails
-const PARENT = '290bf70d-ebf5-f011-8406-7c1e521fcfa3';  // CAS-01016-C3Y9M9, 4 emails
+const CHILD = envGuid('DV_R8_CHILD_CASE_ID', 'the id of the child case for the parent-link probe');
+const PARENT = envGuid('DV_R8_PARENT_CASE_ID', 'the id of the parent case for the parent-link probe');
 
 const call = async (path, method = 'GET', body) => (await api(path, { method, body })).json;
 

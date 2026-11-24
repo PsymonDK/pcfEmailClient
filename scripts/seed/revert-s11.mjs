@@ -24,13 +24,13 @@
 //     platform creates its own parameter rows on these templates and such a filter over-deletes
 //     them.
 import {
-  CONFIRM, api, getEnv, odataString, publish, runSteps,
+  CONFIRM, api, envGuid, getEnv, odataString, publish, runSteps,
 } from '../lib/dv.mjs';
 
 const { org: ORG } = getEnv();
 
-const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';        // Copilot Service workspace
-const S11_FORM_ID = '3c4b2679-12ad-f111-aaab-002248a422bc';   // Case - Email Client (S11 tab form)
+const APP_ID = envGuid('DV_CSW_APP_ID', 'the Copilot Service workspace app module id');
+const S11_FORM_ID = envGuid('DV_S11_FORM_ID', 'the id of the S11 tab form ("Case - Email Client", S11)');
 // Spike-only name. NOT `JHRBCaseEmailClient` — that is the product's solution now (H6).
 const SPIKE_SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClientSpike';
 const TAB_TEMPLATES = ['jhrb_s11_entityrecord_emailform', 'jhrb_s11_control_pcfdirect'];

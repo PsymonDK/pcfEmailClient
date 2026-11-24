@@ -21,6 +21,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
+// LOCAL CONFIGURATION. Environment-specific values (org URL, record ids) live in `.env.local` at the
+// repo root, which is gitignored; `.env.example` lists every name. `DV_ENV_FILE` points at another
+// file, one per environment. Variables already set in the shell win over the file, so a one-off
+// `DV_CASE=… node …` still works. This must run before anything below reads `process.env`.
+const ENV_FILE = process.env.DV_ENV_FILE
+  ? path.resolve(process.env.DV_ENV_FILE)
+  : path.join(path.resolve(import.meta.dirname, '..', '..'), '.env.local');
+if (fs.existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
+
 /**
  * The only real mailbox test sends may reach, from `DV_APPROVED_RECIPIENT` (unset: none).
  * Everything else must be RFC 2606 undeliverable.
@@ -162,6 +171,19 @@ export const assertGuid = (value, what) => {
   const v = String(value ?? '').trim().replace(/^\{|\}$/g, '');
   if (!GUID.test(v)) fail(`${what} is not a GUID: "${value}"`);
   return v.toLowerCase();
+};
+
+/**
+ * A record id that belongs to ONE environment, read from the variable `name`. Never write such an
+ * id into a script: it identifies the environment it came from and is wrong in every other. Exits
+ * with what the id is and where to put it, instead of a bare "undefined is not a GUID".
+ */
+export const envGuid = (name, what) => {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) {
+    fail(`${name} is not set. It is ${what}. Put it in .env.local (copy .env.example) or export it.`);
+  }
+  return assertGuid(raw, name);
 };
 
 /** The case a spike works on: `DV_CASE`, else a `.caseid` file beside the script. */

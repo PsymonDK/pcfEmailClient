@@ -20,13 +20,13 @@
 // overwrite them on import. See docs/design/01-design-decisions.md.
 import crypto from 'node:crypto';
 import {
-  CONFIRM, api as dvApi, getEnv, odataString, publish, writeIds,
+  CONFIRM, api as dvApi, envGuid, getEnv, odataString, publish, writeIds,
 } from '../lib/dv.mjs';
 
 const { org: ORG } = getEnv();
 
 const SOLUTION = 'JHRBCaseEmailClient';
-const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';   // Copilot Service workspace
+const APP_ID = envGuid('DV_CSW_APP_ID', 'the Copilot Service workspace app module id');
 const CONTROL = 'jhrb_JHRB.CaseEmailClient';
 const SOURCE_FORM_NAME = 'Enhanced full case form';       // what CSW opens a case on today
 const NEW_FORM_NAME = 'Case - Email Client';

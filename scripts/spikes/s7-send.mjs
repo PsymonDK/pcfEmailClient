@@ -15,14 +15,14 @@
 // approval guard — that queue has no address. r18-approval-probe.mjs is the probe for R18.
 import crypto from 'node:crypto';
 import {
-  CONFIRM, apiRaw, errorOf, getEnv, guardRecipient, readCaseId, writeIds,
+  CONFIRM, apiRaw, errorOf, envGuid, getEnv, guardRecipient, readCaseId, writeIds,
 } from '../lib/dv.mjs';
 
 const SP = import.meta.dirname;
 const { org: ORG } = getEnv();
 const CASE = readCaseId(SP);
 
-const CARE_QUEUE = '23b1c48e-1ff2-f011-8406-7ced8d2e4880';        // approved
+const CARE_QUEUE = envGuid('DV_CARE_QUEUE_ID', 'the id of the approved service queue the test send goes from');
 // Throws before anything touches the environment if DV_TO is not an allowed recipient.
 const TO = guardRecipient(process.env.DV_TO || process.env.DV_APPROVED_RECIPIENT);
 const THREAD_SUBJECT = 'Reklamation: utaette samlinger efter montage - Jensen VVS';

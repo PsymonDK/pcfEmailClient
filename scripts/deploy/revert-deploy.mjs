@@ -20,13 +20,13 @@
 // next run still knows which form it is cleaning up.
 import fs from 'node:fs';
 import {
-  CONFIRM, api, assertGuid, assertIdsOrg, getEnv, odataString, publish, readIds, runSteps,
+  CONFIRM, api, assertGuid, assertIdsOrg, envGuid, getEnv, odataString, publish, readIds, runSteps,
 } from '../lib/dv.mjs';
 
 const { org: ORG } = getEnv();
 const IDS_FILE = `${import.meta.dirname}/deployed-ids.json`;
 
-const APP_ID = '165f4816-a8cc-f011-8544-6045bde0fa7e';
+const APP_ID = envGuid('DV_CSW_APP_ID', 'the Copilot Service workspace app module id');
 const CONTROL_NAME = 'jhrb_JHRB.CaseEmailClient';
 const SOLUTION_UNIQUE_NAME = 'JHRBCaseEmailClient';
 

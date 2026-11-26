@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest>
-  <control namespace="JHRB" constructor="CaseEmailClient" version="1.44.2"
+  <control namespace="JHRB" constructor="CaseEmailClient" version="1.45.0"
            display-name-key="Case Email Client"
            description-key="Case-scoped email client: threaded reading, in-place reply, attachments, templates and signatures, for the Copilot Service Workspace Case form."
            control-type="virtual">
@@ -18,19 +18,17 @@
               description-key="Case (incident) GUID. Leave unset on a form; bind Param(&quot;recordId&quot;) only on a custom page."
               of-type="SingleLine.Text" usage="input" required="false" />
 
-    <!-- DO NOT DELETE THIS DATASET.
-         Nothing reads it - we query through `context.webAPI`, which is what gives us the security
-         trimming N4 needs. The declaration is a LAYOUT ANCHOR: it is what makes this a *dataset*
-         control, and only a dataset control can occupy a whole form tab as a subgrid. Drop it and
-         the control becomes a *field* control, bound to a Case column. S1 did not measure that;
-         S18 (2026-11-26, docs/research/06-spikes.md) did, with this same code: it mounts, sizes by
-         the same viewport claim, leaves the form clean, renders on a Resolved case, survives a CSW
-         session-tab teardown with its state restored, and showed rows
-         about half a second sooner, because it skips the host query for this dataset. Adopting it
-         is a product decision (a bound column, the form XML, and a control reset on any
-         environment that has this version). -->
-    <data-set name="emails" display-name-key="Emails">
-    </data-set>
+    <!-- A FIELD-bound control, not a dataset (changed 1.45.0, S18, docs/research/06-spikes.md).
+         Nothing reads this property's value - we query through `context.webAPI`, which is what
+         gives us the security trimming N4 needs, and the control never writes the column. It is a
+         LAYOUT ANCHOR: the form binds it to `title` on the dedicated Case form. A dataset
+         (subgrid) host ran the platform's own view query before our first request; a field host
+         skips it (rows about half a second sooner), sizes by the same viewport claim, leaves the
+         form clean, renders on a Resolved case and survives a CSW session-tab teardown.
+         Do not re-add a <data-set>: that brings the host query back. -->
+    <property name="hostField" display-name-key="Host field"
+              description-key="Layout anchor. Bind to the Case Title column on the dedicated email form; the control never reads or writes it."
+              of-type="SingleLine.Text" usage="bound" required="false" />
 
     <resources>
       <code path="index.ts" order="1"/>

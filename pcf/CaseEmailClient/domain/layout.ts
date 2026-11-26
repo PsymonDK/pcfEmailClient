@@ -7,7 +7,7 @@
  *  1. **`allocatedHeight` is −1 on both placements**, so height is claimed from the viewport. The
  *     host does not give it to us. (S1, 2026-09-10.)
  *  2. **Width behaves the same way.** Setting height alone produced a control 588px wide inside a
- *     full-width tab, because the subgrid cell's ancestors content-size their child. (2026-09-11.)
+ *     full-width tab, because the host cell's ancestors content-size their child. (2026-09-11.)
  *     Hence: claim both dimensions, inherit neither.
  *
  * And one correction: the budget is a **range**, not a constant. Three readings on the same form

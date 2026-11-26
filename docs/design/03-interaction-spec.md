@@ -43,7 +43,7 @@ measured height readings, so the table and the build cannot drift apart again.
 (`window.innerHeight − rootTop − gutter`), never inherited. One code path, no per-placement branch.
 
 **Width must be claimed too — measured 2026-09-11.** Setting height alone produced a control
-**588px wide inside a full-width tab**, because the subgrid cell's ancestors content-size their
+**588px wide inside a full-width tab**, because the host cell's ancestors content-size their
 child. It is the identical trap, on the identical hosts. The rule is therefore: **claim both
 dimensions, inherit neither.** `width: 100%` on the root is enough for width; height needs the
 viewport calculation.

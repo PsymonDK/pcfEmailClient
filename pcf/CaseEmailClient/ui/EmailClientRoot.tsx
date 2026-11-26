@@ -44,7 +44,7 @@ import { cssVariables, resolveThemeMode, type ThemeSignals } from './theme';
  *
  * Sizing comes from `domain/layout.ts`, which encodes both measured traps: `allocatedHeight` is
  * −1 on a form tab so height is claimed from the viewport, and width must be claimed too because
- * the subgrid cell's ancestors content-size their child.
+ * the host cell's ancestors content-size their child.
  */
 
 export interface EmailClientRootProps {

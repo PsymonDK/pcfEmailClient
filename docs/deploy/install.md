@@ -157,6 +157,12 @@ Bump the control version **and** the solution version together (the release test
 build managed, import over the existing solution, and re-run the post-import script — it is
 idempotent and will only report.
 
+**Upgrading from 1.44.x or earlier to 1.45.0 changes the control from a dataset to a field-bound
+control** (the form cell moves from the email subgrid to the Case `title` field). That is not
+safe to assume works as an in-place import. If the form shows *"An error has occurred"* or keeps the
+old control, use the reset in `CLAUDE.md`: detach the control from the form, delete the
+`customcontrols` row, re-import. A fresh install is unaffected.
+
 ## Uninstalling
 
 Cancel the **cleanup job** (section 4a) first: it is not part of the solution, and it would fail

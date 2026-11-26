@@ -24,20 +24,7 @@
                         <labels>
                           <label description="Case Email Client" languagecode="1033" />
                         </labels>
-                        <control indicationOfSubgrid="true" id="Subgrid_emailclient" classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}" uniqueid="{61F0D8D4-7EC7-44C7-B73B-A6E4A0396BD2}">
-                          <parameters>
-                            <RecordsPerPage>50</RecordsPerPage>
-                            <AutoExpand>Fixed</AutoExpand>
-                            <EnableQuickFind>false</EnableQuickFind>
-                            <EnableViewPicker>false</EnableViewPicker>
-                            <EnableChartPicker>false</EnableChartPicker>
-                            <ChartGridMode>Grid</ChartGridMode>
-                            <RelationshipName>Incident_Emails</RelationshipName>
-                            <TargetEntityType>email</TargetEntityType>
-                            <ViewId>{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}</ViewId>
-                            <ViewIds>{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}</ViewIds>
-                          </parameters>
-                        </control>
+                        <control id="title" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" datafieldname="title" uniqueid="{61F0D8D4-7EC7-44C7-B73B-A6E4A0396BD2}" disabled="false" />
                       </cell>
                     </row>
                   </rows>
@@ -79,14 +66,11 @@
       </header>
       <controlDescriptions>
         <controlDescription forControl="{61F0D8D4-7EC7-44C7-B73B-A6E4A0396BD2}">
-          <customControl formFactor="0" name="jhrb_JHRB.CaseEmailClient">
-            <parameters />
+          <customControl formFactor="0" name="jhrb_JHRB.CaseEmailClient"><parameters><hostField>title</hostField></parameters>
           </customControl>
-          <customControl formFactor="1" name="jhrb_JHRB.CaseEmailClient">
-            <parameters />
+          <customControl formFactor="1" name="jhrb_JHRB.CaseEmailClient"><parameters><hostField>title</hostField></parameters>
           </customControl>
-          <customControl formFactor="2" name="jhrb_JHRB.CaseEmailClient">
-            <parameters />
+          <customControl formFactor="2" name="jhrb_JHRB.CaseEmailClient"><parameters><hostField>title</hostField></parameters>
           </customControl>
         </controlDescription>
       </controlDescriptions>

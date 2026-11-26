@@ -132,7 +132,7 @@ measured that away on 2026-09-10.
 
 | Placement | Mechanism |
 |---|---|
-| Case form tab | The PCF directly — virtual/React **dataset** component on a single-column tab, bound to a subgrid of `email` where `regardingobjectid` = the Case |
+| Case form tab | The PCF directly — virtual/React **field-bound** control (1.45.0, S18) on a single-column tab: a field cell on `title` carrying a `hostField` parameter. It never reads or writes the column; it is a layout anchor. Not a subgrid: that made the platform run a view query before our first request |
 | CSW session tab | The **same PCF on a dedicated Case form**, opened by an **`Entity record`** application tab template: `entityName={anchor.entityName}`, `entityId={anchor.incidentid}`, `formId=<the email form>` |
 
 Because both placements are form tabs, the component gets **one** sizing strategy, **one** context path
@@ -575,7 +575,7 @@ last fallback. Verified on a real conversation: cIdx 44 → 54 chars = depth 0 �
 
 ## PCF conventions (once code exists)
 
-- **Virtual (React) dataset component.** Virtual so it shares the host's React and Fluent instance
+- **Virtual (React) FIELD-bound component** (was a dataset until 1.45.0; the manifest has no `<data-set>`, a test fails if one returns). Virtual so it shares the host's React and Fluent instance
   instead of bundling its own.
 - **Height must be host-aware.** Measured 2026-09-10:
   - **Form tab:** `allocatedHeight` is **-1** and the host is *content*-sized — every ancestor sizes

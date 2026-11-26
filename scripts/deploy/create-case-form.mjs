@@ -30,9 +30,6 @@ const APP_ID = envGuid('DV_CSW_APP_ID', 'the Copilot Service workspace app modul
 const CONTROL = 'jhrb_JHRB.CaseEmailClient';
 const SOURCE_FORM_NAME = 'Enhanced full case form';       // what CSW opens a case on today
 const NEW_FORM_NAME = 'Case - Email Client';
-const RELATIONSHIP = 'Incident_Emails';
-const TARGET = 'email';
-const VIEW = '{CC98CB1F-6552-4FD8-9E2F-39A1CAD2F710}';    // All Emails
 const IDS_FILE = `${import.meta.dirname}/deployed-ids.json`;
 
 const api = async (path, method = 'GET', body, opts = {}) =>
@@ -85,35 +82,22 @@ const newTab =
         `<rows><row>` +
           `<cell id="${cellId}" locklevel="0" colspan="1" rowspan="20" auto="false" showlabel="false">` +
             `<labels><label description="Case Email Client" languagecode="1033" /></labels>` +
-            // The subgrid classid is what makes this a DATASET host. The control never reads the
-            // dataset — it queries via context.webAPI — but the declaration is what lets a PCF
-            // occupy a whole form tab rather than a field-sized box.
-            `<control indicationOfSubgrid="true" id="Subgrid_emailclient" ` +
-              `classid="{E7A81278-8635-4D9E-8D4D-59480B391C5B}" uniqueid="${ctrlUnique}">` +
-              `<parameters>` +
-                `<RecordsPerPage>50</RecordsPerPage>` +
-                `<AutoExpand>Fixed</AutoExpand>` +
-                `<EnableQuickFind>false</EnableQuickFind>` +
-                `<EnableViewPicker>false</EnableViewPicker>` +
-                `<EnableChartPicker>false</EnableChartPicker>` +
-                `<ChartGridMode>Grid</ChartGridMode>` +
-                `<RelationshipName>${RELATIONSHIP}</RelationshipName>` +
-                `<TargetEntityType>${TARGET}</TargetEntityType>` +
-                `<ViewId>${VIEW}</ViewId>` +
-                `<ViewIds>${VIEW}</ViewIds>` +
-              `</parameters>` +
-            `</control>` +
+            // A FIELD cell on `title`, not a subgrid (1.45.0, S18). The control never reads or writes
+            // the column; binding it to one is what lets a PCF occupy a whole form tab without the
+            // platform running a subgrid view query first.
+            `<control id="title" classid="{4273EDBD-AC1D-40D3-9FB2-095C621B552D}" ` +
+              `datafieldname="title" uniqueid="${ctrlUnique}" disabled="false" />` +
           `</cell>` +
         `</row></rows>` +
       `</section>` +
     `</sections></column></columns>` +
   `</tab>`;
 
-// Bind the PCF to that subgrid. The control name MUST carry the publisher prefix
+// Bind the PCF to that field. The control name MUST carry the publisher prefix
 // (jhrb_JHRB.CaseEmailClient, not JHRB.CaseEmailClient) or the form silently renders a plain grid.
 // formFactor 0/1/2 = desktop/tablet/phone; register all three so it renders everywhere.
 const customControls = [0, 1, 2]
-  .map((f) => `<customControl formFactor="${f}" name="${CONTROL}"><parameters /></customControl>`)
+  .map((f) => `<customControl formFactor="${f}" name="${CONTROL}"><parameters><hostField>title</hostField></parameters></customControl>`)
   .join('');
 const desc = `<controlDescription forControl="${ctrlUnique}">${customControls}</controlDescription>`;
 

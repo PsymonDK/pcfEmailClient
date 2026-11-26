@@ -193,9 +193,10 @@ day) showed two things the first read missed:
   works unchanged (mounts, sizes, form stays clean, renders on a Resolved case) and rows came up about
   **0.5 s sooner** (field median 1.59 s vs dataset 2.35 s, noisy; see [S18](research/06-spikes.md)).
   The **CSW session tab and two-session teardown also passed** with a field control (state restored).
-  **Adopted in 1.45.0** (bound to `title`; manifest, both form XMLs and `create-case-form.mjs` changed). An
-  environment with the dataset version needs the control reset from CLAUDE.md. Not yet verified live: the
-  in-place upgrade, a compose draft across the teardown, dark theme.
+  **Adopted in 1.45.0** (bound to `title`; manifest, both form XMLs and `create-case-form.mjs` changed). **Deployed to the
+  demo environment 2026-11-26 (dev bundle):** a plain import over the dataset version worked, no reset needed.
+  The form shows the control on `title`, renders an 8-message case, is not dirty, and a hard reload brought
+  the new bundle. Not yet verified live: a compose draft across the teardown, dark theme.
 
 ### 3.5 R19 (S) — Copilot "draft a reply for me" · **withdrawn 2026-11-23**
 

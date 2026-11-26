@@ -74,6 +74,7 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
   const api: DraftApiLike = {
     retrieveMultipleRecords: (entity: string, options?: string) => {
       count(`list ${entity}`);
+      callOrder.push(entity);
       const rows = ((): Record<string, unknown>[] => {
         switch (entity) {
           case 'email':
@@ -155,6 +156,8 @@ function fakeApi(ceiling = 400): { api: DraftApiLike; calls: () => number } {
 }
 
 /** Read state the fake returns, and what was deleted — set per test, reset after each. */
+/** The entity of every list query, in the order it was issued — for tests about load order. */
+let callOrder: string[] = [];
 let readStateRows: Record<string, unknown>[] = [];
 let deleted: string[] = [];
 let updates: { entity: string; id: string; data: Record<string, unknown> }[] = [];
@@ -203,6 +206,7 @@ afterEach(async () => {
     host = undefined;
   }
   readStateRows = [];
+  callOrder = [];
   deleted = [];
   updates = [];
   creates = [];
@@ -255,6 +259,20 @@ describe('EmailClientRoot — renders the CAS-01131 rows without looping', () =>
     const r = await renderShell();
     expect(r.host.textContent).toContain('Test: kodegennemgang');
     expect(r.stateCalls()).toBeLessThan(60);
+  });
+
+  it('asks for read state BESIDE the list, not after the list and the recipients (N5)', async () => {
+    // Measured 2026-11-24: list, then recipients, then read state were three sequential waits and
+    // the rows could not show until the last. Read state needs only the case and the agent.
+    await renderShell();
+    const readState = callOrder.indexOf('jhrb_emailreadstate');
+    const list = callOrder.indexOf('email');
+    const recipients = callOrder.indexOf('activityparty');
+    expect(readState).toBeGreaterThanOrEqual(0);
+    expect(list).toBeGreaterThanOrEqual(0);
+    expect(recipients).toBeGreaterThanOrEqual(0);
+    expect(readState < list).toBe(true);
+    expect(readState < recipients).toBe(true);
   });
 
   it('reopens the compose that was open before a teardown, with its text (M11)', async () => {

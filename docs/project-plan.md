@@ -172,9 +172,29 @@ from another Case back to the seeded one with `Xrm.Navigation.openForm`:
 - **Not measured:** a cold load (first fetch of the 512 KB gzipped bundle), expanding all 50
   messages, and a visible (foreground) pane — three runs in a hidden pane were 2.3–3.6 s because the
   browser throttles background pages, so those numbers are not used.
-- **Verdict: N5 is met on a warm session, narrowly.** The cheap win if it needs margin is to start
-  the independent reads (settings, queue item, mailboxes, signature, read state) in parallel with
-  the email list instead of after it, and to render rows before the read-state read returns.
+- **Verdict: N5 is met on a warm session, narrowly.**
+
+**Follow-up, built (unreleased; not yet measured live).** A fuller waterfall (all requests, same
+day) showed two things the first read missed:
+
+- **The sender, queue, settings and organisation reads were already parallel**, and are not on the
+  path to the rows. The rows waited on three *sequential* steps: the list, then the recipients
+  (`activityparty`), then read state. Read state needs only the case and the agent, so `load`
+  (`EmailClientRoot.tsx`) now starts it first, beside the list, and awaits it together with the
+  recipients. That removes one wait (~0.1 s); the recipients still need the list's ids, and rows
+  are NOT rendered before they arrive, because the sender column would flash empty. Guarded by a
+  test that read state is requested before the list and the recipients; proved by mutation (put the
+  old order back, it fails on the ordering assertion).
+- **The biggest wait is not ours.** Every request the control makes starts only after the *host's
+  own* subgrid query — `emails?fetchXml=…savedqueryid=…` — finishes: 0.5 s on the 50-email Case, 1.1 s
+  on a small one in a hidden pane. The control never reads its dataset (nothing under `pcf/` touches
+  `parameters.dataset`), so that query is pure cost. **Two levers**: a near-empty view on the subgrid, or
+  binding the control to a column instead of a dataset. **Spike S18 (2026-11-26) tried the second**: it
+  works unchanged (mounts, sizes, form stays clean, renders on a Resolved case) and rows came up about
+  **0.5 s sooner** (field median 1.59 s vs dataset 2.35 s, noisy; see [S18](research/06-spikes.md)).
+  The **CSW session tab and two-session teardown also passed** with a field control (state restored).
+  Not adopted yet: it needs a product decision (a bound column, the form XML, and the control reset on any
+  environment that has the dataset version).
 
 ### 3.5 R19 (S) — Copilot "draft a reply for me" · **withdrawn 2026-11-23**
 

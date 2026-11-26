@@ -237,6 +237,13 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
     setLoading(true);
     setListError(undefined);
     try {
+      // R6 — durable read state, one page for this case and this agent. It needs only the case and
+      // the agent, so it goes out NOW, beside the ancestry walk and the list, instead of after
+      // them: measured 2026-11-24 it was the last of three sequential waits before the rows could
+      // show. It resolves its own failure rather than throwing, so starting it early cannot leave
+      // an unhandled rejection behind if the list fails first.
+      const readStateRequest = userId ? fetchReadState(webApi, caseId, userId) : undefined;
+
       // R8 — ancestor cases, when the agent has asked for them.
       //
       // The ancestry walk happens BEFORE the list query so both can go in one request. It is two
@@ -258,18 +265,20 @@ export const EmailClientRoot: React.FC<EmailClientRootProps> = (props) => {
       const fetched = await fetchCaseEmails(webApi, caseIds);
       if (!latest()) return;
       setRows(fetched);
-      // Recipients are a second, batched query rather than an $expand on the list.
-      const fetchedParties = await fetchParties(webApi, fetched.map((r) => r.activityid));
+      // Recipients are a second, batched query rather than an $expand on the list. It needs the
+      // list's ids, so it cannot start earlier; the read state, already in flight, is awaited
+      // alongside it so neither waits for the other.
+      const [fetchedParties, readResult] = await Promise.all([
+        fetchParties(webApi, fetched.map((r) => r.activityid)),
+        readStateRequest ?? Promise.resolve(undefined),
+      ]);
       if (!latest()) return;
       setParties(fetchedParties);
 
-      // R6 — durable read state, one page for this case and this agent. Deliberately AFTER the
-      // list is in state: this query must never be able to delay the mail appearing, and it
-      // resolves its own failure rather than throwing, so a read-state problem renders as
-      // "everything looks unread" instead of as a case with no mail on it.
-      if (userId) {
-        const { read, error } = await fetchReadState(webApi, caseId, userId);
-        if (!latest()) return;
+      // A read-state problem renders as "everything looks unread" instead of as a case with no
+      // mail on it: `fetchReadState` resolves its failure rather than throwing.
+      if (readResult) {
+        const { read, error } = readResult;
         readRows.current = read;
         // UNION with whatever `setControlState` restored, never a replacement. A mark made seconds
         // ago whose write has not landed yet must not be undone by the server's older answer.

@@ -22,8 +22,13 @@
          Nothing reads it - we query through `context.webAPI`, which is what gives us the security
          trimming N4 needs. The declaration is a LAYOUT ANCHOR: it is what makes this a *dataset*
          control, and only a dataset control can occupy a whole form tab as a subgrid. Drop it and
-         the control becomes a *field* control, which must be bound to a Case column and is sized
-         like a field. That placement is the one S1 measured. -->
+         the control becomes a *field* control, bound to a Case column. S1 did not measure that;
+         S18 (2026-11-26, docs/research/06-spikes.md) did, with this same code: it mounts, sizes by
+         the same viewport claim, leaves the form clean, renders on a Resolved case, survives a CSW
+         session-tab teardown with its state restored, and showed rows
+         about half a second sooner, because it skips the host query for this dataset. Adopting it
+         is a product decision (a bound column, the form XML, and a control reset on any
+         environment that has this version). -->
     <data-set name="emails" display-name-key="Emails">
     </data-set>
 

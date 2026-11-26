@@ -2206,3 +2206,67 @@ real `host/richText.ts`: skin and toolbar render from the bundle, a fixture with
 `cid:` image/`MsoNormal`/quote round-trips, our own `setHTML` is silent while typing fires, read-only mode
 locks the toolbar. **Not verified:** CSW itself, dark theme, paste from real Word/Outlook, and the
 cost of loading ~446 KB on every open of the control (N5).
+
+### S18 — a FIELD-bound control instead of a subgrid dataset — *(2026-11-26)*
+
+**Question.** Every request the control makes starts only after the host's own subgrid query
+(`emails?fetchXml=…savedqueryid=…`) finishes, and the control never reads its dataset. Does binding the
+control to a Case column instead remove that wait, and does it still work as a form-tab control?
+
+**Build.** The same source, only the manifest changed: the `<data-set>` removed and a bound property
+`hostField` (`SingleLine.Text`, `usage="bound"`) added, namespace `JHRBS18`. Pushed with `pac pcf push`,
+which ships a **development** bundle whatever the project says; the production bundle was built locally and
+written into the control's web resource. Form: a copy of the *Case - Email Client* form with the subgrid
+cell replaced by a field cell for `title` (`classid {4273EDBD-AC1D-40D3-9FB2-095C621B552D}`, a `uniqueid`,
+and a `controlDescription forControl=<that uniqueid>` holding `<hostField>title</hostField>` for form
+factors 0, 1 and 2). Data: the 50-email seed Case, 10 threads of 5.
+
+**Results.**
+
+- **It works first time, with no code change.** The control mounts, the thread list and reading pane
+  render (15 rows, conversations collapsed), and the Case id arrives through `contextInfo` as before. The
+  control type is `customcontrol:JHRBS18.CaseEmailClient` on `title`.
+- **The form is not dirty** (`getIsDirty()` false): the control never writes the column.
+- **Sizing needs no change.** The container claims **1444 × 415** in a 1500 × 900 viewport, starting
+  435 px down — the same viewport-claim logic, no per-host branch.
+- **A Resolved case renders fully.** Form type 4 (read-only, banner *Read-only: This record's status:
+  Resolved*): the control still shows the whole client and the form is not dirty.
+- **State survives leaving the form and coming back, on both hosts.** Select a thread, open another Case,
+  return: the same thread is selected, on the field control and on the dataset control alike. This is **not**
+  the CSW two-session teardown that S1 and S11 measured — weaker evidence, but it shows no difference.
+- **Time to rows on screen, warm, same Case, alternating:** field **median 1.59 s** over 11 runs, dataset
+  **median 2.35 s** over 11. Per batch of runs the field host was faster in all three (medians 1.45 vs 1.89,
+  1.52 vs 2.08, 2.02 vs 3.60). The two quiet batches differ by **0.44 s and 0.56 s**; the third was noisy
+  (pane hidden, both slow). **Treat this as roughly half a second, not a precise number.** It is
+  **confounded by about 0.1 s**: the spike was built from the working tree, which carries the read-state
+  change, and the deployed dataset control does not.
+
+**CSW session tab and two-session teardown — run 2026-11-26, PASSED.** The spike form was registered with
+the Copilot Service workspace app and an `Entity record` application tab template was created for it
+(`entityName={anchor.entityName}`, `entityId={anchor.incidentid}`, `formId=<spike form>`; the platform
+creates the parameter rows itself, so the values are set by PATCH). In a CSW session on the seeded Case,
+`Microsoft.Apm.createTab({ templateName })` opened it as a session tab next to the anchor tab:
+
+- **It renders as a session tab**: control `customcontrol:JHRBS18.CaseEmailClient` on `title`, 15 rows, the
+  form not dirty, the Case id from `contextInfo`. The container claimed **992 × 320** starting 550 px down in
+  a 1500 × 900 viewport, beside the Copilot pane — the same viewport claim, no new branch.
+- **Teardown and restore.** Selected the "Sag 7" thread (`thread:h:112000007`), switched to the **Home**
+  session (no client rows left anywhere in the page: genuinely torn down, not hidden), switched back to the
+  case session and its tab. The client came back with **the same thread selected and its conversation still
+  expanded (20 rows)**.
+- **A trap in the test.** `Xrm.Navigation.openForm` on a second Case does **not** start a second session:
+  it adds a tab to the *same* session (and rejects with "Navigation was cancelled by the user"), so it
+  tears nothing down. The top strip (Home, Inbox, the case) holds the sessions; switching to Home is the
+  real teardown.
+
+**Still not verified.** A request waterfall for the field host (resource timings stopped being recorded in
+the page partway through, so the speed numbers above are rows-on-screen only); a **dedicated column**
+instead of `title`; dark theme; an in-progress **compose** surviving the teardown on the field host (only
+the selection was checked); and whether an installed control can be changed from dataset to field as an
+in-place update — it cannot be assumed; see the reset procedure in `CLAUDE.md`.
+**Environment.** Everything was removed afterwards: the spike form, the spike control and its web
+resources, and the seed Case. `pac pcf push` leaves no temporary solution behind.
+
+**Decision needed (product owner).** Adopting it means a bound column (reuse `title` on the dedicated form,
+or add one to Case), the manifest change, rewriting the form XML, and the control reset on any environment
+that already has the dataset version. Nothing is shipped downstream yet, so now is the cheapest time.
